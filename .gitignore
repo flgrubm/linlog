@@ -1,0 +1,4 @@
+.pijul
+.ignore
+.direnv
+/target

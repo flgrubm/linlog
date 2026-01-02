@@ -1,0 +1,14 @@
+// linlog © Fabian Lukas Grubmüller 2026
+// Licensed under the EUPL
+
+layout {
+  tab name="Terminal" focus=true {
+    pane
+    pane size=1 {
+      plugin location="zellij:compact-bar"
+    }
+  }
+  tab name="Editor" {
+    pane command="$EDITOR"
+  }
+}
