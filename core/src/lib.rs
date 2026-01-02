@@ -1,6 +1,8 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
+pub mod terms;
+
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
 }
