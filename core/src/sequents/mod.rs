@@ -1,0 +1,5 @@
+// linlog © Fabian Lukas Grubmüller 2026
+// Licensed under the EUPL
+
+mod parsing;
+mod raw;
