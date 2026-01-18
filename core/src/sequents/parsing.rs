@@ -22,7 +22,7 @@ enum Term<'a> {
 }
 
 #[derive(Debug)]
-struct Sequent<'a> {
+pub struct Sequent<'a> {
     left: Vec<Term<'a>>,
     right: Vec<Term<'a>>,
 }
@@ -116,7 +116,14 @@ fn sequent_parser<'a>() -> impl Parser<'a, &'a str, Sequent<'a>, extra::Err<Simp
         .then_ignore(end()) // Ensure the parser consumes the entire input string
 }
 
-pub fn parse_raw_sequent<'a>(input: &'a str) -> Result<super::raw::Sequent, ()> {
+pub fn parse_raw_sequent<'a>(input: &'a str) -> Result<Sequent<'a>, crate::Error> {
     let result: Result<Sequent, _> = sequent_parser().parse(input).into_result();
-    todo!()
+    result.map_err(|borrowed_errors| {
+        let owned_errors: Vec<crate::errors::ParseError> = borrowed_errors
+            .into_iter()
+            .map(crate::errors::ParseError::from)
+            .collect();
+
+        crate::Error::SequentParsing(owned_errors)
+    })
 }
