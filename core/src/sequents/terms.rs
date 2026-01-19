@@ -93,6 +93,8 @@ fn reduce_append<'a, S: SymbolSet>(
     polarity: bool,
     mut v: Vec<S::Symb>,
 ) -> Vec<S::Symb> {
+    // TODO: this only works for single terms!
+    unimplemented!();
     debug_assert!(!t.tm.is_empty());
 
     let mut stack = vec![(t.clone(), polarity)];
@@ -131,7 +133,11 @@ fn reduce_append<'a, S: SymbolSet>(
     v
 }
 
-fn reduce<'a, S: SymbolSet>(t: Term<'a, S::RawSymb>) -> Box<[S::Symb]> {
+pub(super) fn reduce<'a, S: SymbolSet>(
+    t1: Term<'a, S::RawSymb>,
+    t2: Term<'a, S::RawSymb>,
+) -> Box<[S::Symb]> {
     let v = Vec::<S::Symb>::new();
-    reduce_append::<S>(t, true, v).into_boxed_slice()
+    let v = reduce_append::<S>(t1, false, v);
+    reduce_append::<S>(t2, true, v).into_boxed_slice()
 }

@@ -301,6 +301,18 @@ impl SymbolSet for MELL {
     }
 }
 
+pub fn is_mell_raw<'a>(ts: &'a [LLRawSymb]) -> bool {
+    ts.iter().fold(true, |acc: bool, s: &LLRawSymb| {
+        acc || MELLRawSymb::try_from(*s).is_ok()
+    })
+}
+
+pub fn is_mell<'a>(ts: &'a [LLSymb]) -> bool {
+    ts.iter().fold(true, |acc: bool, s: &LLSymb| {
+        acc || MELLSymb::try_from(*s).is_ok()
+    })
+}
+
 // // Multiplicative Linear Logic
 
 impl Token for MLLRawSymb {
@@ -344,4 +356,16 @@ impl SymbolSet for MLL {
         // TODO: use unwrap_unchecked since LL::from_raw_neg just makes changes the polarity and doesn't change the symbol class
         // unsafe { MLLSymb::try_from(LL::from_raw_neg(LLRawSymb::from(r))).unwrap_unchecked() }
     }
+}
+
+pub fn is_mll_raw<'a>(ts: &'a [LLRawSymb]) -> bool {
+    ts.iter().fold(true, |acc: bool, s: &LLRawSymb| {
+        acc || MLLRawSymb::try_from(*s).is_ok()
+    })
+}
+
+pub fn is_mll<'a>(ts: &'a [LLSymb]) -> bool {
+    ts.iter().fold(true, |acc: bool, s: &LLSymb| {
+        acc || MLLSymb::try_from(*s).is_ok()
+    })
 }

@@ -3,6 +3,10 @@
 
 use thiserror::Error;
 
+use crate::sequents::symbols::{
+    MELLRawSymbConvertError, MELLSymbConvertError, MLLRawSymbConvertError, MLLSymbConvertError,
+};
+
 // Chumsky parsing errors
 
 use chumsky::error::Simple;
@@ -34,10 +38,7 @@ impl fmt::Display for ParseError {
     }
 }
 
-impl<'a, T> From<Simple<'a, T>> for ParseError
-where
-    T: fmt::Display,
-{
+impl<'a, T: fmt::Display> From<Simple<'a, T>> for ParseError {
     fn from(e: Simple<'a, T>) -> Self {
         ParseError {
             span: (*e.span()).into_range(),
@@ -56,12 +57,19 @@ where
 pub enum Error {
     #[error("Preterm is not a valid term, unexpected token: {0}")]
     MalformedTerm(String),
+
     #[error("Conversion from LL to MELL failed, unexpected: {0}")]
-    LLToMELLConversion(String),
+    LLToMELLConversion(#[from] MELLSymbConvertError),
+
     #[error("Conversion from LL to MLL failed, unexpected: {0}")]
-    LLToMLLConversion(String),
-    #[error("Conversion from MELL to MLL failed, unexpected: {0}")]
-    MELLToMLLConversion(String),
+    LLToMLLConversion(#[from] MLLSymbConvertError),
+
+    #[error("Conversion from LL to MELL failed, unexpected: {0}")]
+    RawLLToMELLConversion(#[from] MELLRawSymbConvertError),
+
+    #[error("Conversion from LL to MLL failed, unexpected: {0}")]
+    RawLLToMLLConversion(#[from] MLLRawSymbConvertError),
+
     #[error("Parsing failed with errors: {0:?}")]
     SequentParsing(Vec<ParseError>),
 }
