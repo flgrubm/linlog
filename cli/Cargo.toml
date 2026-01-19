@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.100"
 linlog = { version = "0.1.0", path = "../core" }
+serde_json = "1.0.149"

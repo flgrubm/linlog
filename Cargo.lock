@@ -115,7 +115,6 @@ version = "0.1.0"
 dependencies = [
  "chumsky",
  "serde",
- "serde_json",
  "subenum",
  "thiserror",
 ]
@@ -126,6 +125,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "linlog",
+ "serde_json",
 ]
 
 [[package]]
