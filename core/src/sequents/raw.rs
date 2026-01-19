@@ -1,11 +1,21 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-// #[derive(Debug)]
-// pub struct Term {
-//     symbols_l: Box<[Symbol]>,
-//     terms_l: Box<[usize]>,
-//     symbols_r: Box<[Symbol]>,
-//     terms_r: Box<[usize]>,
-//     var_names: Box<[usize]>,
-// }
+use crate::sequents::symbols::LLRawSymb;
+
+use super::symbols::SymbolSet;
+use serde::{Deserialize, Serialize};
+
+// pub(super) in order to convert from parsed sequent
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(bound = "S::RawSymb: Serialize + for<'a> Deserialize<'a>")]
+pub struct Sequent<S: SymbolSet> {
+    pub(super) symbols_lhs: Box<[S::RawSymb]>,
+    pub(super) terms_lhs: Box<[usize]>,
+
+    pub(super) symbols_rhs: Box<[S::RawSymb]>,
+    pub(super) terms_rhs: Box<[usize]>,
+
+    pub(super) variable_names: Box<[String]>,
+}
