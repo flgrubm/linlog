@@ -83,36 +83,32 @@ impl<'a, T: Token> Term<'a, T> {
 }
 
 #[allow(type_alias_bounds)] // trait bound is not checked in current compiler version
-type RawTerm<'a, S: SymbolSet> = Term<'a, <S as SymbolSet>::RawSymb>;
+pub type RawTerm<'a, S: SymbolSet> = Term<'a, <S as SymbolSet>::RawSymb>;
 
 #[allow(type_alias_bounds)] // trait bound is not checked in current compiler version
-type ReducedTerm<'a, S: SymbolSet> = Term<'a, <S as SymbolSet>::Symb>;
+pub type ReducedTerm<'a, S: SymbolSet> = Term<'a, <S as SymbolSet>::Symb>;
 
 fn reduce_append<'a, S: SymbolSet>(
-    t: Term<'a, S::RawSymb>,
+    term: Term<'a, S::RawSymb>,
     polarity: bool,
-    mut v: Vec<S::Symb>,
+    mut symbols: Vec<S::Symb>,
 ) -> Vec<S::Symb> {
-    // TODO: this only works for single terms!
-    unimplemented!();
-    debug_assert!(!t.tm.is_empty());
-
-    let mut stack = vec![(t.clone(), polarity)];
+    let mut stack = vec![(term, polarity)];
 
     while let Some((current_subterm, polarity)) = stack.pop() {
         let head = current_subterm.tm[0];
         match current_subterm.subterms() {
-            SubTerm::Nothing => v.push(S::from_raw(head, polarity)),
+            SubTerm::Nothing => symbols.push(S::from_raw(head, polarity)),
             SubTerm::One(st) => match head.arity() {
                 Arity::Unary => {
-                    v.push(S::from_raw(head, polarity));
+                    symbols.push(S::from_raw(head, polarity));
                     stack.push((st, polarity));
                 }
                 Arity::Dual => stack.push((st, !polarity)),
                 _ => unreachable!(),
             },
             SubTerm::Two(st1, st2) => {
-                v.push(S::from_raw(head, polarity));
+                symbols.push(S::from_raw(head, polarity));
 
                 // second one needs to be deeper in the stack
                 stack.push((st2, polarity));
@@ -130,14 +126,106 @@ fn reduce_append<'a, S: SymbolSet>(
             }
         }
     }
-    v
+    symbols
+}
+
+// // Handling local offset:
+// // Dual decreases offset by one
+// // Var with negative polarity increases offset by one
+// // usize will underflow since Dual is likely read without/before any negative polarity Var
+// // Solution: track offset by (pos, neg), where
+// //     - Dual decreases pos until it reaches zero, then increases neg
+// //     - negative polarity Var decreases neg until it reaches zero, then increases pos
+// type OffsetCounter = (usize, usize);
+
+// let mut local_offset: OffsetCounter = (0, 0);
+
+// enum OffsetChange {
+//     IncrementOne,
+//     DecrementOne,
+// }
+
+// fn apply_offset((pos, neg): OffsetCounter, previous_offset: usize) -> usize {
+//     debug_assert!(pos == 0 || neg == 0);
+//     if neg == 0 {
+//         previous_offset + pos
+//     } else {
+//         // function is only ever called in the very end with the so-far total accumulated offset
+//         // it is clear that the total offset of the next term cannot be negative
+//         debug_assert!(previous_offset >= neg);
+//         previous_offset - neg
+//     }
+// }
+
+// fn change_offset((pos, neg): OffsetCounter, change: OffsetChange) -> OffsetCounter {
+//     match change {
+//         OffsetChange::IncrementOne => {
+//             if neg == 0 {
+//                 (pos + 1, 0)
+//             } else {
+//                 (0, neg - 1)
+//             }
+//         }
+//         OffsetChange::DecrementOne => {
+//             if pos == 0 {
+//                 (0, neg + 1)
+//             } else {
+//                 (pos - 1, 0)
+//             }
+//         }
+//     }
+// }
+
+pub(super) fn fold_reduce_terms<'a, S: SymbolSet>(
+    (mut symbols, mut offsets): (Vec<S::Symb>, Vec<usize>),
+    (term, original_polarity): (RawTerm<'a, S>, bool),
+) -> (Vec<S::Symb>, Vec<usize>) {
+    offsets.push(symbols.len());
+
+    let mut stack = vec![(term, original_polarity)];
+
+    while let Some((current_subterm, polarity)) = stack.pop() {
+        debug_assert!(!current_subterm.tm.is_empty());
+
+        let head = current_subterm.tm[0];
+        match current_subterm.subterms() {
+            SubTerm::Nothing => symbols.push(S::from_raw(head, polarity)),
+            SubTerm::One(st) => match head.arity() {
+                Arity::Unary => {
+                    symbols.push(S::from_raw(head, polarity));
+                    stack.push((st, polarity));
+                }
+                Arity::Dual => stack.push((st, !polarity)),
+                _ => unreachable!(),
+            },
+            SubTerm::Two(st1, st2) => {
+                symbols.push(S::from_raw(head, polarity));
+
+                // second one needs to be deeper in the stack
+                stack.push((st2, polarity));
+
+                // first one needs polarity inverted if head is lollipop
+                match head.arity() {
+                    Arity::Binary => {
+                        stack.push((st1, polarity));
+                    }
+                    Arity::Lollipop => {
+                        stack.push((st1, !polarity));
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+    (symbols, offsets)
 }
 
 pub(super) fn reduce<'a, S: SymbolSet>(
     t1: Term<'a, S::RawSymb>,
     t2: Term<'a, S::RawSymb>,
 ) -> Box<[S::Symb]> {
-    let v = Vec::<S::Symb>::new();
-    let v = reduce_append::<S>(t1, false, v);
-    reduce_append::<S>(t2, true, v).into_boxed_slice()
+    unimplemented!()
+    // let v = Vec::<S::Symb>::new();
+    // let v = reduce_append::<S>(t1, false, v);
+    // reduce_append::<S>(t2, true, v).into_boxed_slice()
 }

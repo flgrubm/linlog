@@ -7,10 +7,12 @@ pub mod raw;
 pub mod symbols;
 pub mod terms;
 
+use crate::utils::SlidingIterator;
 use raw::Sequent as RawSequent;
 use serde::{Deserialize, Serialize};
+use std::iter::Iterator;
 use symbols::{RawSymbol, Symbol, SymbolSet, Token};
-use terms::Term;
+use terms::{RawTerm, Term, fold_reduce_terms};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(bound = "S::Symb: Serialize + for<'a> Deserialize<'a>")]
@@ -20,17 +22,42 @@ pub struct Sequent<S: SymbolSet> {
     variable_names: Box<[String]>,
 }
 
+pub struct SequentView<'a, S: SymbolSet> {
+    terms: Box<&'a [S::Symb]>,
+}
+
 impl<S: SymbolSet> From<RawSequent<S>> for Sequent<S> {
     fn from(s: RawSequent<S>) -> Sequent<S> {
-        let symbols: Box<[S::Symb]> =
-            terms::reduce::<S>(Term { tm: &s.symbols_lhs }, Term { tm: &s.symbols_rhs });
+        let mut terms: Vec<(RawTerm<'_, S>, bool)> =
+            Vec::with_capacity(s.terms_lhs.len() + s.terms_rhs.len());
 
-        let offset = s.terms_lhs.len();
-        let mut terms = s.terms_lhs.into_vec();
-        terms.reserve_exact(s.terms_rhs.len());
-        terms.extend(s.terms_rhs.iter().map(|x| x + offset));
+        for (lower, upper) in s.terms_lhs.into_iter().slide_iter(s.symbols_lhs.len()) {
+            terms.push((
+                Term {
+                    tm: &s.symbols_lhs[lower..upper],
+                },
+                false,
+            ));
+        }
+
+        for (lower, upper) in s.terms_rhs.into_iter().slide_iter(s.symbols_rhs.len()) {
+            terms.push((
+                Term {
+                    tm: &s.symbols_rhs[lower..upper],
+                },
+                true,
+            ));
+        }
+
+        let symbols: Vec<S::Symb> = Vec::with_capacity(s.symbols_lhs.len() + s.symbols_rhs.len());
+        let offsets: Vec<usize> = Vec::with_capacity(symbols.len());
+
+        let (symbols, terms) = terms
+            .into_iter()
+            .fold((symbols, offsets), fold_reduce_terms::<S>);
+
         Sequent {
-            symbols: symbols,
+            symbols: symbols.into_boxed_slice(),
             terms: terms.into_boxed_slice(),
             variable_names: s.variable_names,
         }

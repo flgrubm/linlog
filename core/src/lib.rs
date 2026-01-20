@@ -3,6 +3,7 @@
 
 mod errors;
 pub mod sequents;
+pub(crate) mod utils;
 
 pub use errors::Error;
 
