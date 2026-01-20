@@ -34,12 +34,6 @@ pub enum SymbolShow {
     Variable(usize),
     DualVariable(usize),
     Char(char),
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum RawSymbolShow {
-    Variable(usize),
-    Char(char),
     Variant(char, char),
 }
 
@@ -51,13 +45,9 @@ pub trait Symbol: Copy + Clone {
     fn show(&self) -> SymbolShow;
 }
 
-pub trait RawSymbol: Copy + Clone {
-    fn show(&self) -> RawSymbolShow;
-}
-
 pub trait SymbolSet {
     type Symb: Token + Symbol;
-    type RawSymb: Token + RawSymbol;
+    type RawSymb: Token + Symbol;
     fn from_raw_pos(r: Self::RawSymb) -> Self::Symb;
     fn from_raw_neg(r: Self::RawSymb) -> Self::Symb;
 
@@ -149,10 +139,10 @@ impl Token for LLRawSymb {
     }
 }
 
-impl RawSymbol for LLRawSymb {
-    fn show(&self) -> RawSymbolShow {
+impl Symbol for LLRawSymb {
+    fn show(&self) -> SymbolShow {
         use LLRawSymb::*;
-        use RawSymbolShow::*;
+        use SymbolShow::*;
         match self {
             Var(n) => Variable(*n),
             One => Char(SHOW_ONE),
@@ -264,8 +254,8 @@ impl Token for MELLRawSymb {
     }
 }
 
-impl RawSymbol for MELLRawSymb {
-    fn show(&self) -> RawSymbolShow {
+impl Symbol for MELLRawSymb {
+    fn show(&self) -> SymbolShow {
         LLRawSymb::from(self.clone()).show()
     }
 }
@@ -321,8 +311,8 @@ impl Token for MLLRawSymb {
     }
 }
 
-impl RawSymbol for MLLRawSymb {
-    fn show(&self) -> RawSymbolShow {
+impl Symbol for MLLRawSymb {
+    fn show(&self) -> SymbolShow {
         LLRawSymb::from(self.clone()).show()
     }
 }

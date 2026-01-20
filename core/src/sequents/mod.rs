@@ -11,7 +11,7 @@ use crate::utils::SlidingIterator;
 use raw::Sequent as RawSequent;
 use serde::{Deserialize, Serialize};
 use std::iter::Iterator;
-use symbols::{RawSymbol, Symbol, SymbolSet, Token};
+use symbols::{Symbol, SymbolSet, Token};
 use terms::{RawTerm, Term, fold_reduce_terms};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -23,7 +23,7 @@ pub struct Sequent<S: SymbolSet> {
 }
 
 pub struct SequentView<'a, S: SymbolSet> {
-    terms: Box<&'a [S::Symb]>,
+    terms: Box<[Term<'a, S::Symb>]>,
 }
 
 impl<S: SymbolSet> From<RawSequent<S>> for Sequent<S> {
