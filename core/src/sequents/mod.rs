@@ -42,7 +42,7 @@ impl<L: Logic> Sequent<L> {
         let num_vars = self.variable_dict.len();
         let num_terms = self.term_arena.len();
 
-        let _ = self
+        self
             .term_arena
             .iter()
             .try_for_each(|e| e.check_bounds(num_vars, num_terms))?;

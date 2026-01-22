@@ -103,7 +103,7 @@ impl TryFrom<Sequent> for Seq<LL> {
             term_ids: s.ids,
             variable_dict: s.var_dict,
         };
-        let _ = s.verify_integrity()?;
+        s.verify_integrity()?;
         Ok(s)
     }
 }
