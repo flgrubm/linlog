@@ -53,4 +53,8 @@ impl<'a, T: fmt::Display> From<Simple<'a, T>> for ParseError {
 pub enum Error {
     #[error("Parsing failed with errors: {0:?}")]
     SequentParsing(Vec<ParseError>),
+    #[error("Variable name at index {0} does not exist, index needs to be < {1}")]
+    InvalidVariableIndex(usize, usize),
+    #[error("Expression at index {0} does not exist, index needs to be < {1}")]
+    InvalidTermIndex(usize, usize),
 }

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 #[serde(rename = "E")]
-enum Expression {
+pub(super) enum Expression {
     #[serde(rename = "V")]
     Var(usize),
     #[serde(rename = "D")]
@@ -77,8 +77,8 @@ impl From<Expression> for Expr<LL, usize> {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct Sequent {
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(super) struct Sequent {
     terms: Vec<Expression>,
     ids: Vec<usize>,
     var_dict: Vec<String>,
@@ -91,5 +91,19 @@ impl From<Seq<LL>> for Sequent {
             ids: s.term_ids,
             var_dict: s.variable_dict,
         }
+    }
+}
+
+impl TryFrom<Sequent> for Seq<LL> {
+    type Error = crate::Error;
+
+    fn try_from(s: Sequent) -> Result<Seq<LL>, Self::Error> {
+        let s = Seq::<LL> {
+            term_arena: s.terms.into_iter().map(Expr::from).collect(),
+            term_ids: s.ids,
+            variable_dict: s.var_dict,
+        };
+        let _ = s.verify_integrity()?;
+        Ok(s)
     }
 }

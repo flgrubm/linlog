@@ -25,7 +25,7 @@ impl<T: sealed::Sealed + Copy + Clone + std::fmt::Debug + PartialEq + Eq> UnitOr
 pub trait LogicPayload: Copy + Clone + std::fmt::Debug + PartialEq + Eq {}
 impl<T: Copy + Clone + std::fmt::Debug + PartialEq + Eq> LogicPayload for T {}
 
-pub trait Logic: sealed::Sealed {
+pub trait Logic: sealed::Sealed + Default {
     type Mult: UnitOrInfallibleT;
     type Add: UnitOrInfallibleT;
     type Exp: UnitOrInfallibleT;
@@ -35,7 +35,7 @@ pub trait Logic: sealed::Sealed {
     const EXP: bool;
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub struct LL;
 
 impl Sealed for LL {}
@@ -50,7 +50,7 @@ impl Logic for LL {
     const EXP: bool = true;
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub struct MELL;
 
 impl Sealed for MELL {}
@@ -65,7 +65,7 @@ impl Logic for MELL {
     const EXP: bool = true;
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub struct MLL;
 
 impl Sealed for MLL {}
@@ -80,7 +80,7 @@ impl Logic for MLL {
     const EXP: bool = false;
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub struct MALL;
 
 impl Sealed for MALL {}
@@ -95,7 +95,7 @@ impl Logic for MALL {
     const EXP: bool = false;
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub struct ALL;
 
 impl Sealed for ALL {}
@@ -115,6 +115,7 @@ pub const fn is_subset_logic<LSub: Logic, LSup: Logic>() -> bool {
 }
 
 mod test {
+    use super::*;
     #[test]
     fn subset_logic_test() {
         assert!(is_subset_logic::<MLL, LL>());
