@@ -2,12 +2,13 @@
 // Licensed under the EUPL
 
 pub mod logics;
+pub mod parsing;
 mod serialize;
 pub mod terms;
-// pub mod parsing;
 
 use logics::{LL, Logic};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::HashSet;
 
 use terms::{Expression, Terms};
 
@@ -37,23 +38,74 @@ impl<L: Logic> Sequent<L> {
         Self::default()
     }
 
+    pub fn detect_cycles(&self) -> Result<(), crate::Error> {
+        use terms::Expression::*;
+
+        let mut check_next = self.term_ids.clone();
+        let mut connections = vec![HashSet::<usize>::new(); self.term_ids.len()];
+
+        while let Some(n) = check_next.pop() {
+            let mut visit = Vec::<usize>::with_capacity(2);
+            match self
+                .term_arena
+                .get(n)
+                .ok_or(crate::Error::InvalidTermIndex(n, self.term_arena.len()))?
+            {
+                MultOp(_, _, k, l) | AddOp(_, _, k, l) => {
+                    visit.push(*k);
+                    visit.push(*l);
+                }
+                ExpOp(_, _, k) => visit.push(*k),
+                Var(_, _) | MultConst(_, _) | AddConst(_, _) => {}
+            }
+            for k in visit.into_iter() {
+                if connections[k].is_empty() {
+                    check_next.push(k);
+                }
+
+                if k == n {
+                    return Err(crate::Error::CycleDetected(k));
+                } else if k < n {
+                    let (left, right) = connections.split_at_mut(k + 1);
+                    for l in right[n - k].iter() {
+                        left[k].insert(*l);
+                    }
+                } else {
+                    let (left, right) = connections.split_at_mut(n + 1);
+                    for l in left[n].iter() {
+                        right[k - n].insert(*l);
+                    }
+                }
+                if connections[k].contains(&k) {
+                    return Err(crate::Error::CycleDetected(k));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Check whether the internal data structure is correct
     pub fn verify_integrity(&self) -> Result<(), crate::Error> {
         let num_vars = self.variable_dict.len();
         let num_terms = self.term_arena.len();
 
-        self
-            .term_arena
+        // check that variable and linked subterm indices are valid for all terms
+        self.term_arena
             .iter()
             .try_for_each(|e| e.check_bounds(num_vars, num_terms))?;
 
-        let _ = self.term_ids.iter().try_for_each(|n| {
+        // check that all term indices are valid
+        self.term_ids.iter().try_for_each(|n| {
             if *n >= num_terms {
                 Err(crate::Error::InvalidTermIndex(*n, num_terms))
             } else {
                 Ok(())
             }
-        });
+        })?;
+
+        // detect cycles
+        self.detect_cycles()?;
+
         Ok(())
     }
 

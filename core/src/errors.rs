@@ -57,4 +57,6 @@ pub enum Error {
     InvalidVariableIndex(usize, usize),
     #[error("Expression at index {0} does not exist, index needs to be < {1}")]
     InvalidTermIndex(usize, usize),
+    #[error("Cycle detected: subterm {0} visited twice")]
+    CycleDetected(usize),
 }
