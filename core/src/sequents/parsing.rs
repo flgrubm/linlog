@@ -131,6 +131,24 @@ impl<'a> From<Sequent<'a>> for super::Sequent<LL> {
     }
 }
 
+impl<'a> TryFrom<&'a str> for Sequent<'a> {
+    type Error = crate::Error;
+
+    fn try_from(input: &'a str) -> Result<Sequent<'a>, Self::Error> {
+        sequent_parser()
+            .parse(input)
+            .into_result()
+            .map_err(|borrowed_errors| {
+                let owned_errors: Vec<crate::errors::ParseError> = borrowed_errors
+                    .into_iter()
+                    .map(crate::errors::ParseError::from)
+                    .collect();
+
+                crate::Error::SequentParsing(owned_errors)
+            })
+    }
+}
+
 // fn parse_raw<'a>(input: &'a str) -> Result<RawSequent, crate::Error> {
 //     sequent_parser()
 //         .parse(input)

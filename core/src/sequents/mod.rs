@@ -65,19 +65,14 @@ impl<L: Logic> Sequent<L> {
     }
 
     fn optimize_term_ids(&mut self) -> Result<(), crate::Error> {
-        if self.term_ids.is_empty() {
-            Ok(())
+        self.term_ids.sort();
+        self.term_ids.shrink_to_fit();
+        let n = self.term_ids.last().unwrap();
+        let num_terms = self.term_arena.len();
+        if *n >= num_terms {
+            Err(crate::Error::TermIndexOutOfBounds(*n, num_terms))
         } else {
-            self.term_ids.sort();
-            self.term_ids.dedup();
-            self.term_ids.shrink_to_fit();
-            let n = self.term_ids.last().unwrap();
-            let num_terms = self.term_arena.len();
-            if *n >= num_terms {
-                Err(crate::Error::TermIndexOutOfBounds(*n, num_terms))
-            } else {
-                Ok(())
-            }
+            Ok(())
         }
     }
 
@@ -98,34 +93,34 @@ impl<L: Logic> Sequent<L> {
         let mut visit_stack = self.term_ids.clone();
 
         while let Some(n) = visit_stack.pop() {
-            let arena_term_n = &self.term_arena[n];
-            match *arena_term_n {
-                MultOp(_, _, k, l) | AddOp(_, _, k, l) => {
-                    if k >= n {
-                        return Err(crate::Error::SubtermIndexNotDecreasing(k, n));
+            if !reachable[n] {
+                reachable[n] = true;
+                match self.term_arena[n] {
+                    MultOp(_, _, k, l) | AddOp(_, _, k, l) => {
+                        if k >= n {
+                            return Err(crate::Error::SubtermIndexNotDecreasing(k, n));
+                        }
+                        if l >= n {
+                            return Err(crate::Error::SubtermIndexNotDecreasing(l, n));
+                        }
+                        if !reachable[k] {
+                            visit_stack.push(k);
+                        }
+                        if !reachable[l] {
+                            visit_stack.push(l);
+                        }
                     }
-                    if l >= n {
-                        return Err(crate::Error::SubtermIndexNotDecreasing(l, n));
+                    ExpOp(_, _, k) => {
+                        if k >= n {
+                            return Err(crate::Error::SubtermIndexNotDecreasing(k, n));
+                        }
+                        if !reachable[k] {
+                            reachable[k] = true;
+                            visit_stack.push(k);
+                        }
                     }
-                    if !reachable[k] {
-                        reachable[k] = true;
-                        visit_stack.push(k);
-                    }
-                    if !reachable[l] {
-                        reachable[l] = true;
-                        visit_stack.push(l);
-                    }
+                    _ => {}
                 }
-                ExpOp(_, _, k) => {
-                    if k >= n {
-                        return Err(crate::Error::SubtermIndexNotDecreasing(k, n));
-                    }
-                    if !reachable[k] {
-                        reachable[k] = true;
-                        visit_stack.push(k);
-                    }
-                }
-                _ => {}
             }
         }
 
@@ -266,7 +261,7 @@ impl<L: Logic> Sequent<L> {
         Ok(())
     }
 
-    /// Remove unreachable and collapse duplicate items
+    /// Remove unreachable terms and collapse duplicate items
     /// This is rather inefficient, so use only if necessary
     pub fn optimize(&mut self) -> Result<(), crate::Error> {
         self.optimize_term_ids()?;
@@ -306,7 +301,7 @@ impl<L: Logic> From<Terms<L>> for Sequent<L> {
         let mut term_arena = Vec::<Expression<L, usize>>::with_capacity(t.term_arena.len());
         let mut variable_dict = Vec::<String>::new();
 
-        for (n, e) in t.term_arena.into_iter().enumerate() {
+        for e in t.term_arena.into_iter() {
             match e.assign_variable_id(&hm) {
                 NotNewID(e) => term_arena.push(e),
                 NewID(e, fresh_id, name) => {
@@ -316,6 +311,7 @@ impl<L: Logic> From<Terms<L>> for Sequent<L> {
                 }
             }
         }
+
         Sequent {
             term_arena,
             term_ids: t.term_ids,
