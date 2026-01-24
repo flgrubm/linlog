@@ -1,133 +1,131 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use crate::sequents::symbols::{Arity, SymbolSet, Token};
+use super::logics::Logic;
 
-#[allow(type_alias_bounds)] // trait bound is not checked in current compiler version
-pub type PreTerm<'a, T: Token> = &'a [T];
+pub type Polarity = bool;
 
-#[derive(Copy, Clone, Debug)]
-pub struct Term<'a, T: Token> {
-    pub(crate) tm: PreTerm<'a, T>,
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Expression<L: Logic> {
+    Var(bool, usize),
+    MultConst(L::Mult, Polarity),
+    AddConst(L::Add, Polarity),
+    MultOp(L::Mult, Polarity, usize, usize),
+    AddOp(L::Add, Polarity, usize, usize),
+    ExpOp(L::Exp, Polarity, usize),
 }
 
-impl<'a, T: Token> TryFrom<PreTerm<'a, T>> for Term<'a, T> {
-    type Error = crate::Error;
-
-    fn try_from(p: PreTerm<'a, T>) -> Result<Self, Self::Error> {
-        use Arity::*;
-        let mut leaves_left = 1usize;
-        for token in p.iter() {
-            match token.arity() {
-                Nullary => {
-                    if leaves_left > 0 {
-                        leaves_left -= 1
-                    } else {
-                        return Err(crate::Error::MalformedTerm("Leaf".to_string()));
-                    }
-                }
-                Unary | Dual => {}
-                Binary | Lollipop => leaves_left += 1,
-            }
-        }
-
-        if leaves_left > 0 {
-            Err(crate::Error::MalformedTerm("EOF".to_string()))
-        } else {
-            Ok(Term { tm: p })
+impl<L: Logic> Expression<L> {
+    pub fn invert(self) -> Self {
+        use Expression::*;
+        match self {
+            Var(b, n) => Var(!b, n),
+            MultConst(marker, b) => MultConst(marker, !b),
+            AddConst(marker, b) => AddConst(marker, !b),
+            MultOp(marker, b, n, m) => MultOp(marker, !b, n, m),
+            AddOp(marker, b, n, m) => AddOp(marker, !b, n, m),
+            ExpOp(marker, b, n) => ExpOp(marker, !b, n),
         }
     }
 }
 
-pub enum SubTerm<'a, T: Token> {
-    Nothing,
-    One(Term<'a, T>),
-    Two(Term<'a, T>, Term<'a, T>),
-}
+impl<L: Logic> Expression<L> {
+    pub fn offset(self, offset_variables: usize, offset_terms: usize) -> Expression<L> {
+        use Expression::*;
+        match self {
+            Var(b, n) => Var(b, n + offset_variables),
+            MultConst(marker, b) => MultConst(marker, b),
+            AddConst(marker, b) => AddConst(marker, b),
+            MultOp(marker, b, m, n) => MultOp(marker, b, m + offset_terms, n + offset_terms),
+            AddOp(marker, b, m, n) => AddOp(marker, b, m + offset_terms, n + offset_terms),
+            ExpOp(marker, b, n) => ExpOp(marker, b, n + offset_terms),
+        }
+    }
 
-impl<'a, T: Token> Term<'a, T> {
-    fn subterms(&self) -> SubTerm<'a, T> {
-        use Arity::*;
-        match self.tm[0].arity() {
-            Nullary => SubTerm::Nothing,
-            Unary | Dual => SubTerm::One(Term {
-                tm: &self.tm[1..self.tm.len()],
-            }),
-            Binary | Lollipop => {
-                let mut leaves_left = 1usize;
-                for (n, token) in self.tm[1..self.tm.len()].iter().enumerate() {
-                    match token.arity() {
-                        Nullary => match leaves_left {
-                            0 => unreachable!(),
-                            1 => {
-                                let split_index = n + 1;
-                                return SubTerm::Two(
-                                    Term {
-                                        tm: &self.tm[1..split_index],
-                                    },
-                                    Term {
-                                        tm: &self.tm[split_index..self.tm.len()],
-                                    },
-                                );
-                            }
-                            _ => leaves_left -= 1,
-                        },
-                        Unary | Dual => {}
-                        Binary | Lollipop => leaves_left += 1,
-                    }
-                }
-                unreachable!()
+    pub fn check_bounds(&self, num_variables: usize, exp_index: usize) -> Result<(), crate::Error> {
+        use Expression::*;
+        match *self {
+            Var(_, n) if n >= num_variables => {
+                Err(crate::Error::InvalidVariableIndex(n, num_variables))
             }
+            MultOp(_, _, n, _) | AddOp(_, _, n, _) if n >= exp_index => {
+                Err(crate::Error::SubtermIndexNotDecreasing(n, num_variables))
+            }
+            MultOp(_, _, _, n) | AddOp(_, _, _, n) if n >= exp_index => {
+                Err(crate::Error::SubtermIndexNotDecreasing(n, num_variables))
+            }
+            ExpOp(_, _, n) if n >= exp_index => {
+                Err(crate::Error::SubtermIndexNotDecreasing(n, num_variables))
+            }
+            _ => Ok(()),
         }
     }
 }
 
-#[allow(type_alias_bounds)] // trait bound is not checked in current compiler version
-pub type RawTerm<'a, S: SymbolSet> = Term<'a, <S as SymbolSet>::RawSymb>;
+pub(super) enum VariableIDAssignmentResult<L: Logic> {
+    NotNewID(Expression<L>),
+    NewID(Expression<L>, usize, String),
+}
 
-#[allow(type_alias_bounds)] // trait bound is not checked in current compiler version
-pub type ReducedTerm<'a, S: SymbolSet> = Term<'a, <S as SymbolSet>::Symb>;
-
-pub(super) fn fold_reduce_terms<'a, S: SymbolSet>(
-    (mut symbols, mut offsets): (Vec<S::Symb>, Vec<usize>),
-    (term, original_polarity): (RawTerm<'a, S>, bool),
-) -> (Vec<S::Symb>, Vec<usize>) {
-    offsets.push(symbols.len());
-
-    let mut stack = vec![(term, original_polarity)];
-
-    while let Some((current_subterm, polarity)) = stack.pop() {
-        debug_assert!(!current_subterm.tm.is_empty());
-
-        let head = current_subterm.tm[0];
-        match current_subterm.subterms() {
-            SubTerm::Nothing => symbols.push(S::from_raw(head, polarity)),
-            SubTerm::One(st) => match head.arity() {
-                Arity::Unary => {
-                    symbols.push(S::from_raw(head, polarity));
-                    stack.push((st, polarity));
-                }
-                Arity::Dual => stack.push((st, !polarity)),
-                _ => unreachable!(),
-            },
-            SubTerm::Two(st1, st2) => {
-                symbols.push(S::from_raw(head, polarity));
-
-                // second one needs to be deeper in the stack
-                stack.push((st2, polarity));
-
-                // first one needs polarity inverted if head is lollipop
-                match head.arity() {
-                    Arity::Binary => {
-                        stack.push((st1, polarity));
-                    }
-                    Arity::Lollipop => {
-                        stack.push((st1, !polarity));
-                    }
-                    _ => unreachable!(),
-                }
+#[allow(unused_imports)]
+mod test {
+    use super::*;
+    #[test]
+    fn test_check_bounds() {
+        assert!(
+            match Expression::<super::super::logics::LL>::MultOp((), true, 10, 0).check_bounds(5, 5)
+            {
+                Ok(_) => false,
+                Err(_) => true,
             }
-        }
+        );
+        assert!(
+            match Expression::<super::super::logics::LL>::MultOp((), true, 0, 10).check_bounds(5, 5)
+            {
+                Ok(_) => false,
+                Err(_) => true,
+            }
+        );
+        assert!(
+            match Expression::<super::super::logics::LL>::MultOp((), true, 5, 0).check_bounds(5, 5)
+            {
+                Ok(_) => false,
+                Err(_) => true,
+            }
+        );
+        assert!(
+            match Expression::<super::super::logics::LL>::MultOp((), true, 0, 5).check_bounds(5, 5)
+            {
+                Ok(_) => false,
+                Err(_) => true,
+            }
+        );
+
+        assert!(
+            match Expression::<super::super::logics::LL>::AddOp((), true, 0, 10).check_bounds(5, 5)
+            {
+                Ok(_) => false,
+                Err(_) => true,
+            }
+        );
+        assert!(
+            match Expression::<super::super::logics::LL>::AddOp((), true, 10, 0).check_bounds(5, 5)
+            {
+                Ok(_) => false,
+                Err(_) => true,
+            }
+        );
+        assert!(
+            match Expression::<super::super::logics::LL>::AddOp((), true, 0, 5).check_bounds(5, 5) {
+                Ok(_) => false,
+                Err(_) => true,
+            }
+        );
+        assert!(
+            match Expression::<super::super::logics::LL>::AddOp((), true, 5, 0).check_bounds(5, 5) {
+                Ok(_) => false,
+                Err(_) => true,
+            }
+        );
     }
-    (symbols, offsets)
 }

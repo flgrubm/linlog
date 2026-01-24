@@ -3,15 +3,13 @@
 
 use thiserror::Error;
 
-use crate::sequents::symbols::{
-    MELLRawSymbConvertError, MELLSymbConvertError, MLLRawSymbConvertError, MLLSymbConvertError,
-};
-
 // Chumsky parsing errors
-
+#[cfg(feature = "parse")]
 use chumsky::error::Simple;
+#[cfg(feature = "parse")]
 use std::fmt;
 
+#[cfg(feature = "parse")]
 #[derive(Debug)]
 pub struct ParseError {
     pub span: std::ops::Range<usize>,
@@ -20,6 +18,7 @@ pub struct ParseError {
     pub expected: Vec<String>,
 }
 
+#[cfg(feature = "parse")]
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -38,6 +37,7 @@ impl fmt::Display for ParseError {
     }
 }
 
+#[cfg(feature = "parse")]
 impl<'a, T: fmt::Display> From<Simple<'a, T>> for ParseError {
     fn from(e: Simple<'a, T>) -> Self {
         ParseError {
@@ -55,21 +55,13 @@ impl<'a, T: fmt::Display> From<Simple<'a, T>> for ParseError {
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("Preterm is not a valid term, unexpected token: {0}")]
-    MalformedTerm(String),
-
-    #[error("Conversion from LL to MELL failed, unexpected: {0}")]
-    LLToMELLConversion(#[from] MELLSymbConvertError),
-
-    #[error("Conversion from LL to MLL failed, unexpected: {0}")]
-    LLToMLLConversion(#[from] MLLSymbConvertError),
-
-    #[error("Conversion from LL to MELL failed, unexpected: {0}")]
-    RawLLToMELLConversion(#[from] MELLRawSymbConvertError),
-
-    #[error("Conversion from LL to MLL failed, unexpected: {0}")]
-    RawLLToMLLConversion(#[from] MLLRawSymbConvertError),
-
+    #[cfg(feature = "parse")]
     #[error("Parsing failed with errors: {0:?}")]
     SequentParsing(Vec<ParseError>),
+    #[error("Variable name at index {0} does not exist, index needs to be < {1}")]
+    InvalidVariableIndex(usize, usize),
+    #[error("Term index out of bounds: tried to access index {0} while number of terms is {1}")]
+    TermIndexOutOfBounds(usize, usize),
+    #[error("Term index not decreasing: term at index {0} has subterm at index {1} >= {0}")]
+    SubtermIndexNotDecreasing(usize, usize),
 }

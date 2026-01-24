@@ -3,13 +3,9 @@
 
 use chumsky::pratt::*;
 use chumsky::prelude::*;
-use std::collections::HashMap;
-
-use super::raw::Sequent as RawSequent;
-use super::symbols::{LL, LLRawSymb};
 
 #[derive(Debug)]
-enum Term<'a> {
+pub(super) enum Term<'a> {
     Var(&'a str),
     Zero,
     One,
@@ -26,10 +22,18 @@ enum Term<'a> {
 }
 
 #[derive(Debug)]
-pub struct Sequent<'a> {
-    left: Vec<Term<'a>>,
-    right: Vec<Term<'a>>,
+pub(super) struct Sequent<'a> {
+    pub(super) left: Vec<Term<'a>>,
+    pub(super) right: Vec<Term<'a>>,
 }
+
+// struct RawSequent {
+//     lhs_symbols: Box<[Symbol<LL, Mode::Rich>]>,
+//     lhs_terms: Box<[usize]>,
+//     rhs_symbols: Box<[Symbol<LL, Mode::Rich>]>,
+//     rhs_terms: Box<[usize]>,
+//     variable_names: Box<[String]>,
+// }
 
 fn constant_parser<'a>() -> impl Parser<'a, &'a str, Term<'a>, extra::Err<Simple<'a, char>>> + Clone
 {
@@ -120,141 +124,35 @@ fn sequent_parser<'a>() -> impl Parser<'a, &'a str, Sequent<'a>, extra::Err<Simp
         .then_ignore(end()) // Ensure the parser consumes the entire input string
 }
 
-fn flatten_append_term<'a>(
-    (mut symbols, mut indices, mut variable_names, mut variable_map): (
-        Vec<LLRawSymb>,
-        Vec<usize>,
-        Vec<&'a str>,
-        HashMap<&'a str, usize>,
-    ),
-    t: Term<'a>,
-) -> (
-    Vec<LLRawSymb>,
-    Vec<usize>,
-    Vec<&'a str>,
-    HashMap<&'a str, usize>,
-) {
-    use super::symbols::LLRawSymb as LL;
-    use Term::*;
+impl<'a> TryFrom<&'a str> for Sequent<'a> {
+    type Error = crate::Error;
 
-    let mut stack = vec![Box::new(t)];
-    indices.push(symbols.len());
+    fn try_from(input: &'a str) -> Result<Sequent<'a>, Self::Error> {
+        sequent_parser()
+            .parse(input)
+            .into_result()
+            .map_err(|borrowed_errors| {
+                let owned_errors: Vec<crate::errors::ParseError> = borrowed_errors
+                    .into_iter()
+                    .map(crate::errors::ParseError::from)
+                    .collect();
 
-    while let Some(tm) = stack.pop() {
-        match *tm {
-            Var(s) => {
-                if let Some(s_id) = variable_map.get(s) {
-                    symbols.push(LL::Var(*s_id));
-                } else {
-                    let fresh_variable = variable_names.len();
-                    let _ = variable_map.insert(s, fresh_variable);
-                    symbols.push(LL::Var(fresh_variable));
-                    variable_names.push(s);
-                }
-            }
-            One => symbols.push(LL::One),
-            Bot => symbols.push(LL::Bot),
-            Top => symbols.push(LL::Top),
-            Zero => symbols.push(LL::Zero),
-            Dual(st) => {
-                stack.push(st);
-                symbols.push(LL::Dual);
-            }
-            Bang(st) => {
-                stack.push(st);
-                symbols.push(LL::Bang);
-            }
-            Quest(st) => {
-                stack.push(st);
-                symbols.push(LL::Quest);
-            }
-            Tensor(st1, st2) => {
-                stack.push(st2);
-                stack.push(st1);
-                symbols.push(LL::Tensor);
-            }
-            Par(st1, st2) => {
-                stack.push(st2);
-                stack.push(st1);
-                symbols.push(LL::Par);
-            }
-            With(st1, st2) => {
-                stack.push(st2);
-                stack.push(st1);
-                symbols.push(LL::With);
-            }
-            Plus(st1, st2) => {
-                stack.push(st2);
-                stack.push(st1);
-                symbols.push(LL::Plus);
-            }
-            Lollipop(st1, st2) => {
-                stack.push(st2);
-                stack.push(st1);
-                symbols.push(LL::Lollipop);
-            }
-        }
-    }
-
-    (symbols, indices, variable_names, variable_map)
-}
-
-fn flatten_terms<'a>(
-    terms: Vec<Term<'a>>,
-    variable_names: Vec<&'a str>,
-    variable_map: HashMap<&'a str, usize>,
-) -> (
-    Box<[LLRawSymb]>,
-    Box<[usize]>,
-    Vec<&'a str>,
-    HashMap<&'a str, usize>,
-) {
-    let symbols = Vec::new();
-    let indices = Vec::with_capacity(terms.len() - 1);
-    let (symbols, indices, variable_names, variable_map) = terms.into_iter().fold(
-        (symbols, indices, variable_names, variable_map),
-        flatten_append_term,
-    );
-    (
-        symbols.into_boxed_slice(),
-        indices.into_boxed_slice(),
-        variable_names,
-        variable_map,
-    )
-}
-
-fn flatten_sequent<'a>(s: Sequent<'a>) -> RawSequent<LL> {
-    let variable_names_borrowed = Vec::new();
-    let variable_map = HashMap::new();
-    let (symbols_lhs, terms_lhs, variable_names_borrowed, variable_map) =
-        flatten_terms(s.left, variable_names_borrowed, variable_map);
-    let (symbols_rhs, terms_rhs, variable_names_borrowed, _) =
-        flatten_terms(s.right, variable_names_borrowed, variable_map);
-    let variable_names: Box<[String]> = variable_names_borrowed
-        .into_iter()
-        .map(|x| x.to_string())
-        .collect();
-
-    RawSequent {
-        symbols_lhs,
-        terms_lhs,
-        symbols_rhs,
-        terms_rhs,
-        variable_names,
+                crate::Error::SequentParsing(owned_errors)
+            })
     }
 }
 
-pub fn parse_raw_sequent<'a>(input: &'a str) -> Result<RawSequent<LL>, crate::Error> {
-    sequent_parser()
-        .parse(input)
-        .into_result()
-        .map_err(|borrowed_errors| {
-            let owned_errors: Vec<crate::errors::ParseError> = borrowed_errors
-                .into_iter()
-                .map(crate::errors::ParseError::from)
-                .collect();
+// fn parse_raw<'a>(input: &'a str) -> Result<RawSequent, crate::Error> {
+//     sequent_parser()
+//         .parse(input)
+//         .into_result()
+//         .map_err(|borrowed_errors| {
+//             let owned_errors: Vec<crate::errors::ParseError> = borrowed_errors
+//                 .into_iter()
+//                 .map(crate::errors::ParseError::from)
+//                 .collect();
 
-            crate::Error::SequentParsing(owned_errors)
-        })
-        .map(flatten_sequent)
-}
+//             crate::Error::SequentParsing(owned_errors)
+//         })
+//         .map(RawSequent::from)
+// }
