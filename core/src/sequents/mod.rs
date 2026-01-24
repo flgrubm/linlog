@@ -2,15 +2,15 @@
 // Licensed under the EUPL
 
 pub mod logics;
+#[cfg(feature = "parse")]
 pub mod parsing;
+#[cfg(feature = "serialize")]
 mod serialize;
 pub mod terms;
 
-use logics::{LL, Logic};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use logics::Logic;
 use std::collections::HashMap;
 use std::iter::zip;
-
 use terms::Expression;
 
 #[derive(Clone, Debug, Default)]
@@ -20,15 +20,17 @@ pub struct Sequent<L: Logic> {
     variable_dict: Vec<String>,
 }
 
-impl Serialize for Sequent<LL> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+#[cfg(feature = "serialize")]
+impl serde::Serialize for Sequent<logics::LL> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let proxy = serialize::Sequent::from(self.clone());
         proxy.serialize(serializer)
     }
 }
 
-impl<'a> Deserialize<'a> for Sequent<LL> {
-    fn deserialize<D: Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
+#[cfg(feature = "serialize")]
+impl<'a> serde::Deserialize<'a> for Sequent<logics::LL> {
+    fn deserialize<D: serde::Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
         let proxy = serialize::Sequent::deserialize(deserializer)?;
         Sequent::try_from(proxy).map_err(serde::de::Error::custom)
     }
@@ -288,12 +290,13 @@ impl<L: Logic> Sequent<L> {
     }
 }
 
-impl<'a> From<(parsing::Term<'a>, bool)> for Sequent<LL> {
-    fn from((t, polarity): (parsing::Term<'a>, bool)) -> Sequent<LL> {
+#[cfg(feature = "parse")]
+impl<'a> From<(parsing::Term<'a>, bool)> for Sequent<logics::LL> {
+    fn from((t, polarity): (parsing::Term<'a>, bool)) -> Sequent<logics::LL> {
         fn recursion_helper<'a>(
             t: parsing::Term<'a>,
             polarity: bool,
-            term_arena: &mut Vec<Expression<LL>>,
+            term_arena: &mut Vec<Expression<logics::LL>>,
             variable_dict: &mut Vec<String>,
         ) -> usize {
             use Expression::*;
@@ -357,7 +360,7 @@ impl<'a> From<(parsing::Term<'a>, bool)> for Sequent<LL> {
             }
         }
 
-        let mut term_arena = Vec::<Expression<LL>>::new();
+        let mut term_arena = Vec::<Expression<logics::LL>>::new();
         let mut variable_dict = Vec::<String>::new();
         let index = recursion_helper(t, polarity, &mut term_arena, &mut variable_dict);
 
@@ -369,8 +372,9 @@ impl<'a> From<(parsing::Term<'a>, bool)> for Sequent<LL> {
     }
 }
 
-impl<'a> From<parsing::Sequent<'a>> for Sequent<LL> {
-    fn from(s: parsing::Sequent<'a>) -> Sequent<LL> {
+#[cfg(feature = "parse")]
+impl<'a> From<parsing::Sequent<'a>> for Sequent<logics::LL> {
+    fn from(s: parsing::Sequent<'a>) -> Sequent<logics::LL> {
         let lhs_terms = s.left.into_iter().map(|t| (t, false));
         let rhs_terms = s.right.into_iter().map(|t| (t, true));
         let mut sequent = Sequent::new();
@@ -383,10 +387,11 @@ impl<'a> From<parsing::Sequent<'a>> for Sequent<LL> {
     }
 }
 
-impl std::str::FromStr for Sequent<LL> {
+#[cfg(feature = "parse")]
+impl std::str::FromStr for Sequent<logics::LL> {
     type Err = crate::Error;
 
-    fn from_str(s: &str) -> Result<Sequent<LL>, Self::Err> {
+    fn from_str(s: &str) -> Result<Sequent<logics::LL>, Self::Err> {
         Ok(Sequent::from(parsing::Sequent::try_from(s)?))
     }
 }

@@ -138,6 +138,7 @@
               toolchain
               pkgs.rust-analyzer
               pkgs.gcc
+              pkgs.cargo-hack
             ];
             env = [
               {
