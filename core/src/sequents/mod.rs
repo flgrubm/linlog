@@ -8,7 +8,8 @@ pub mod terms;
 
 use logics::{LL, Logic};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::HashSet;
+use std::collections::HashMap;
+use std::iter::zip;
 
 use terms::{Expression, Terms};
 
@@ -38,134 +39,287 @@ impl<L: Logic> Sequent<L> {
         Self::default()
     }
 
-    pub fn detect_cycles(&self) -> Result<(), crate::Error> {
-        use terms::Expression::*;
-
-        let mut check_next = self.term_ids.clone();
-        let mut connections = vec![HashSet::<usize>::new(); self.term_ids.len()];
-
-        while let Some(n) = check_next.pop() {
-            let mut visit = Vec::<usize>::with_capacity(2);
-            match self
-                .term_arena
-                .get(n)
-                .ok_or(crate::Error::InvalidTermIndex(n, self.term_arena.len()))?
-            {
-                MultOp(_, _, k, l) | AddOp(_, _, k, l) => {
-                    visit.push(*k);
-                    visit.push(*l);
-                }
-                ExpOp(_, _, k) => visit.push(*k),
-                Var(_, _) | MultConst(_, _) | AddConst(_, _) => {}
-            }
-            for k in visit.into_iter() {
-                if connections[k].is_empty() {
-                    check_next.push(k);
-                }
-
-                if k == n {
-                    return Err(crate::Error::CycleDetected(k));
-                } else if k < n {
-                    let (left, right) = connections.split_at_mut(k + 1);
-                    for l in right[n - k].iter() {
-                        left[k].insert(*l);
-                    }
-                } else {
-                    let (left, right) = connections.split_at_mut(n + 1);
-                    for l in left[n].iter() {
-                        right[k - n].insert(*l);
-                    }
-                }
-                if connections[k].contains(&k) {
-                    return Err(crate::Error::CycleDetected(k));
-                }
-            }
-        }
-        Ok(())
-    }
-
     /// Check whether the internal data structure is correct
     pub fn verify_integrity(&self) -> Result<(), crate::Error> {
         let num_vars = self.variable_dict.len();
         let num_terms = self.term_arena.len();
 
-        // check that variable and linked subterm indices are valid for all terms
+        // check that terms only reference
+        //   - other terms with lower IDs than themselves
+        //   - existint variable IDS
         self.term_arena
             .iter()
-            .try_for_each(|e| e.check_bounds(num_vars, num_terms))?;
+            .enumerate()
+            .try_for_each(|(n, e)| e.check_bounds(num_vars, n))?;
 
         // check that all term indices are valid
         self.term_ids.iter().try_for_each(|n| {
             if *n >= num_terms {
-                Err(crate::Error::InvalidTermIndex(*n, num_terms))
+                Err(crate::Error::TermIndexOutOfBounds(*n, num_terms))
             } else {
                 Ok(())
             }
         })?;
 
-        // detect cycles
-        self.detect_cycles()?;
+        Ok(())
+    }
 
+    fn optimize_term_ids(&mut self) -> Result<(), crate::Error> {
+        if self.term_ids.is_empty() {
+            Ok(())
+        } else {
+            self.term_ids.sort();
+            self.term_ids.dedup();
+            self.term_ids.shrink_to_fit();
+            let n = self.term_ids.last().unwrap();
+            let num_terms = self.term_arena.len();
+            if *n >= num_terms {
+                Err(crate::Error::TermIndexOutOfBounds(*n, num_terms))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    fn optimize_term_arena(&mut self) -> Result<(), crate::Error> {
+        use Expression::*;
+
+        // determine cleanup measures and check integrity
+
+        let num_terms = self.term_arena.len();
+
+        for n in self.term_ids.iter() {
+            if *n >= num_terms {
+                return Err(crate::Error::TermIndexOutOfBounds(*n, num_terms));
+            }
+        }
+
+        let mut reachable = vec![false; num_terms];
+        let mut visit_stack = self.term_ids.clone();
+
+        while let Some(n) = visit_stack.pop() {
+            let arena_term_n = &self.term_arena[n];
+            match *arena_term_n {
+                MultOp(_, _, k, l) | AddOp(_, _, k, l) => {
+                    if k >= n {
+                        return Err(crate::Error::SubtermIndexNotDecreasing(k, n));
+                    }
+                    if l >= n {
+                        return Err(crate::Error::SubtermIndexNotDecreasing(l, n));
+                    }
+                    if !reachable[k] {
+                        reachable[k] = true;
+                        visit_stack.push(k);
+                    }
+                    if !reachable[l] {
+                        reachable[l] = true;
+                        visit_stack.push(l);
+                    }
+                }
+                ExpOp(_, _, k) => {
+                    if k >= n {
+                        return Err(crate::Error::SubtermIndexNotDecreasing(k, n));
+                    }
+                    if !reachable[k] {
+                        reachable[k] = true;
+                        visit_stack.push(k);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        #[derive(Copy, Clone, Debug)]
+        enum TermState {
+            Remain,
+            Unreachable,
+            DuplicateOf(usize),
+        }
+
+        use TermState::*;
+
+        let mut hm = HashMap::<Expression<L, usize>, usize>::new();
+        let mut states = Vec::<TermState>::with_capacity(num_terms);
+
+        for (n, (is_reachable, e)) in zip(reachable.into_iter(), self.term_arena.iter()).enumerate()
+        {
+            if is_reachable {
+                if let Some(k) = hm.get(e) {
+                    states.push(DuplicateOf(*k));
+                } else {
+                    hm.insert(*e, n);
+                    states.push(Remain);
+                }
+            } else {
+                states.push(Unreachable);
+            }
+        }
+
+        #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+        enum RedirectState {
+            Remove,
+            MoveTo(usize),
+            RemoveAndPointTo(usize),
+        }
+
+        use RedirectState::*;
+
+        let mut fresh_index = 0usize;
+        let mut redirects = Vec::<RedirectState>::with_capacity(num_terms);
+
+        for s in states.into_iter() {
+            match s {
+                Unreachable => redirects.push(Remove),
+                Remain => {
+                    redirects.push(MoveTo(fresh_index));
+                    fresh_index += 1;
+                }
+                DuplicateOf(n) => {
+                    if let MoveTo(k) = redirects[n] {
+                        redirects.push(RemoveAndPointTo(k));
+                    } else {
+                        unreachable!()
+                    }
+                }
+            }
+        }
+
+        // execute cleanup
+
+        let where_to_find = |k: &usize| {
+            debug_assert!(*k < redirects.len());
+            debug_assert!(redirects[*k] != Remove);
+
+            match redirects[*k] {
+                MoveTo(n) => n,
+                RemoveAndPointTo(n) => {
+                    if let MoveTo(m) = redirects[n] {
+                        m
+                    } else {
+                        unreachable!()
+                    }
+                }
+                _ => {
+                    unreachable!()
+                }
+            }
+        };
+
+        let apply_cleanup_terms = |(state, e): (&RedirectState, &Expression<L, usize>)| {
+            if let MoveTo(_) = state {
+                match *e {
+                    MultOp(marker, b, m, n) => {
+                        let m_new = where_to_find(&m);
+                        let n_new = where_to_find(&n);
+                        Some(MultOp::<L, usize>(marker, b, m_new, n_new))
+                    }
+                    AddOp(marker, b, m, n) => {
+                        let m_new = where_to_find(&m);
+                        let n_new = where_to_find(&n);
+                        Some(AddOp::<L, usize>(marker, b, m_new, n_new))
+                    }
+                    ExpOp(marker, b, m) => {
+                        let m_new = where_to_find(&m);
+                        Some(ExpOp::<L, usize>(marker, b, m_new))
+                    }
+                    e => Some(e),
+                }
+            } else {
+                None
+            }
+        };
+
+        self.term_arena = zip(redirects.iter(), self.term_arena.iter())
+            .filter_map(apply_cleanup_terms)
+            .collect();
+
+        self.term_ids = self.term_ids.iter().map(where_to_find).collect();
+
+        Ok(())
+    }
+
+    fn optimize_variable_dict(&mut self) -> Result<(), crate::Error> {
+        use Expression::*;
+        let num_variables = self.variable_dict.len();
+        let mut var_dict_new = Vec::<String>::with_capacity(num_variables);
+        let mut hm = HashMap::<String, usize>::with_capacity(num_variables);
+
+        for e in self.term_arena.iter_mut() {
+            if let Var(b, n) = *e {
+                let name_ref: &str = self
+                    .variable_dict
+                    .get(n)
+                    .ok_or(crate::Error::InvalidVariableIndex(n, num_variables))?
+                    .as_ref();
+                if let Some(k) = hm.get(name_ref) {
+                    *e = Var(b, *k);
+                } else {
+                    let fresh_variable_id = var_dict_new.len();
+                    let name = name_ref.to_string();
+                    hm.insert(name.clone(), fresh_variable_id);
+                    var_dict_new.push(name);
+                }
+            }
+        }
+        var_dict_new.shrink_to_fit();
+        self.variable_dict = var_dict_new;
         Ok(())
     }
 
     /// Remove unreachable and collapse duplicate items
     /// This is rather inefficient, so use only if necessary
     pub fn optimize(&mut self) -> Result<(), crate::Error> {
-        todo!()
+        self.optimize_term_ids()?;
+        self.optimize_term_arena()?;
+        self.optimize_variable_dict()?;
+        Ok(())
     }
 
-    /// Add more terms to the sequent (without optimizations)
-    /// The caller must know that the variable dict of the sequent matches the variable schema used in the terms
-    ///
-    /// # Safety
-    /// No checks whether term IDs and variable IDs exist
-    pub unsafe fn add_terms_matching_variable_dict_unchecked(&mut self, terms: &[Terms<L, usize>]) {
-        todo!()
+    /// Consume another sequent and add its terms to self
+    pub fn add(&mut self, s: Sequent<L>) {
+        let offset_variables = self.variable_dict.len();
+        let offset_terms = self.term_arena.len();
+
+        self.term_arena.extend(
+            s.term_arena
+                .into_iter()
+                .map(|e| e.offset(offset_variables, offset_terms)),
+        );
+
+        self.term_ids
+            .extend(s.term_ids.into_iter().map(|n| n + offset_terms));
+
+        self.variable_dict.extend(s.variable_dict);
     }
 
-    /// Add more terms to the sequent (without optimizations)
-    /// The caller must know that the variable dict of the sequent matches the variable schema used in the terms
-    pub fn add_terms_matching_variable_dict(
-        &mut self,
-        terms: &[Terms<L, usize>],
-    ) -> Result<(), crate::Error> {
-        todo!()
+    /// Consume terms and add them to the sequent
+    #[inline]
+    pub fn add_terms(&mut self, ts: Terms<L>) {
+        self.add(Sequent::from(ts))
     }
+}
 
-    /// Add more terms to the sequent (without optimizations)
-    ///
-    /// # Safety
-    /// No checks whether term IDs exist
-    pub unsafe fn add_terms_variable_str_unchecked(&mut self, terms: &[Terms<L, &str>]) {
-        todo!()
-    }
+impl<L: Logic> From<Terms<L>> for Sequent<L> {
+    fn from(t: Terms<L>) -> Sequent<L> {
+        use terms::VariableIDAssignmentResult::*;
+        let mut hm = HashMap::<String, usize>::new();
+        let mut term_arena = Vec::<Expression<L, usize>>::with_capacity(t.term_arena.len());
+        let mut variable_dict = Vec::<String>::new();
 
-    /// Add more terms to the sequent (without optimizations)
-    pub fn add_terms_variable_str(&mut self, terms: &[Terms<L, &str>]) {
-        todo!()
-    }
-
-    /// Add more terms to the sequent (without optimizations)
-    /// variable dictionary is appended to the existing one
-    ///
-    /// # Safety
-    /// No checks whether term IDs and variable IDs exist
-    pub unsafe fn add_terms_with_variable_dict_unchecked(
-        &mut self,
-        terms: &[Terms<L, usize>],
-        dict: &[&str],
-    ) {
-        todo!()
-    }
-
-    /// Add more terms to the sequent (without optimizations)
-    /// variable dictionary is appended to the existing one
-    pub fn add_terms_with_variable_dict(
-        &mut self,
-        terms: &[Terms<L, usize>],
-        dict: &[&str],
-    ) -> Result<(), crate::Error> {
-        todo!()
+        for (n, e) in t.term_arena.into_iter().enumerate() {
+            match e.assign_variable_id(&hm) {
+                NotNewID(e) => term_arena.push(e),
+                NewID(e, fresh_id, name) => {
+                    let name_clone = name.clone();
+                    variable_dict.push(name);
+                    hm.insert(name_clone, fresh_id);
+                }
+            }
+        }
+        Sequent {
+            term_arena,
+            term_ids: t.term_ids,
+            variable_dict,
+        }
     }
 }

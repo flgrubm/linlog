@@ -55,8 +55,8 @@ pub enum Error {
     SequentParsing(Vec<ParseError>),
     #[error("Variable name at index {0} does not exist, index needs to be < {1}")]
     InvalidVariableIndex(usize, usize),
-    #[error("Expression at index {0} does not exist, index needs to be < {1}")]
-    InvalidTermIndex(usize, usize),
-    #[error("Cycle detected: subterm {0} visited twice")]
-    CycleDetected(usize),
+    #[error("Term index out of bounds: tried to access index {0} while number of terms is {1}")]
+    TermIndexOutOfBounds(usize, usize),
+    #[error("Term index not decreasing: term at index {0} has subterm at index {1} >= {0}")]
+    SubtermIndexNotDecreasing(usize, usize),
 }
