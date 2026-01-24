@@ -22,6 +22,20 @@ pub struct Terms<L: Logic> {
     pub(super) term_ids: Vec<usize>,
 }
 
+impl<L: Logic, VarType> Expression<L, VarType> {
+    pub fn invert(self) -> Self {
+        use Expression::*;
+        match self {
+            Var(b, n) => Var(!b, n),
+            MultConst(marker, b) => MultConst(marker, !b),
+            AddConst(marker, b) => AddConst(marker, !b),
+            MultOp(marker, b, n, m) => MultOp(marker, !b, n, m),
+            AddOp(marker, b, n, m) => AddOp(marker, !b, n, m),
+            ExpOp(marker, b, n) => ExpOp(marker, !b, n),
+        }
+    }
+}
+
 impl<L: Logic> Expression<L, usize> {
     pub fn offset(self, offset_variables: usize, offset_terms: usize) -> Expression<L, usize> {
         use Expression::*;

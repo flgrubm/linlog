@@ -1,12 +1,11 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use super::logics::LL;
 use chumsky::pratt::*;
 use chumsky::prelude::*;
 
 #[derive(Debug)]
-enum Term<'a> {
+pub(super) enum Term<'a> {
     Var(&'a str),
     Zero,
     One,
@@ -23,9 +22,9 @@ enum Term<'a> {
 }
 
 #[derive(Debug)]
-struct Sequent<'a> {
-    left: Vec<Term<'a>>,
-    right: Vec<Term<'a>>,
+pub(super) struct Sequent<'a> {
+    pub(super) left: Vec<Term<'a>>,
+    pub(super) right: Vec<Term<'a>>,
 }
 
 // struct RawSequent {
@@ -123,12 +122,6 @@ fn sequent_parser<'a>() -> impl Parser<'a, &'a str, Sequent<'a>, extra::Err<Simp
         .then(terms_list) // Parse RHS
         .map(|((left, _), right)| Sequent { left, right })
         .then_ignore(end()) // Ensure the parser consumes the entire input string
-}
-
-impl<'a> From<Sequent<'a>> for super::Sequent<LL> {
-    fn from(s: Sequent<'a>) -> super::Sequent<LL> {
-        todo!()
-    }
 }
 
 impl<'a> TryFrom<&'a str> for Sequent<'a> {
