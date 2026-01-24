@@ -3,13 +3,11 @@
 
 use super::logics::Logic;
 
-use std::collections::HashMap;
-
 pub type Polarity = bool;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Expression<L: Logic, VarType> {
-    Var(bool, VarType),
+pub enum Expression<L: Logic> {
+    Var(bool, usize),
     MultConst(L::Mult, Polarity),
     AddConst(L::Add, Polarity),
     MultOp(L::Mult, Polarity, usize, usize),
@@ -17,12 +15,7 @@ pub enum Expression<L: Logic, VarType> {
     ExpOp(L::Exp, Polarity, usize),
 }
 
-pub struct Terms<L: Logic> {
-    pub(super) term_arena: Vec<Expression<L, String>>,
-    pub(super) term_ids: Vec<usize>,
-}
-
-impl<L: Logic, VarType> Expression<L, VarType> {
+impl<L: Logic> Expression<L> {
     pub fn invert(self) -> Self {
         use Expression::*;
         match self {
@@ -36,8 +29,8 @@ impl<L: Logic, VarType> Expression<L, VarType> {
     }
 }
 
-impl<L: Logic> Expression<L, usize> {
-    pub fn offset(self, offset_variables: usize, offset_terms: usize) -> Expression<L, usize> {
+impl<L: Logic> Expression<L> {
+    pub fn offset(self, offset_variables: usize, offset_terms: usize) -> Expression<L> {
         use Expression::*;
         match self {
             Var(b, n) => Var(b, n + offset_variables),
@@ -70,33 +63,8 @@ impl<L: Logic> Expression<L, usize> {
 }
 
 pub(super) enum VariableIDAssignmentResult<L: Logic> {
-    NotNewID(Expression<L, usize>),
-    NewID(Expression<L, usize>, usize, String),
-}
-
-impl<L: Logic> Expression<L, String> {
-    pub(super) fn assign_variable_id(
-        self,
-        hm: &HashMap<String, usize>,
-    ) -> VariableIDAssignmentResult<L> {
-        use Expression::*;
-        use VariableIDAssignmentResult::*;
-        match self {
-            Var(b, name) => {
-                if let Some(n) = hm.get(&name) {
-                    NotNewID(Var(b, *n))
-                } else {
-                    let fresh_id = hm.len();
-                    NewID(Var(b, fresh_id), fresh_id, name)
-                }
-            }
-            MultConst(marker, b) => NotNewID(MultConst(marker, b)),
-            AddConst(marker, b) => NotNewID(AddConst(marker, b)),
-            MultOp(marker, b, m, n) => NotNewID(MultOp(marker, b, m, n)),
-            AddOp(marker, b, m, n) => NotNewID(AddOp(marker, b, m, n)),
-            ExpOp(marker, b, m) => NotNewID(ExpOp(marker, b, m)),
-        }
-    }
+    NotNewID(Expression<L>),
+    NewID(Expression<L>, usize, String),
 }
 
 #[allow(unused_imports)]
@@ -105,32 +73,28 @@ mod test {
     #[test]
     fn test_check_bounds() {
         assert!(
-            match Expression::<super::super::logics::LL, usize>::MultOp((), true, 10, 0)
-                .check_bounds(5, 5)
+            match Expression::<super::super::logics::LL>::MultOp((), true, 10, 0).check_bounds(5, 5)
             {
                 Ok(_) => false,
                 Err(_) => true,
             }
         );
         assert!(
-            match Expression::<super::super::logics::LL, usize>::MultOp((), true, 0, 10)
-                .check_bounds(5, 5)
+            match Expression::<super::super::logics::LL>::MultOp((), true, 0, 10).check_bounds(5, 5)
             {
                 Ok(_) => false,
                 Err(_) => true,
             }
         );
         assert!(
-            match Expression::<super::super::logics::LL, usize>::MultOp((), true, 5, 0)
-                .check_bounds(5, 5)
+            match Expression::<super::super::logics::LL>::MultOp((), true, 5, 0).check_bounds(5, 5)
             {
                 Ok(_) => false,
                 Err(_) => true,
             }
         );
         assert!(
-            match Expression::<super::super::logics::LL, usize>::MultOp((), true, 0, 5)
-                .check_bounds(5, 5)
+            match Expression::<super::super::logics::LL>::MultOp((), true, 0, 5).check_bounds(5, 5)
             {
                 Ok(_) => false,
                 Err(_) => true,
@@ -138,33 +102,27 @@ mod test {
         );
 
         assert!(
-            match Expression::<super::super::logics::LL, usize>::AddOp((), true, 0, 10)
-                .check_bounds(5, 5)
+            match Expression::<super::super::logics::LL>::AddOp((), true, 0, 10).check_bounds(5, 5)
             {
                 Ok(_) => false,
                 Err(_) => true,
             }
         );
         assert!(
-            match Expression::<super::super::logics::LL, usize>::AddOp((), true, 10, 0)
-                .check_bounds(5, 5)
+            match Expression::<super::super::logics::LL>::AddOp((), true, 10, 0).check_bounds(5, 5)
             {
                 Ok(_) => false,
                 Err(_) => true,
             }
         );
         assert!(
-            match Expression::<super::super::logics::LL, usize>::AddOp((), true, 0, 5)
-                .check_bounds(5, 5)
-            {
+            match Expression::<super::super::logics::LL>::AddOp((), true, 0, 5).check_bounds(5, 5) {
                 Ok(_) => false,
                 Err(_) => true,
             }
         );
         assert!(
-            match Expression::<super::super::logics::LL, usize>::AddOp((), true, 5, 0)
-                .check_bounds(5, 5)
-            {
+            match Expression::<super::super::logics::LL>::AddOp((), true, 5, 0).check_bounds(5, 5) {
                 Ok(_) => false,
                 Err(_) => true,
             }

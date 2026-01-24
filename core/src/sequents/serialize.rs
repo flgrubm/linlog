@@ -35,8 +35,8 @@ pub(super) enum Expression {
     Plus(usize, usize),
 }
 
-impl From<Expr<LL, usize>> for Expression {
-    fn from(e: Expr<LL, usize>) -> Expression {
+impl From<Expr<LL>> for Expression {
+    fn from(e: Expr<LL>) -> Expression {
         use Expr::*;
         use Expression::*;
         match e {
@@ -56,8 +56,8 @@ impl From<Expr<LL, usize>> for Expression {
     }
 }
 
-impl From<Expression> for Expr<LL, usize> {
-    fn from(e: Expression) -> Expr<LL, usize> {
+impl From<Expression> for Expr<LL> {
+    fn from(e: Expression) -> Expr<LL> {
         use Expr::*;
         use Expression::*;
         match e {

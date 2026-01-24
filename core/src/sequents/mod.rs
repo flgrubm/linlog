@@ -11,11 +11,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::iter::zip;
 
-use terms::{Expression, Terms};
+use terms::Expression;
 
 #[derive(Clone, Debug, Default)]
 pub struct Sequent<L: Logic> {
-    term_arena: Vec<Expression<L, usize>>,
+    term_arena: Vec<Expression<L>>,
     term_ids: Vec<usize>,
     variable_dict: Vec<String>,
 }
@@ -133,7 +133,7 @@ impl<L: Logic> Sequent<L> {
 
         use TermState::*;
 
-        let mut hm = HashMap::<Expression<L, usize>, usize>::new();
+        let mut hm = HashMap::<Expression<L>, usize>::new();
         let mut states = Vec::<TermState>::with_capacity(num_terms);
 
         for (n, (is_reachable, e)) in zip(reachable.into_iter(), self.term_arena.iter()).enumerate()
@@ -200,22 +200,22 @@ impl<L: Logic> Sequent<L> {
             }
         };
 
-        let apply_cleanup_terms = |(state, e): (&RedirectState, &Expression<L, usize>)| {
+        let apply_cleanup_terms = |(state, e): (&RedirectState, &Expression<L>)| {
             if let MoveTo(_) = state {
                 match *e {
                     MultOp(marker, b, m, n) => {
                         let m_new = where_to_find(&m);
                         let n_new = where_to_find(&n);
-                        Some(MultOp::<L, usize>(marker, b, m_new, n_new))
+                        Some(MultOp(marker, b, m_new, n_new))
                     }
                     AddOp(marker, b, m, n) => {
                         let m_new = where_to_find(&m);
                         let n_new = where_to_find(&n);
-                        Some(AddOp::<L, usize>(marker, b, m_new, n_new))
+                        Some(AddOp(marker, b, m_new, n_new))
                     }
                     ExpOp(marker, b, m) => {
                         let m_new = where_to_find(&m);
-                        Some(ExpOp::<L, usize>(marker, b, m_new))
+                        Some(ExpOp(marker, b, m_new))
                     }
                     e => Some(e),
                 }
@@ -286,12 +286,6 @@ impl<L: Logic> Sequent<L> {
 
         self.variable_dict.extend(s.variable_dict);
     }
-
-    /// Consume terms and add them to the sequent
-    #[inline]
-    pub fn add_terms(&mut self, ts: Terms<L>) {
-        self.add(Sequent::from(ts))
-    }
 }
 
 impl<'a> From<(parsing::Term<'a>, bool)> for Sequent<LL> {
@@ -299,7 +293,7 @@ impl<'a> From<(parsing::Term<'a>, bool)> for Sequent<LL> {
         fn recursion_helper<'a>(
             t: parsing::Term<'a>,
             polarity: bool,
-            term_arena: &mut Vec<Expression<LL, usize>>,
+            term_arena: &mut Vec<Expression<LL>>,
             variable_dict: &mut Vec<String>,
         ) -> usize {
             use Expression::*;
@@ -363,7 +357,7 @@ impl<'a> From<(parsing::Term<'a>, bool)> for Sequent<LL> {
             }
         }
 
-        let mut term_arena = Vec::<Expression<LL, usize>>::new();
+        let mut term_arena = Vec::<Expression<LL>>::new();
         let mut variable_dict = Vec::<String>::new();
         let index = recursion_helper(t, polarity, &mut term_arena, &mut variable_dict);
 
@@ -394,31 +388,5 @@ impl std::str::FromStr for Sequent<LL> {
 
     fn from_str(s: &str) -> Result<Sequent<LL>, Self::Err> {
         Ok(Sequent::from(parsing::Sequent::try_from(s)?))
-    }
-}
-
-impl<L: Logic> From<Terms<L>> for Sequent<L> {
-    fn from(t: Terms<L>) -> Sequent<L> {
-        use terms::VariableIDAssignmentResult::*;
-        let mut term_arena = Vec::<Expression<L, usize>>::with_capacity(t.term_arena.len());
-        let mut variable_dict = Vec::<String>::new();
-        let mut hm = HashMap::<String, usize>::new();
-
-        for e in t.term_arena.into_iter() {
-            match e.assign_variable_id(&hm) {
-                NotNewID(e) => term_arena.push(e),
-                NewID(e, fresh_id, name) => {
-                    let name_clone = name.clone();
-                    variable_dict.push(name);
-                    hm.insert(name_clone, fresh_id);
-                }
-            }
-        }
-
-        Sequent {
-            term_arena,
-            term_ids: t.term_ids,
-            variable_dict,
-        }
     }
 }
