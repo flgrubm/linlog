@@ -260,6 +260,7 @@ impl<L: Logic> Sequent<L> {
     /// Remove unreachable terms and collapse duplicate items
     /// This is rather inefficient, so use only if necessary
     pub fn optimize(&mut self) -> Result<(), crate::Error> {
+        self.optimize_variable_dict()?;
         self.optimize_term_arena()?;
         self.optimize_term_ids()?;
         self.optimize_variable_dict()?;

@@ -198,9 +198,7 @@ impl<'a> From<(Term<'a>, bool)> for Seq<LL> {
                 };
 
                 let index = term_arena.len();
-                if !polarity {
-                    let e = e.dualize();
-                }
+                let e = if polarity { e } else { e.dualize() };
                 term_arena.push(e);
                 index
             }
