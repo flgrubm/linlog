@@ -1,18 +1,24 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-// Source - https://stackoverflow.com/a
-// Posted by M. Hamza Rajput, modified by community. See post 'Timeline' for change history
-// Retrieved 2026-01-22, License - CC BY-SA 4.0
-
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
 mod errors;
+pub mod linear;
+pub mod logics;
+#[cfg(feature = "parse")]
+pub mod parse;
 pub mod sequents;
-pub(crate) mod utils;
+#[cfg(feature = "serialize")]
+mod serialize;
+
+#[cfg(feature = "parse")]
+pub use errors::ParseError;
 
 pub use errors::Error;
+
+pub(crate) type IndexT = usize;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
@@ -23,7 +29,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
+    fn two_plus_two_is_four() {
         let result = add(2, 2);
         assert_eq!(result, 4);
     }

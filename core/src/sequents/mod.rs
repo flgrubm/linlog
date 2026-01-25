@@ -1,45 +1,34 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
+pub mod expressions;
 pub mod fmt;
-pub mod logics;
-#[cfg(feature = "parse")]
-pub mod parsing;
-#[cfg(feature = "serialize")]
-mod serialize;
-pub mod terms;
 
-use logics::Logic;
+use super::logics::Logic;
+use expressions::{Expression, LLExpression};
 use std::collections::HashMap;
 use std::iter::zip;
-use terms::Expression;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Sequent<L: Logic> {
-    term_arena: Vec<Expression<L>>,
-    term_ids: Vec<usize>,
-    variable_dict: Vec<String>,
+    pub(crate) term_arena: Vec<L::Expression>,
+    pub(crate) term_ids: Vec<usize>,
+    pub(crate) variable_dict: Vec<String>,
 }
 
-#[cfg(feature = "serialize")]
-impl serde::Serialize for Sequent<logics::LL> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let proxy = serialize::Sequent::from(self.clone());
-        proxy.serialize(serializer)
-    }
-}
-
-#[cfg(feature = "serialize")]
-impl<'a> serde::Deserialize<'a> for Sequent<logics::LL> {
-    fn deserialize<D: serde::Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
-        let proxy = serialize::Sequent::deserialize(deserializer)?;
-        Sequent::try_from(proxy).map_err(serde::de::Error::custom)
+impl<L: Logic> std::default::Default for Sequent<L> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl<L: Logic> Sequent<L> {
-    pub fn new() -> Self {
-        Self::default()
+    pub const fn new() -> Self {
+        Self {
+            term_arena: vec![],
+            term_ids: vec![],
+            variable_dict: vec![],
+        }
     }
 
     /// Check whether the internal data structure is correct
@@ -80,7 +69,7 @@ impl<L: Logic> Sequent<L> {
     }
 
     fn optimize_term_arena(&mut self) -> Result<(), crate::Error> {
-        use Expression::*;
+        use LLExpression::*;
 
         // determine cleanup measures and check integrity
 
@@ -98,8 +87,8 @@ impl<L: Logic> Sequent<L> {
         while let Some(n) = visit_stack.pop() {
             if !reachable[n] {
                 reachable[n] = true;
-                match self.term_arena[n] {
-                    MultOp(_, _, k, l) | AddOp(_, _, k, l) => {
+                match self.term_arena[n].into() {
+                    Tensor(k, l) | Par(k, l) | With(k, l) | Plus(k, l) => {
                         if k >= n {
                             return Err(crate::Error::SubtermIndexNotDecreasing(k, n));
                         }
@@ -113,7 +102,7 @@ impl<L: Logic> Sequent<L> {
                             visit_stack.push(l);
                         }
                     }
-                    ExpOp(_, _, k) => {
+                    Bang(k) | Quest(k) => {
                         if k >= n {
                             return Err(crate::Error::SubtermIndexNotDecreasing(k, n));
                         }
@@ -136,7 +125,7 @@ impl<L: Logic> Sequent<L> {
 
         use TermState::*;
 
-        let mut hm = HashMap::<Expression<L>, usize>::new();
+        let mut hm = HashMap::<L::Expression, usize>::new();
         let mut states = Vec::<TermState>::with_capacity(num_terms);
 
         for (n, (is_reachable, e)) in zip(reachable.into_iter(), self.term_arena.iter()).enumerate()
@@ -203,25 +192,20 @@ impl<L: Logic> Sequent<L> {
             }
         };
 
-        let apply_cleanup_terms = |(state, e): (&RedirectState, &Expression<L>)| {
+        let apply_cleanup_terms = |(state, e): (&RedirectState, &L::Expression)| {
             if let MoveTo(_) = state {
-                match *e {
-                    MultOp(marker, b, m, n) => {
-                        let m_new = where_to_find(&m);
-                        let n_new = where_to_find(&n);
-                        Some(MultOp(marker, b, m_new, n_new))
-                    }
-                    AddOp(marker, b, m, n) => {
-                        let m_new = where_to_find(&m);
-                        let n_new = where_to_find(&n);
-                        Some(AddOp(marker, b, m_new, n_new))
-                    }
-                    ExpOp(marker, b, m) => {
-                        let m_new = where_to_find(&m);
-                        Some(ExpOp(marker, b, m_new))
-                    }
-                    e => Some(e),
-                }
+                Some(
+                    L::Expression::try_from(match (*e).into() {
+                        Tensor(m, n) => Tensor(where_to_find(&m), where_to_find(&n)),
+                        Par(m, n) => Par(where_to_find(&m), where_to_find(&n)),
+                        With(m, n) => With(where_to_find(&m), where_to_find(&n)),
+                        Plus(m, n) => Plus(where_to_find(&m), where_to_find(&n)),
+                        Bang(m) => Bang(where_to_find(&m)),
+                        Quest(m) => Quest(where_to_find(&m)),
+                        e => e,
+                    })
+                    .unwrap(),
+                )
             } else {
                 None
             }
@@ -237,26 +221,35 @@ impl<L: Logic> Sequent<L> {
     }
 
     fn optimize_variable_dict(&mut self) -> Result<(), crate::Error> {
-        use Expression::*;
+        use LLExpression::*;
         let num_variables = self.variable_dict.len();
         let mut var_dict_new = Vec::<String>::with_capacity(num_variables);
         let mut hm = HashMap::<String, usize>::with_capacity(num_variables);
 
         for e in self.term_arena.iter_mut() {
-            if let Var(b, n) = *e {
-                let name_ref: &str = self
-                    .variable_dict
-                    .get(n)
-                    .ok_or(crate::Error::InvalidVariableIndex(n, num_variables))?
-                    .as_ref();
-                if let Some(k) = hm.get(name_ref) {
-                    *e = Var(b, *k);
-                } else {
-                    let fresh_variable_id = var_dict_new.len();
-                    let name = name_ref.to_string();
-                    hm.insert(name.clone(), fresh_variable_id);
-                    var_dict_new.push(name);
+            let e_in_ll = (*e).into();
+            match e_in_ll {
+                Var(n) | DualVar(n) => {
+                    let name_ref: &str = self
+                        .variable_dict
+                        .get(n)
+                        .ok_or(crate::Error::InvalidVariableIndex(n, num_variables))?
+                        .as_ref();
+                    if let Some(k) = hm.get(name_ref) {
+                        let new_e = match e_in_ll {
+                            Var(_) => Var(*k),
+                            DualVar(_) => DualVar(*k),
+                            _ => unreachable!(),
+                        };
+                        *e = L::Expression::try_from(new_e).unwrap();
+                    } else {
+                        let fresh_variable_id = var_dict_new.len();
+                        let name = name_ref.to_string();
+                        hm.insert(name.clone(), fresh_variable_id);
+                        var_dict_new.push(name);
+                    }
                 }
+                _ => {}
             }
         }
         var_dict_new.shrink_to_fit();
@@ -288,111 +281,5 @@ impl<L: Logic> Sequent<L> {
             .extend(s.term_ids.into_iter().map(|n| n + offset_terms));
 
         self.variable_dict.extend(s.variable_dict);
-    }
-}
-
-#[cfg(feature = "parse")]
-impl<'a> From<(parsing::Term<'a>, bool)> for Sequent<logics::LL> {
-    fn from((t, polarity): (parsing::Term<'a>, bool)) -> Sequent<logics::LL> {
-        fn recursion_helper<'a>(
-            t: parsing::Term<'a>,
-            polarity: bool,
-            term_arena: &mut Vec<Expression<logics::LL>>,
-            variable_dict: &mut Vec<String>,
-        ) -> usize {
-            use Expression::*;
-            use parsing::Term as T;
-            if let T::Dual(nt) = t {
-                recursion_helper(*nt, !polarity, term_arena, variable_dict)
-            } else {
-                let e = match t {
-                    T::Var(s) => {
-                        let var_index = variable_dict.len();
-                        variable_dict.push(s.to_string());
-                        Var(true, var_index)
-                    }
-                    T::One => MultConst((), true),
-                    T::Bot => MultConst((), false),
-                    T::Top => AddConst((), true),
-                    T::Zero => AddConst((), false),
-                    T::Bang(nt) => {
-                        let n = recursion_helper(*nt, polarity, term_arena, variable_dict);
-                        ExpOp((), true, n)
-                    }
-                    T::Quest(nt) => {
-                        let n = recursion_helper(*nt, polarity, term_arena, variable_dict);
-                        ExpOp((), false, n)
-                    }
-                    T::Tensor(nt, mt) => {
-                        let n = recursion_helper(*nt, polarity, term_arena, variable_dict);
-                        let m = recursion_helper(*mt, polarity, term_arena, variable_dict);
-                        MultOp((), true, n, m)
-                    }
-                    T::Par(nt, mt) => {
-                        let n = recursion_helper(*nt, polarity, term_arena, variable_dict);
-                        let m = recursion_helper(*mt, polarity, term_arena, variable_dict);
-                        MultOp((), false, n, m)
-                    }
-                    T::With(nt, mt) => {
-                        let n = recursion_helper(*nt, polarity, term_arena, variable_dict);
-                        let m = recursion_helper(*mt, polarity, term_arena, variable_dict);
-                        AddOp((), true, n, m)
-                    }
-                    T::Plus(nt, mt) => {
-                        let n = recursion_helper(*nt, polarity, term_arena, variable_dict);
-                        let m = recursion_helper(*mt, polarity, term_arena, variable_dict);
-                        AddOp((), false, n, m)
-                    }
-                    T::Lollipop(nt, mt) => {
-                        // Lollipop is a Par where the first element has its polarity inverted
-                        let n = recursion_helper(*nt, !polarity, term_arena, variable_dict);
-                        let m = recursion_helper(*mt, polarity, term_arena, variable_dict);
-                        MultOp((), false, n, m)
-                    }
-                    T::Dual(nt) => unreachable!(),
-                };
-
-                let index = term_arena.len();
-                if !polarity {
-                    let e = e.invert();
-                }
-                term_arena.push(e);
-                index
-            }
-        }
-
-        let mut term_arena = Vec::<Expression<logics::LL>>::new();
-        let mut variable_dict = Vec::<String>::new();
-        let index = recursion_helper(t, polarity, &mut term_arena, &mut variable_dict);
-
-        Sequent {
-            term_arena,
-            term_ids: vec![index],
-            variable_dict,
-        }
-    }
-}
-
-#[cfg(feature = "parse")]
-impl<'a> From<parsing::Sequent<'a>> for Sequent<logics::LL> {
-    fn from(s: parsing::Sequent<'a>) -> Sequent<logics::LL> {
-        let lhs_terms = s.left.into_iter().map(|t| (t, false));
-        let rhs_terms = s.right.into_iter().map(|t| (t, true));
-        let mut sequent = Sequent::new();
-        lhs_terms
-            .chain(rhs_terms)
-            .map(Sequent::from)
-            .for_each(|s| sequent.add(s));
-        sequent.optimize().unwrap();
-        sequent
-    }
-}
-
-#[cfg(feature = "parse")]
-impl std::str::FromStr for Sequent<logics::LL> {
-    type Err = crate::Error;
-
-    fn from_str(s: &str) -> Result<Sequent<logics::LL>, Self::Err> {
-        Ok(Sequent::from(parsing::Sequent::try_from(s)?))
     }
 }

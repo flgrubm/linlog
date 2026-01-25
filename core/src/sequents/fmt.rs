@@ -2,8 +2,8 @@
 // Licensed under the EUPL
 
 use super::Sequent;
-use super::logics::Logic;
-use super::terms::Expression;
+use super::expressions::LLExpression;
+use crate::logics::Logic;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 impl<L: Logic> Sequent<L> {
@@ -12,22 +12,22 @@ impl<L: Logic> Sequent<L> {
         index: usize,
         f: &mut Formatter<'_>,
     ) -> FmtResult {
-        use Expression::*;
+        use LLExpression::*;
         debug_assert!(index < self.term_arena.len());
-        match self.term_arena[index] {
-            Var(true, var_index) => {
+        match (self.term_arena[index]).into() {
+            Var(var_index) => {
                 debug_assert!(var_index < self.variable_dict.len());
                 write!(f, "{}", &self.variable_dict[var_index])
             }
-            Var(false, var_index) => {
+            DualVar(var_index) => {
                 debug_assert!(var_index < self.variable_dict.len());
                 write!(f, "~{}", &self.variable_dict[var_index])
             }
-            MultConst(_, true) => write!(f, "1"),
-            MultConst(_, false) => write!(f, "⊥"),
-            AddConst(_, true) => write!(f, "⊤"),
-            AddConst(_, false) => write!(f, "0"),
-            MultOp(_, true, m, n) => {
+            One => write!(f, "1"),
+            Bot => write!(f, "⊥"),
+            Top => write!(f, "⊤"),
+            Zero => write!(f, "0"),
+            Tensor(m, n) => {
                 debug_assert!(m < index);
                 debug_assert!(n < index);
                 if NEEDS_BRACKETS {
@@ -41,7 +41,7 @@ impl<L: Logic> Sequent<L> {
                 }
                 Ok(())
             }
-            MultOp(_, false, m, n) => {
+            Par(m, n) => {
                 debug_assert!(m < index);
                 debug_assert!(n < index);
                 if NEEDS_BRACKETS {
@@ -55,7 +55,7 @@ impl<L: Logic> Sequent<L> {
                 }
                 Ok(())
             }
-            AddOp(_, true, m, n) => {
+            With(m, n) => {
                 debug_assert!(m < index);
                 debug_assert!(n < index);
                 if NEEDS_BRACKETS {
@@ -69,7 +69,7 @@ impl<L: Logic> Sequent<L> {
                 }
                 Ok(())
             }
-            AddOp(_, false, m, n) => {
+            Plus(m, n) => {
                 debug_assert!(m < index);
                 debug_assert!(n < index);
                 if NEEDS_BRACKETS {
@@ -83,12 +83,12 @@ impl<L: Logic> Sequent<L> {
                 }
                 Ok(())
             }
-            ExpOp(_, true, m) => {
+            Bang(m) => {
                 debug_assert!(m < index);
                 write!(f, "!")?;
                 self.display_term::<true>(m, f)
             }
-            ExpOp(_, false, m) => {
+            Quest(m) => {
                 debug_assert!(m < index);
                 write!(f, "?")?;
                 self.display_term::<true>(m, f)

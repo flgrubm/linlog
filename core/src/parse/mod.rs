@@ -1,6 +1,9 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
+use crate::logics::{LL, Logic};
+use crate::sequents::Sequent as Seq;
+use crate::sequents::expressions::{Expression, LLExpression};
 use chumsky::pratt::*;
 use chumsky::prelude::*;
 
@@ -26,14 +29,6 @@ pub(super) struct Sequent<'a> {
     pub(super) left: Vec<Term<'a>>,
     pub(super) right: Vec<Term<'a>>,
 }
-
-// struct RawSequent {
-//     lhs_symbols: Box<[Symbol<LL, Mode::Rich>]>,
-//     lhs_terms: Box<[usize]>,
-//     rhs_symbols: Box<[Symbol<LL, Mode::Rich>]>,
-//     rhs_terms: Box<[usize]>,
-//     variable_names: Box<[String]>,
-// }
 
 fn constant_parser<'a>() -> impl Parser<'a, &'a str, Term<'a>, extra::Err<Simple<'a, char>>> + Clone
 {
@@ -142,17 +137,105 @@ impl<'a> TryFrom<&'a str> for Sequent<'a> {
     }
 }
 
-// fn parse_raw<'a>(input: &'a str) -> Result<RawSequent, crate::Error> {
-//     sequent_parser()
-//         .parse(input)
-//         .into_result()
-//         .map_err(|borrowed_errors| {
-//             let owned_errors: Vec<crate::errors::ParseError> = borrowed_errors
-//                 .into_iter()
-//                 .map(crate::errors::ParseError::from)
-//                 .collect();
+impl<'a> From<(Term<'a>, bool)> for Seq<LL> {
+    fn from((t, polarity): (Term<'a>, bool)) -> Self {
+        fn recursion_helper<'a>(
+            t: Term<'a>,
+            polarity: bool,
+            term_arena: &mut Vec<<LL as Logic>::Expression>,
+            variable_dict: &mut Vec<String>,
+        ) -> usize {
+            use LLExpression as E;
+            use Term::*;
+            if let Dual(nt) = t {
+                recursion_helper(*nt, !polarity, term_arena, variable_dict)
+            } else {
+                let e = match t {
+                    Var(s) => {
+                        let var_index = variable_dict.len();
+                        variable_dict.push(s.to_string());
+                        E::Var(var_index)
+                    }
+                    One => E::One,
+                    Bot => E::Bot,
+                    Top => E::Top,
+                    Zero => E::Zero,
+                    Bang(nt) => {
+                        let n = recursion_helper(*nt, polarity, term_arena, variable_dict);
+                        E::Bang(n)
+                    }
+                    Quest(nt) => {
+                        let n = recursion_helper(*nt, polarity, term_arena, variable_dict);
+                        E::Quest(n)
+                    }
+                    Tensor(nt, mt) => {
+                        let n = recursion_helper(*nt, polarity, term_arena, variable_dict);
+                        let m = recursion_helper(*mt, polarity, term_arena, variable_dict);
+                        E::Tensor(n, m)
+                    }
+                    Par(nt, mt) => {
+                        let n = recursion_helper(*nt, polarity, term_arena, variable_dict);
+                        let m = recursion_helper(*mt, polarity, term_arena, variable_dict);
+                        E::Par(n, m)
+                    }
+                    With(nt, mt) => {
+                        let n = recursion_helper(*nt, polarity, term_arena, variable_dict);
+                        let m = recursion_helper(*mt, polarity, term_arena, variable_dict);
+                        E::With(n, m)
+                    }
+                    Plus(nt, mt) => {
+                        let n = recursion_helper(*nt, polarity, term_arena, variable_dict);
+                        let m = recursion_helper(*mt, polarity, term_arena, variable_dict);
+                        E::Plus(n, m)
+                    }
+                    Lollipop(nt, mt) => {
+                        // Lollipop is a Par where the first element has its polarity inverted
+                        let n = recursion_helper(*nt, !polarity, term_arena, variable_dict);
+                        let m = recursion_helper(*mt, polarity, term_arena, variable_dict);
+                        E::Par(n, m)
+                    }
+                    Dual(nt) => unreachable!(),
+                };
 
-//             crate::Error::SequentParsing(owned_errors)
-//         })
-//         .map(RawSequent::from)
-// }
+                let index = term_arena.len();
+                if !polarity {
+                    let e = e.dualize();
+                }
+                term_arena.push(e);
+                index
+            }
+        }
+
+        let mut term_arena = Vec::<<LL as Logic>::Expression>::new();
+        let mut variable_dict = Vec::<String>::new();
+        let index = recursion_helper(t, polarity, &mut term_arena, &mut variable_dict);
+
+        Self {
+            term_arena,
+            term_ids: vec![index],
+            variable_dict,
+        }
+    }
+}
+
+impl<'a> From<Sequent<'a>> for Seq<LL> {
+    fn from(s: Sequent<'a>) -> Self {
+        let lhs_terms = s.left.into_iter().map(|t| (t, false));
+        let rhs_terms = s.right.into_iter().map(|t| (t, true));
+        let mut sequent = Seq::new();
+        lhs_terms
+            .chain(rhs_terms)
+            .map(Seq::from)
+            .for_each(|s| sequent.add(s));
+        sequent.optimize().unwrap();
+        sequent
+    }
+}
+
+impl std::str::FromStr for Seq<LL> {
+    type Err = crate::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Seq::from(Sequent::try_from(s)?))
+    }
+}
