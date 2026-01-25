@@ -1,0 +1,117 @@
+// linlog © Fabian Lukas Grubmüller 2026
+// Licensed under the EUPL
+
+use super::Sequent;
+use super::logics::Logic;
+use super::terms::Expression;
+use std::fmt::{Display, Formatter, Result as FmtResult};
+
+impl<L: Logic> Sequent<L> {
+    fn display_term<const NEEDS_BRACKETS: bool>(
+        &self,
+        index: usize,
+        f: &mut Formatter<'_>,
+    ) -> FmtResult {
+        use Expression::*;
+        debug_assert!(index < self.term_arena.len());
+        match self.term_arena[index] {
+            Var(true, var_index) => {
+                debug_assert!(var_index < self.variable_dict.len());
+                write!(f, "{}", &self.variable_dict[var_index])
+            }
+            Var(false, var_index) => {
+                debug_assert!(var_index < self.variable_dict.len());
+                write!(f, "~{}", &self.variable_dict[var_index])
+            }
+            MultConst(_, true) => write!(f, "1"),
+            MultConst(_, false) => write!(f, "⊥"),
+            AddConst(_, true) => write!(f, "⊤"),
+            AddConst(_, false) => write!(f, "0"),
+            MultOp(_, true, m, n) => {
+                debug_assert!(m < index);
+                debug_assert!(n < index);
+                if NEEDS_BRACKETS {
+                    write!(f, "(")?
+                }
+                self.display_term::<true>(m, f)?;
+                write!(f, " ⊗ ")?;
+                self.display_term::<true>(n, f)?;
+                if NEEDS_BRACKETS {
+                    write!(f, ")")?
+                }
+                Ok(())
+            }
+            MultOp(_, false, m, n) => {
+                debug_assert!(m < index);
+                debug_assert!(n < index);
+                if NEEDS_BRACKETS {
+                    write!(f, "(")?
+                }
+                self.display_term::<true>(m, f)?;
+                write!(f, " ⅋ ")?;
+                self.display_term::<true>(n, f)?;
+                if NEEDS_BRACKETS {
+                    write!(f, ")")?
+                }
+                Ok(())
+            }
+            AddOp(_, true, m, n) => {
+                debug_assert!(m < index);
+                debug_assert!(n < index);
+                if NEEDS_BRACKETS {
+                    write!(f, "(")?
+                }
+                self.display_term::<true>(m, f)?;
+                write!(f, " & ")?;
+                self.display_term::<true>(n, f)?;
+                if NEEDS_BRACKETS {
+                    write!(f, ")")?
+                }
+                Ok(())
+            }
+            AddOp(_, false, m, n) => {
+                debug_assert!(m < index);
+                debug_assert!(n < index);
+                if NEEDS_BRACKETS {
+                    write!(f, "(")?
+                }
+                self.display_term::<true>(m, f)?;
+                write!(f, " ⊕ ")?;
+                self.display_term::<true>(n, f)?;
+                if NEEDS_BRACKETS {
+                    write!(f, ")")?
+                }
+                Ok(())
+            }
+            ExpOp(_, true, m) => {
+                debug_assert!(m < index);
+                write!(f, "!")?;
+                self.display_term::<true>(m, f)
+            }
+            ExpOp(_, false, m) => {
+                debug_assert!(m < index);
+                write!(f, "?")?;
+                self.display_term::<true>(m, f)
+            }
+        }
+    }
+}
+
+impl<L: Logic> Display for Sequent<L> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "⊢")?;
+
+        let mut it = self.term_ids.iter();
+
+        if let Some(n) = it.next() {
+            write!(f, " ")?;
+            self.display_term::<false>(*n, f)?;
+        }
+
+        for n in it {
+            write!(f, ", ")?;
+            self.display_term::<false>(*n, f)?;
+        }
+        Ok(())
+    }
+}
