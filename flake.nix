@@ -139,6 +139,7 @@
               pkgs.rust-analyzer
               pkgs.gcc
               pkgs.cargo-hack
+              pkgs.cargo-deny
             ];
             env = [
               {

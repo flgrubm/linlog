@@ -2,6 +2,7 @@
 name = "linlog"
 version = "0.1.0"
 edition = "2024"
+license = "EUPL-1.2"
 
 [dependencies]
 chumsky = { version = "0.12.0", features = ["memoization", "pratt"], optional = true }
