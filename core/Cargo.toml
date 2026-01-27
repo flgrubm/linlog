@@ -1,5 +1,6 @@
 [package]
 name = "linlog"
+description = "A linear logic suite for all your needs."
 version = "0.1.0"
 edition = "2024"
 license = "EUPL-1.2"
