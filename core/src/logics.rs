@@ -3,7 +3,7 @@
 
 use super::sequents::expressions::{Expression, LLExpression, MLLExpression};
 
-pub trait Logic {
+pub trait Logic: std::fmt::Debug {
     type Expression: Expression;
 }
 
