@@ -107,7 +107,6 @@ impl<L: Logic> Sequent<L> {
                             return Err(crate::Error::SubtermIndexNotDecreasing(k, n));
                         }
                         if !reachable[k] {
-                            reachable[k] = true;
                             visit_stack.push(k);
                         }
                     }
