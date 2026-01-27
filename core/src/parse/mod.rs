@@ -60,43 +60,45 @@ fn term_parser<'a>() -> impl Parser<'a, &'a str, Term<'a>, extra::Err<Simple<'a,
         // postfix '^' > prefix '~', '!', '?' > Tensor > Par > With > Sum > Lollipop
         atom.pratt((
             // Unaries
-            postfix(7, just('^'), |lhs, _, _| Term::Dual(Box::new(lhs))),
-            prefix(6, just('~'), |_, rhs, _| Term::Dual(Box::new(rhs))),
-            prefix(6, just('!'), |_, rhs, _| Term::Bang(Box::new(rhs))),
-            prefix(6, just('?'), |_, rhs, _| Term::Quest(Box::new(rhs))),
+            postfix(7, just('^').padded(), |lhs, _, _| Term::Dual(Box::new(lhs))),
+            prefix(6, just('~').padded(), |_, rhs, _| Term::Dual(Box::new(rhs))),
+            prefix(6, just('!').padded(), |_, rhs, _| Term::Bang(Box::new(rhs))),
+            prefix(6, just('?').padded(), |_, rhs, _| {
+                Term::Quest(Box::new(rhs))
+            }),
             // Tensor
-            infix(left(5), just('*'), |l, _, r, _| {
+            infix(left(5), just('*').padded(), |l, _, r, _| {
                 Term::Tensor(Box::new(l), Box::new(r))
             }),
-            infix(left(5), just('⊗'), |l, _, r, _| {
+            infix(left(5), just('⊗').padded(), |l, _, r, _| {
                 Term::Tensor(Box::new(l), Box::new(r))
             }),
             // Par
-            infix(left(4), text::keyword("par"), |l, _, r, _| {
+            infix(left(4), text::keyword("par").padded(), |l, _, r, _| {
                 Term::Par(Box::new(l), Box::new(r))
             }),
-            infix(left(4), just('|'), |l, _, r, _| {
+            infix(left(4), just('|').padded(), |l, _, r, _| {
                 Term::Par(Box::new(l), Box::new(r))
             }),
-            infix(left(4), just('⅋'), |l, _, r, _| {
+            infix(left(4), just('⅋').padded(), |l, _, r, _| {
                 Term::Par(Box::new(l), Box::new(r))
             }),
             // With
-            infix(left(3), just('&'), |l, _, r, _| {
+            infix(left(3), just('&').padded(), |l, _, r, _| {
                 Term::With(Box::new(l), Box::new(r))
             }),
             // Plus
-            infix(left(2), just('+'), |l, _, r, _| {
+            infix(left(2), just('+').padded(), |l, _, r, _| {
                 Term::Plus(Box::new(l), Box::new(r))
             }),
-            infix(left(2), just('⊕'), |l, _, r, _| {
+            infix(left(2), just('⊕').padded(), |l, _, r, _| {
                 Term::Plus(Box::new(l), Box::new(r))
             }),
             // Lollipop
-            infix(right(1), just("-o"), |l, _, r, _| {
+            infix(right(1), just("-o").padded(), |l, _, r, _| {
                 Term::Lollipop(Box::new(l), Box::new(r))
             }),
-            infix(right(0), just('⊸'), |l, _, r, _| {
+            infix(right(0), just('⊸').padded(), |l, _, r, _| {
                 Term::Lollipop(Box::new(l), Box::new(r))
             }),
         ))
