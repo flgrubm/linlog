@@ -5,6 +5,7 @@
 #![allow(unused_variables)]
 
 mod errors;
+pub mod index;
 pub mod linear;
 pub mod logics;
 #[cfg(feature = "parse")]
