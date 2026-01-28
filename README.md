@@ -22,7 +22,10 @@ Planned features:
     - plain Unicode
     - Rocq/Lean/Agda proof
     - interactive web-view
-- deeply inspired by [Click and Collect](https://www.click-and-collect.linear-logic.org), but more features planned
+- Further into the future:
+    - Intuitionistic linear logic
+    - Affine linear logic
+- inspired by [Click and Collect](https://www.click-and-collect.linear-logic.org), but more features planned
 
 ## Architecture
 
