@@ -3,25 +3,26 @@
 
 use super::Sequent;
 use super::expressions::LLExpression;
+use crate::index::Index;
 use crate::logics::Logic;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-impl<L: Logic> Sequent<L> {
+impl<I: Index, L: Logic<I>> Sequent<I, L> {
     fn display_term<const NEEDS_BRACKETS: bool>(
         &self,
-        index: usize,
+        index: I,
         f: &mut Formatter<'_>,
     ) -> FmtResult {
         use LLExpression::*;
-        debug_assert!(index < self.term_arena.len());
-        match (self.term_arena[index]).into() {
+        debug_assert!(index < Index::from_usize(self.term_arena.len()));
+        match (self.term_arena[index.as_usize()]).into() {
             Var(var_index) => {
-                debug_assert!(var_index < self.variable_dict.len());
-                write!(f, "{}", &self.variable_dict[var_index])
+                debug_assert!(var_index < Index::from_usize(self.variable_dict.len()));
+                write!(f, "{}", &self.variable_dict[var_index.as_usize()])
             }
             DualVar(var_index) => {
-                debug_assert!(var_index < self.variable_dict.len());
-                write!(f, "~{}", &self.variable_dict[var_index])
+                debug_assert!(var_index < Index::from_usize(self.variable_dict.len()));
+                write!(f, "~{}", &self.variable_dict[var_index.as_usize()])
             }
             One => write!(f, "1"),
             Bot => write!(f, "⊥"),
@@ -97,7 +98,7 @@ impl<L: Logic> Sequent<L> {
     }
 }
 
-impl<L: Logic> Display for Sequent<L> {
+impl<I: Index, L: Logic<I>> Display for Sequent<I, L> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "⊢")?;
 

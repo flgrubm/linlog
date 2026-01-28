@@ -5,6 +5,7 @@
 #![allow(unused_variables)]
 
 mod errors;
+pub mod index;
 pub mod linear;
 pub mod logics;
 #[cfg(feature = "parse")]
@@ -17,8 +18,6 @@ mod serialize;
 pub use errors::ParseError;
 
 pub use errors::Error;
-
-pub(crate) type IndexT = usize;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right

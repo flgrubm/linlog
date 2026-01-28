@@ -5,24 +5,25 @@ pub mod expressions;
 pub mod fmt;
 
 use super::logics::Logic;
+use crate::index::Index;
 use expressions::{Expression, LLExpression};
 use std::collections::HashMap;
 use std::iter::zip;
 
 #[derive(Clone, Debug)]
-pub struct Sequent<L: Logic> {
+pub struct Sequent<I: Index, L: Logic<I>> {
     pub(crate) term_arena: Vec<L::Expression>,
-    pub(crate) term_ids: Vec<usize>,
+    pub(crate) term_ids: Vec<I>,
     pub(crate) variable_dict: Vec<String>,
 }
 
-impl<L: Logic> std::default::Default for Sequent<L> {
+impl<I: Index, L: Logic<I>> std::default::Default for Sequent<I, L> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<L: Logic> Sequent<L> {
+impl<I: Index, L: Logic<I>> Sequent<I, L> {
     pub const fn new() -> Self {
         Self {
             term_arena: vec![],
@@ -33,21 +34,24 @@ impl<L: Logic> Sequent<L> {
 
     /// Check whether the internal data structure is correct
     pub fn verify_integrity(&self) -> Result<(), crate::Error> {
-        let num_vars = self.variable_dict.len();
-        let num_terms = self.term_arena.len();
+        let num_vars = Index::from_usize(self.variable_dict.len());
+        let num_terms = Index::from_usize(self.term_arena.len());
 
         // check that terms only reference
         //   - other terms with lower IDs than themselves
-        //   - existint variable IDS
+        //   - existing variable IDS
         self.term_arena
             .iter()
             .enumerate()
-            .try_for_each(|(n, e)| e.check_bounds(num_vars, n))?;
+            .try_for_each(|(n, e)| e.check_bounds(num_vars, Index::from_usize(n)))?;
 
         // check that all term indices are valid
         self.term_ids.iter().try_for_each(|n| {
             if *n >= num_terms {
-                Err(crate::Error::TermIndexOutOfBounds(*n, num_terms))
+                Err(crate::Error::TermIndexOutOfBounds(
+                    (*n).as_usize(),
+                    num_terms.as_usize(),
+                ))
             } else {
                 Ok(())
             }
@@ -60,9 +64,12 @@ impl<L: Logic> Sequent<L> {
         self.term_ids.sort();
         self.term_ids.shrink_to_fit();
         let n = self.term_ids.last().unwrap();
-        let num_terms = self.term_arena.len();
+        let num_terms = Index::from_usize(self.term_arena.len());
         if *n >= num_terms {
-            Err(crate::Error::TermIndexOutOfBounds(*n, num_terms))
+            Err(crate::Error::TermIndexOutOfBounds(
+                (*n).as_usize(),
+                num_terms.as_usize(),
+            ))
         } else {
             Ok(())
         }
@@ -73,40 +80,52 @@ impl<L: Logic> Sequent<L> {
 
         // determine cleanup measures and check integrity
 
-        let num_terms = self.term_arena.len();
+        let num_terms = Index::from_usize(self.term_arena.len());
 
         for n in self.term_ids.iter() {
             if *n >= num_terms {
-                return Err(crate::Error::TermIndexOutOfBounds(*n, num_terms));
+                return Err(crate::Error::TermIndexOutOfBounds(
+                    (*n).as_usize(),
+                    num_terms.as_usize(),
+                ));
             }
         }
 
-        let mut reachable = vec![false; num_terms];
+        let mut reachable = vec![false; num_terms.as_usize()];
         let mut visit_stack = self.term_ids.clone();
 
         while let Some(n) = visit_stack.pop() {
-            if !reachable[n] {
-                reachable[n] = true;
-                match self.term_arena[n].into() {
+            if !reachable[n.as_usize()] {
+                reachable[n.as_usize()] = true;
+                match self.term_arena[n.as_usize()].into() {
                     Tensor(k, l) | Par(k, l) | With(k, l) | Plus(k, l) => {
                         if k >= n {
-                            return Err(crate::Error::SubtermIndexNotDecreasing(k, n));
+                            return Err(crate::Error::SubtermIndexNotDecreasing(
+                                k.as_usize(),
+                                n.as_usize(),
+                            ));
                         }
                         if l >= n {
-                            return Err(crate::Error::SubtermIndexNotDecreasing(l, n));
+                            return Err(crate::Error::SubtermIndexNotDecreasing(
+                                l.as_usize(),
+                                n.as_usize(),
+                            ));
                         }
-                        if !reachable[k] {
+                        if !reachable[k.as_usize()] {
                             visit_stack.push(k);
                         }
-                        if !reachable[l] {
+                        if !reachable[l.as_usize()] {
                             visit_stack.push(l);
                         }
                     }
                     Bang(k) | Quest(k) => {
                         if k >= n {
-                            return Err(crate::Error::SubtermIndexNotDecreasing(k, n));
+                            return Err(crate::Error::SubtermIndexNotDecreasing(
+                                k.as_usize(),
+                                n.as_usize(),
+                            ));
                         }
-                        if !reachable[k] {
+                        if !reachable[k.as_usize()] {
                             visit_stack.push(k);
                         }
                     }
@@ -116,16 +135,16 @@ impl<L: Logic> Sequent<L> {
         }
 
         #[derive(Copy, Clone, Debug)]
-        enum TermState {
+        enum TermState<I: Index> {
             Remain,
             Unreachable,
-            DuplicateOf(usize),
+            DuplicateOf(I),
         }
 
         use TermState::*;
 
-        let mut hm = HashMap::<L::Expression, usize>::new();
-        let mut states = Vec::<TermState>::with_capacity(num_terms);
+        let mut hm = HashMap::<L::Expression, I>::new();
+        let mut states = Vec::<TermState<I>>::with_capacity(num_terms.as_usize());
 
         for (n, (is_reachable, e)) in zip(reachable.into_iter(), self.term_arena.iter()).enumerate()
         {
@@ -133,7 +152,7 @@ impl<L: Logic> Sequent<L> {
                 if let Some(k) = hm.get(e) {
                     states.push(DuplicateOf(*k));
                 } else {
-                    hm.insert(*e, n);
+                    hm.insert(*e, Index::from_usize(n));
                     states.push(Remain);
                 }
             } else {
@@ -142,26 +161,26 @@ impl<L: Logic> Sequent<L> {
         }
 
         #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-        enum RedirectState {
+        enum RedirectState<I: Index> {
             Remove,
-            MoveTo(usize),
-            RemoveAndPointTo(usize),
+            MoveTo(I),
+            RemoveAndPointTo(I),
         }
 
         use RedirectState::*;
 
-        let mut fresh_index = 0usize;
-        let mut redirects = Vec::<RedirectState>::with_capacity(num_terms);
+        let mut fresh_index = Index::from_usize(0);
+        let mut redirects = Vec::<RedirectState<I>>::with_capacity(num_terms.as_usize());
 
         for s in states.into_iter() {
             match s {
                 Unreachable => redirects.push(Remove),
                 Remain => {
                     redirects.push(MoveTo(fresh_index));
-                    fresh_index += 1;
+                    fresh_index += Index::from_usize(1);
                 }
                 DuplicateOf(n) => {
-                    if let MoveTo(k) = redirects[n] {
+                    if let MoveTo(k) = redirects[n.as_usize()] {
                         redirects.push(RemoveAndPointTo(k));
                     } else {
                         unreachable!()
@@ -172,14 +191,14 @@ impl<L: Logic> Sequent<L> {
 
         // execute cleanup
 
-        let where_to_find = |k: &usize| {
-            debug_assert!(*k < redirects.len());
-            debug_assert!(redirects[*k] != Remove);
+        let where_to_find = |k: &I| {
+            debug_assert!(*k < Index::from_usize(redirects.len()));
+            debug_assert!(redirects[(*k).as_usize()] != Remove);
 
-            match redirects[*k] {
+            match redirects[(*k).as_usize()] {
                 MoveTo(n) => n,
                 RemoveAndPointTo(n) => {
-                    if let MoveTo(m) = redirects[n] {
+                    if let MoveTo(m) = redirects[n.as_usize()] {
                         m
                     } else {
                         unreachable!()
@@ -191,7 +210,7 @@ impl<L: Logic> Sequent<L> {
             }
         };
 
-        let apply_cleanup_terms = |(state, e): (&RedirectState, &L::Expression)| {
+        let apply_cleanup_terms = |(state, e): (&RedirectState<I>, &L::Expression)| {
             if let MoveTo(_) = state {
                 Some(
                     L::Expression::try_from(match (*e).into() {
@@ -221,9 +240,9 @@ impl<L: Logic> Sequent<L> {
 
     fn optimize_variable_dict(&mut self) -> Result<(), crate::Error> {
         use LLExpression::*;
-        let num_variables = self.variable_dict.len();
-        let mut var_dict_new = Vec::<String>::with_capacity(num_variables);
-        let mut hm = HashMap::<String, usize>::with_capacity(num_variables);
+        let num_variables = Index::from_usize(self.variable_dict.len());
+        let mut var_dict_ = Vec::<String>::with_capacity(num_variables);
+        let mut hm = HashMap::<String, I>::with_capacity(num_variables);
 
         for e in self.term_arena.iter_mut() {
             let e_in_ll = (*e).into();
@@ -231,28 +250,31 @@ impl<L: Logic> Sequent<L> {
                 Var(n) | DualVar(n) => {
                     let name_ref: &str = self
                         .variable_dict
-                        .get(n)
-                        .ok_or(crate::Error::InvalidVariableIndex(n, num_variables))?
+                        .get(n.as_usize())
+                        .ok_or(crate::Error::InvalidVariableIndex(
+                            n.as_usize(),
+                            num_variables.as_usize(),
+                        ))?
                         .as_ref();
                     if let Some(k) = hm.get(name_ref) {
-                        let new_e = match e_in_ll {
+                        let _e = match e_in_ll {
                             Var(_) => Var(*k),
                             DualVar(_) => DualVar(*k),
                             _ => unreachable!(),
                         };
-                        *e = L::Expression::try_from(new_e).unwrap();
+                        *e = L::Expression::try_from(_e).unwrap();
                     } else {
-                        let fresh_variable_id = var_dict_new.len();
+                        let fresh_variable_id = Index::from_usize(var_dict_.len());
                         let name = name_ref.to_string();
                         hm.insert(name.clone(), fresh_variable_id);
-                        var_dict_new.push(name);
+                        var_dict_.push(name);
                     }
                 }
                 _ => {}
             }
         }
-        var_dict_new.shrink_to_fit();
-        self.variable_dict = var_dict_new;
+        var_dict_.shrink_to_fit();
+        self.variable_dict = var_dict_;
         Ok(())
     }
 
@@ -267,9 +289,9 @@ impl<L: Logic> Sequent<L> {
     }
 
     /// Consume another sequent and add its terms to self
-    pub fn add(&mut self, s: Sequent<L>) {
-        let offset_variables = self.variable_dict.len();
-        let offset_terms = self.term_arena.len();
+    pub fn add(&mut self, s: Self) {
+        let offset_variables = Index::from_usize(self.variable_dict.len());
+        let offset_terms = Index::from_usize(self.term_arena.len());
 
         self.term_arena.extend(
             s.term_arena

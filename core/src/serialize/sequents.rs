@@ -35,8 +35,15 @@ enum Expression {
     Quest(usize),
 }
 
-impl From<LLExpression> for Expression {
-    fn from(e: LLExpression) -> Self {
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Sequent {
+    terms: Vec<Expression>,
+    ids: Vec<usize>,
+    var_dict: Vec<String>,
+}
+
+impl From<LLExpression<usize>> for Expression {
+    fn from(e: LLExpression<usize>) -> Self {
         use Expression as E;
         use LLExpression::*;
         match e {
@@ -56,7 +63,7 @@ impl From<LLExpression> for Expression {
     }
 }
 
-impl From<Expression> for LLExpression {
+impl From<Expression> for LLExpression<usize> {
     fn from(e: Expression) -> Self {
         use Expression::*;
         use LLExpression as E;
@@ -77,15 +84,8 @@ impl From<Expression> for LLExpression {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct Sequent {
-    terms: Vec<Expression>,
-    ids: Vec<usize>,
-    var_dict: Vec<String>,
-}
-
-impl From<Seq<LL>> for Sequent {
-    fn from(s: Seq<LL>) -> Sequent {
+impl From<Seq<usize, LL>> for Sequent {
+    fn from(s: Seq<usize, LL>) -> Sequent {
         Sequent {
             terms: s.term_arena.into_iter().map(Expression::from).collect(),
             ids: s.term_ids,
@@ -94,11 +94,11 @@ impl From<Seq<LL>> for Sequent {
     }
 }
 
-impl TryFrom<Sequent> for Seq<LL> {
+impl TryFrom<Sequent> for Seq<usize, LL> {
     type Error = crate::Error;
 
-    fn try_from(s: Sequent) -> Result<Seq<LL>, Self::Error> {
-        let s = Seq::<LL> {
+    fn try_from(s: Sequent) -> Result<Seq<usize, LL>, Self::Error> {
+        let s = Seq::<usize, LL> {
             term_arena: s.terms.into_iter().map(LLExpression::from).collect(),
             term_ids: s.ids,
             variable_dict: s.var_dict,
@@ -108,14 +108,14 @@ impl TryFrom<Sequent> for Seq<LL> {
     }
 }
 
-impl serde::Serialize for Seq<LL> {
+impl serde::Serialize for Seq<usize, LL> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let proxy = Sequent::from(self.clone());
         proxy.serialize(serializer)
     }
 }
 
-impl<'a> serde::Deserialize<'a> for Seq<LL> {
+impl<'a> serde::Deserialize<'a> for Seq<usize, LL> {
     fn deserialize<D: Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
         let proxy = Sequent::deserialize(deserializer)?;
         Seq::try_from(proxy).map_err(serde::de::Error::custom)

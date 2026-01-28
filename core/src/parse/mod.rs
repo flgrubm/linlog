@@ -1,7 +1,8 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use crate::logics::{LL, Logic};
+use super::logics::LL;
+use crate::logics::Logic;
 use crate::sequents::Sequent as Seq;
 use crate::sequents::expressions::{Expression, LLExpression};
 use chumsky::pratt::*;
@@ -139,12 +140,12 @@ impl<'a> TryFrom<&'a str> for Sequent<'a> {
     }
 }
 
-impl<'a> From<(Term<'a>, bool)> for Seq<LL> {
+impl<'a> From<(Term<'a>, bool)> for Seq<usize, LL> {
     fn from((t, polarity): (Term<'a>, bool)) -> Self {
         fn recursion_helper<'a>(
             t: Term<'a>,
             polarity: bool,
-            term_arena: &mut Vec<<LL as Logic>::Expression>,
+            term_arena: &mut Vec<<LL as Logic<usize>>::Expression>,
             variable_dict: &mut Vec<String>,
         ) -> usize {
             use LLExpression as E;
@@ -206,7 +207,7 @@ impl<'a> From<(Term<'a>, bool)> for Seq<LL> {
             }
         }
 
-        let mut term_arena = Vec::<<LL as Logic>::Expression>::new();
+        let mut term_arena = Vec::<<LL as Logic<usize>>::Expression>::new();
         let mut variable_dict = Vec::<String>::new();
         let index = recursion_helper(t, polarity, &mut term_arena, &mut variable_dict);
 
@@ -218,7 +219,7 @@ impl<'a> From<(Term<'a>, bool)> for Seq<LL> {
     }
 }
 
-impl<'a> From<Sequent<'a>> for Seq<LL> {
+impl<'a> From<Sequent<'a>> for Seq<usize, LL> {
     fn from(s: Sequent<'a>) -> Self {
         let lhs_terms = s.left.into_iter().map(|t| (t, false));
         let rhs_terms = s.right.into_iter().map(|t| (t, true));
@@ -232,7 +233,7 @@ impl<'a> From<Sequent<'a>> for Seq<LL> {
     }
 }
 
-impl std::str::FromStr for Seq<LL> {
+impl std::str::FromStr for Seq<usize, LL> {
     type Err = crate::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {

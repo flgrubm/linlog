@@ -2,16 +2,16 @@
 // Licensed under the EUPL
 
 use crate::Error;
-use crate::IndexT;
+use crate::index::Index;
 use subenum::subenum;
 
 #[subenum(MLLExpression)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum LLExpression {
+pub enum LLExpression<I: Index> {
     #[subenum(MLLExpression)]
-    Var(IndexT),
+    Var(I),
     #[subenum(MLLExpression)]
-    DualVar(IndexT),
+    DualVar(I),
     #[subenum(MLLExpression)]
     One,
     #[subenum(MLLExpression)]
@@ -19,17 +19,17 @@ pub enum LLExpression {
     Top,
     Zero,
     #[subenum(MLLExpression)]
-    Tensor(IndexT, IndexT),
+    Tensor(I, I),
     #[subenum(MLLExpression)]
-    Par(IndexT, IndexT),
-    With(IndexT, IndexT),
-    Plus(IndexT, IndexT),
-    Bang(IndexT),
-    Quest(IndexT),
+    Par(I, I),
+    With(I, I),
+    Plus(I, I),
+    Bang(I),
+    Quest(I),
 }
 
 #[inline]
-const fn dualize_ll(e: LLExpression) -> LLExpression {
+const fn dualize_ll<I: Index>(e: LLExpression<I>) -> LLExpression<I> {
     use LLExpression::*;
     match e {
         Var(n) => DualVar(n),
@@ -48,7 +48,7 @@ const fn dualize_ll(e: LLExpression) -> LLExpression {
 }
 
 #[inline]
-const fn offset_ll(e: LLExpression, offset_variable: IndexT, offset_terms: IndexT) -> LLExpression {
+fn offset_ll<I: Index>(e: LLExpression<I>, offset_variable: I, offset_terms: I) -> LLExpression<I> {
     use LLExpression::*;
     match e {
         Var(n) => Var(n + offset_variable),
@@ -67,31 +67,35 @@ const fn offset_ll(e: LLExpression, offset_variable: IndexT, offset_terms: Index
 }
 
 #[inline]
-const fn check_bounds_ll(
-    e: LLExpression,
-    variable_bound: IndexT,
-    index_bound: IndexT,
+fn check_bounds_ll<I: Index>(
+    e: LLExpression<I>,
+    variable_bound: I,
+    index_bound: I,
 ) -> Result<(), Error> {
     use LLExpression::*;
     match e {
-        Var(n) | DualVar(n) if n >= variable_bound => {
-            Err(Error::InvalidVariableIndex(n, variable_bound))
-        }
+        Var(n) | DualVar(n) if n >= variable_bound => Err(Error::InvalidVariableIndex(
+            n.as_usize(),
+            variable_bound.as_usize(),
+        )),
         Tensor(m, _) | Par(m, _) | With(m, _) | Plus(m, _) | Bang(m) | Quest(m)
             if m >= index_bound =>
         {
-            Err(Error::SubtermIndexNotDecreasing(m, index_bound))
+            Err(Error::SubtermIndexNotDecreasing(
+                m.as_usize(),
+                index_bound.as_usize(),
+            ))
         }
-        Tensor(_, n) | Par(_, n) | With(_, n) | Plus(_, n) if n >= index_bound => {
-            Err(Error::SubtermIndexNotDecreasing(n, index_bound))
-        }
+        Tensor(_, n) | Par(_, n) | With(_, n) | Plus(_, n) if n >= index_bound => Err(
+            Error::SubtermIndexNotDecreasing(n.as_usize(), index_bound.as_usize()),
+        ),
         _ => Ok(()),
     }
 }
 
-pub trait Expression:
-    Into<LLExpression>
-    + TryFrom<LLExpression, Error: std::error::Error>
+pub trait Expression<I: Index>:
+    Into<LLExpression<I>>
+    + TryFrom<LLExpression<I>, Error: std::error::Error>
     + Clone
     + Copy
     + std::fmt::Debug
@@ -103,14 +107,14 @@ pub trait Expression:
         Self::try_from(dualize_ll((*self).into())).unwrap()
     }
 
-    fn offset(&self, offset_variable: IndexT, offset_terms: IndexT) -> Self {
+    fn offset(&self, offset_variable: I, offset_terms: I) -> Self {
         Self::try_from(offset_ll((*self).into(), offset_variable, offset_terms)).unwrap()
     }
 
-    fn check_bounds(&self, variable_bound: IndexT, index_bound: IndexT) -> Result<(), Error> {
+    fn check_bounds(&self, variable_bound: I, index_bound: I) -> Result<(), Error> {
         check_bounds_ll((*self).into(), variable_bound, index_bound)
     }
 }
 
-impl Expression for LLExpression {}
-impl Expression for MLLExpression {}
+impl<I: Index> Expression<I> for LLExpression<I> {}
+impl<I: Index> Expression<I> for MLLExpression<I> {}

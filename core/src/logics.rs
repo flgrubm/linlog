@@ -2,9 +2,10 @@
 // Licensed under the EUPL
 
 use super::sequents::expressions::{Expression, LLExpression, MLLExpression};
+use crate::index::Index;
 
-pub trait Logic: std::fmt::Debug {
-    type Expression: Expression;
+pub trait Logic<I: Index>: std::fmt::Debug {
+    type Expression: Expression<I>;
 }
 
 // classical linear logic
@@ -12,8 +13,8 @@ pub trait Logic: std::fmt::Debug {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LL;
 
-impl Logic for LL {
-    type Expression = LLExpression;
+impl<I: Index> Logic<I> for LL {
+    type Expression = LLExpression<I>;
 }
 
 // classical multiplicative linear logic
@@ -21,14 +22,6 @@ impl Logic for LL {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct MLL;
 
-impl Logic for MLL {
-    type Expression = MLLExpression;
-}
-
-#[test]
-fn test_from() {
-    assert_eq!(
-        LLExpression::One,
-        <LL as Logic>::Expression::from(LLExpression::One)
-    );
+impl<I: Index> Logic<I> for MLL {
+    type Expression = MLLExpression<I>;
 }
