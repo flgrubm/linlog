@@ -19,8 +19,6 @@ pub use errors::ParseError;
 
 pub use errors::Error;
 
-pub(crate) type IndexT = usize;
-
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
 }
