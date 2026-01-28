@@ -4,26 +4,26 @@
 pub mod expressions;
 pub mod fmt;
 
-use super::logics::LogicNew;
+use super::logics::Logic;
 use crate::index::Index;
-use expressions::{ExpressionNew, LLExpressionNew};
+use expressions::{Expression, LLExpression};
 use std::collections::HashMap;
 use std::iter::zip;
 
 #[derive(Clone, Debug)]
-pub struct SequentNew<I: Index, L: LogicNew<I>> {
+pub struct Sequent<I: Index, L: Logic<I>> {
     pub(crate) term_arena: Vec<L::Expression>,
     pub(crate) term_ids: Vec<I>,
     pub(crate) variable_dict: Vec<String>,
 }
 
-impl<I: Index, L: LogicNew<I>> std::default::Default for SequentNew<I, L> {
+impl<I: Index, L: Logic<I>> std::default::Default for Sequent<I, L> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<I: Index, L: LogicNew<I>> SequentNew<I, L> {
+impl<I: Index, L: Logic<I>> Sequent<I, L> {
     pub const fn new() -> Self {
         Self {
             term_arena: vec![],
@@ -76,7 +76,7 @@ impl<I: Index, L: LogicNew<I>> SequentNew<I, L> {
     }
 
     fn optimize_term_arena(&mut self) -> Result<(), crate::Error> {
-        use LLExpressionNew::*;
+        use LLExpression::*;
 
         // determine cleanup measures and check integrity
 
@@ -239,9 +239,9 @@ impl<I: Index, L: LogicNew<I>> SequentNew<I, L> {
     }
 
     fn optimize_variable_dict(&mut self) -> Result<(), crate::Error> {
-        use LLExpressionNew::*;
+        use LLExpression::*;
         let num_variables = Index::from_usize(self.variable_dict.len());
-        let mut var_dict_new = Vec::<String>::with_capacity(num_variables);
+        let mut var_dict_ = Vec::<String>::with_capacity(num_variables);
         let mut hm = HashMap::<String, I>::with_capacity(num_variables);
 
         for e in self.term_arena.iter_mut() {
@@ -257,24 +257,24 @@ impl<I: Index, L: LogicNew<I>> SequentNew<I, L> {
                         ))?
                         .as_ref();
                     if let Some(k) = hm.get(name_ref) {
-                        let new_e = match e_in_ll {
+                        let _e = match e_in_ll {
                             Var(_) => Var(*k),
                             DualVar(_) => DualVar(*k),
                             _ => unreachable!(),
                         };
-                        *e = L::Expression::try_from(new_e).unwrap();
+                        *e = L::Expression::try_from(_e).unwrap();
                     } else {
-                        let fresh_variable_id = Index::from_usize(var_dict_new.len());
+                        let fresh_variable_id = Index::from_usize(var_dict_.len());
                         let name = name_ref.to_string();
                         hm.insert(name.clone(), fresh_variable_id);
-                        var_dict_new.push(name);
+                        var_dict_.push(name);
                     }
                 }
                 _ => {}
             }
         }
-        var_dict_new.shrink_to_fit();
-        self.variable_dict = var_dict_new;
+        var_dict_.shrink_to_fit();
+        self.variable_dict = var_dict_;
         Ok(())
     }
 

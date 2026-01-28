@@ -1,9 +1,9 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use crate::logics::LLNew;
-use crate::sequents::SequentNew as SeqNew;
-use crate::sequents::expressions::LLExpressionNew;
+use crate::logics::LL;
+use crate::sequents::Sequent as Seq;
+use crate::sequents::expressions::LLExpression;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
@@ -42,10 +42,10 @@ struct Sequent {
     var_dict: Vec<String>,
 }
 
-impl From<LLExpressionNew<usize>> for Expression {
-    fn from(e: LLExpressionNew<usize>) -> Self {
+impl From<LLExpression<usize>> for Expression {
+    fn from(e: LLExpression<usize>) -> Self {
         use Expression as E;
-        use LLExpressionNew::*;
+        use LLExpression::*;
         match e {
             Var(n) => E::Var(n),
             DualVar(n) => E::DualVar(n),
@@ -63,10 +63,10 @@ impl From<LLExpressionNew<usize>> for Expression {
     }
 }
 
-impl From<Expression> for LLExpressionNew<usize> {
+impl From<Expression> for LLExpression<usize> {
     fn from(e: Expression) -> Self {
         use Expression::*;
-        use LLExpressionNew as E;
+        use LLExpression as E;
         match e {
             Var(n) => E::Var(n),
             DualVar(n) => E::DualVar(n),
@@ -84,8 +84,8 @@ impl From<Expression> for LLExpressionNew<usize> {
     }
 }
 
-impl From<SeqNew<usize, LLNew>> for Sequent {
-    fn from(s: SeqNew<usize, LLNew>) -> Sequent {
+impl From<Seq<usize, LL>> for Sequent {
+    fn from(s: Seq<usize, LL>) -> Sequent {
         Sequent {
             terms: s.term_arena.into_iter().map(Expression::from).collect(),
             ids: s.term_ids,
@@ -94,12 +94,12 @@ impl From<SeqNew<usize, LLNew>> for Sequent {
     }
 }
 
-impl TryFrom<Sequent> for SeqNew<usize, LLNew> {
+impl TryFrom<Sequent> for Seq<usize, LL> {
     type Error = crate::Error;
 
-    fn try_from(s: Sequent) -> Result<SeqNew<usize, LLNew>, Self::Error> {
-        let s = SeqNew::<usize, LLNew> {
-            term_arena: s.terms.into_iter().map(LLExpressionNew::from).collect(),
+    fn try_from(s: Sequent) -> Result<Seq<usize, LL>, Self::Error> {
+        let s = Seq::<usize, LL> {
+            term_arena: s.terms.into_iter().map(LLExpression::from).collect(),
             term_ids: s.ids,
             variable_dict: s.var_dict,
         };
@@ -108,16 +108,16 @@ impl TryFrom<Sequent> for SeqNew<usize, LLNew> {
     }
 }
 
-impl serde::Serialize for SeqNew<usize, LLNew> {
+impl serde::Serialize for Seq<usize, LL> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let proxy = Sequent::from(self.clone());
         proxy.serialize(serializer)
     }
 }
 
-impl<'a> serde::Deserialize<'a> for SeqNew<usize, LLNew> {
+impl<'a> serde::Deserialize<'a> for Seq<usize, LL> {
     fn deserialize<D: Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
         let proxy = Sequent::deserialize(deserializer)?;
-        SeqNew::try_from(proxy).map_err(serde::de::Error::custom)
+        Seq::try_from(proxy).map_err(serde::de::Error::custom)
     }
 }

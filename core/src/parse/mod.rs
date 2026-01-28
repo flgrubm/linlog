@@ -1,10 +1,10 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use super::logics::LLNew;
-use crate::logics::LogicNew;
-use crate::sequents::SequentNew as SeqNew;
-use crate::sequents::expressions::{ExpressionNew, LLExpressionNew};
+use super::logics::LL;
+use crate::logics::Logic;
+use crate::sequents::Sequent as Seq;
+use crate::sequents::expressions::{Expression, LLExpression};
 use chumsky::pratt::*;
 use chumsky::prelude::*;
 
@@ -140,15 +140,15 @@ impl<'a> TryFrom<&'a str> for Sequent<'a> {
     }
 }
 
-impl<'a> From<(Term<'a>, bool)> for SeqNew<usize, LLNew> {
+impl<'a> From<(Term<'a>, bool)> for Seq<usize, LL> {
     fn from((t, polarity): (Term<'a>, bool)) -> Self {
         fn recursion_helper<'a>(
             t: Term<'a>,
             polarity: bool,
-            term_arena: &mut Vec<<LLNew as LogicNew<usize>>::Expression>,
+            term_arena: &mut Vec<<LL as Logic<usize>>::Expression>,
             variable_dict: &mut Vec<String>,
         ) -> usize {
-            use LLExpressionNew as E;
+            use LLExpression as E;
             use Term::*;
             if let Dual(nt) = t {
                 recursion_helper(*nt, !polarity, term_arena, variable_dict)
@@ -207,7 +207,7 @@ impl<'a> From<(Term<'a>, bool)> for SeqNew<usize, LLNew> {
             }
         }
 
-        let mut term_arena = Vec::<<LLNew as LogicNew<usize>>::Expression>::new();
+        let mut term_arena = Vec::<<LL as Logic<usize>>::Expression>::new();
         let mut variable_dict = Vec::<String>::new();
         let index = recursion_helper(t, polarity, &mut term_arena, &mut variable_dict);
 
@@ -219,24 +219,24 @@ impl<'a> From<(Term<'a>, bool)> for SeqNew<usize, LLNew> {
     }
 }
 
-impl<'a> From<Sequent<'a>> for SeqNew<usize, LLNew> {
+impl<'a> From<Sequent<'a>> for Seq<usize, LL> {
     fn from(s: Sequent<'a>) -> Self {
         let lhs_terms = s.left.into_iter().map(|t| (t, false));
         let rhs_terms = s.right.into_iter().map(|t| (t, true));
-        let mut sequent = SeqNew::new();
+        let mut sequent = Seq::new();
         lhs_terms
             .chain(rhs_terms)
-            .map(SeqNew::from)
+            .map(Seq::from)
             .for_each(|s| sequent.add(s));
         sequent.optimize().unwrap();
         sequent
     }
 }
 
-impl std::str::FromStr for SeqNew<usize, LLNew> {
+impl std::str::FromStr for Seq<usize, LL> {
     type Err = crate::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(SeqNew::from(Sequent::try_from(s)?))
+        Ok(Seq::from(Sequent::try_from(s)?))
     }
 }

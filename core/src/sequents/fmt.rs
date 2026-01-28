@@ -1,19 +1,19 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use super::SequentNew;
-use super::expressions::LLExpressionNew;
+use super::Sequent;
+use super::expressions::LLExpression;
 use crate::index::Index;
-use crate::logics::LogicNew;
+use crate::logics::Logic;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-impl<I: Index, L: LogicNew<I>> SequentNew<I, L> {
+impl<I: Index, L: Logic<I>> Sequent<I, L> {
     fn display_term<const NEEDS_BRACKETS: bool>(
         &self,
         index: I,
         f: &mut Formatter<'_>,
     ) -> FmtResult {
-        use LLExpressionNew::*;
+        use LLExpression::*;
         debug_assert!(index < Index::from_usize(self.term_arena.len()));
         match (self.term_arena[index.as_usize()]).into() {
             Var(var_index) => {
@@ -98,7 +98,7 @@ impl<I: Index, L: LogicNew<I>> SequentNew<I, L> {
     }
 }
 
-impl<I: Index, L: LogicNew<I>> Display for SequentNew<I, L> {
+impl<I: Index, L: Logic<I>> Display for Sequent<I, L> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "⊢")?;
 

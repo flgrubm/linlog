@@ -1,27 +1,27 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use super::sequents::expressions::{ExpressionNew, LLExpressionNew, MLLExpressionNew};
+use super::sequents::expressions::{Expression, LLExpression, MLLExpression};
 use crate::index::Index;
 
-pub trait LogicNew<I: Index>: std::fmt::Debug {
-    type Expression: ExpressionNew<I>;
+pub trait Logic<I: Index>: std::fmt::Debug {
+    type Expression: Expression<I>;
 }
 
 // classical linear logic
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct LLNew;
+pub struct LL;
 
-impl<I: Index> LogicNew<I> for LLNew {
-    type Expression = LLExpressionNew<I>;
+impl<I: Index> Logic<I> for LL {
+    type Expression = LLExpression<I>;
 }
 
 // classical multiplicative linear logic
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct MLLNew;
+pub struct MLL;
 
-impl<I: Index> LogicNew<I> for MLLNew {
-    type Expression = MLLExpressionNew<I>;
+impl<I: Index> Logic<I> for MLL {
+    type Expression = MLLExpression<I>;
 }
