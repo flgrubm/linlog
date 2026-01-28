@@ -28,7 +28,7 @@ pub enum LLExpression<I: Index> {
     Quest(I),
 }
 
-#[inline]
+#[inline(always)]
 const fn dualize_ll<I: Index>(e: LLExpression<I>) -> LLExpression<I> {
     use LLExpression::*;
     match e {
@@ -47,7 +47,7 @@ const fn dualize_ll<I: Index>(e: LLExpression<I>) -> LLExpression<I> {
     }
 }
 
-#[inline]
+#[inline(always)]
 fn offset_ll<I: Index>(e: LLExpression<I>, offset_variable: I, offset_terms: I) -> LLExpression<I> {
     use LLExpression::*;
     match e {
@@ -66,7 +66,7 @@ fn offset_ll<I: Index>(e: LLExpression<I>, offset_variable: I, offset_terms: I) 
     }
 }
 
-#[inline]
+#[inline(always)]
 fn check_bounds_ll<I: Index>(
     e: LLExpression<I>,
     variable_bound: I,
@@ -103,16 +103,16 @@ pub trait Expression<I: Index>:
     + Eq
     + std::hash::Hash
 {
-    fn dualize(&self) -> Self {
-        Self::try_from(dualize_ll((*self).into())).unwrap()
+    fn dualize(self) -> Self {
+        Self::try_from(dualize_ll(self.into())).unwrap()
     }
 
-    fn offset(&self, offset_variable: I, offset_terms: I) -> Self {
-        Self::try_from(offset_ll((*self).into(), offset_variable, offset_terms)).unwrap()
+    fn offset(self, offset_variable: I, offset_terms: I) -> Self {
+        Self::try_from(offset_ll(self.into(), offset_variable, offset_terms)).unwrap()
     }
 
-    fn check_bounds(&self, variable_bound: I, index_bound: I) -> Result<(), Error> {
-        check_bounds_ll((*self).into(), variable_bound, index_bound)
+    fn check_bounds(self, variable_bound: I, index_bound: I) -> Result<(), Error> {
+        check_bounds_ll(self.into(), variable_bound, index_bound)
     }
 }
 
