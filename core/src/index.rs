@@ -18,6 +18,15 @@ pub trait Index:
     + PartialOrd
     + Ord
 {
+    #[inline]
+    fn as_usize(&self) -> usize {
+        (*self).into()
+    }
+
+    #[inline]
+    fn from_usize(n: usize) -> Self {
+        Self::try_from(n).unwrap()
+    }
 }
 
 impl<
