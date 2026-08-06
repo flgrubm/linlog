@@ -52,7 +52,11 @@
         }:
         let
           devshell_dependencies = with pkgs; [ zellij ];
-          toolchain = pkgs.rust-bin.stable.latest.default;
+          # rust-src is required for rust-analyzer to load the standard library
+          # from the sysroot (otherwise: "can't load standard library from sysroot").
+          toolchain = pkgs.rust-bin.stable.latest.default.override {
+            extensions = [ "rust-src" ];
+          };
           craneLib = (inputs.crane.mkLib pkgs).overrideToolchain (_: toolchain);
 
           src = craneLib.cleanCargoSource ./.;
