@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(cargo build *)",
+      "Bash(cargo check *)",
+      "Bash(cargo test *)",
+      "Bash(cargo clippy *)",
+      "Bash(cargo fmt *)",
+      "Bash(cargo doc *)",
+      "Bash(cargo tree *)",
+      "Bash(cargo metadata *)",
+      "Bash(cargo hack check *)",
+      "Bash(cargo deny check *)",
+      "Bash(cargo update --dry-run *)",
+      "Bash(cargo run -p linlog-cli *)",
+      "Bash(nix build *)",
+      "Bash(nix eval *)",
+      "Bash(nix fmt *)",
+      "Bash(nix flake check *)",
+      "Bash(nix flake show *)",
+      "Bash(nix flake metadata *)",
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:crates.io)",
+      "WebFetch(domain:doc.rust-lang.org)",
+      "WebFetch(domain:code.claude.com)"
+    ],
+    "ask": [
+      "Bash(git push *)"
+    ],
+    "deny": [
+      "Bash(cargo publish *)",
+      "Bash(cargo yank *)",
+      "Bash(cargo owner *)",
+      "Bash(cargo login *)",
+      "Edit(/LICENSE)",
+      "Edit(/Cargo.lock)",
+      "Edit(/flake.lock)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/format.sh",
+            "args": [],
+            "statusMessage": "Formatting with treefmt",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "rust-analyzer-lsp@claude-plugins-official": true
+  }
+}

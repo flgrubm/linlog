@@ -3,3 +3,7 @@
 /target
 result
 scratchpad*.md
+
+# Claude Code: personal, per-machine overrides
+.claude/settings.local.json
+CLAUDE.local.md
