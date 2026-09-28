@@ -128,3 +128,20 @@ fn constant_prefixes() {
     assert!(rejected("|- 10"));
     assert!(rejected("|- ⊥A"));
 }
+
+/// Printing a parsed sequent gives text that parses back to the same sequent.
+#[test]
+fn printed_sequents_parse_back() {
+    for input in [
+        "|-",
+        "A |- A",
+        "A * B, C par D |- A & B, C + D",
+        "!A, ?B |- ~A, B^",
+        "A -o B -o C, (A -o B) -o C |- (A * B) + (0 & top)",
+        "0, 1, bot, top |- 0, 1, ⊥, ⊤",
+        "A, A -o B |- B, B * ~A",
+    ] {
+        let printed = pretty(input);
+        assert_eq!(pretty(&printed), printed, "{input:?}");
+    }
+}
