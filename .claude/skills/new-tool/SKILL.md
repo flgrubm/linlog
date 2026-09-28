@@ -56,7 +56,8 @@ something is a finding to report. A tool that brings Claude Code components
 
 ## 3. Wire it in
 
-- **Crate**: `cargo add` with only the features linlog needs. A license missing
+- **Crate**: chosen and scoped by the dependency convention in CLAUDE.md, then
+  `cargo add` with only the features linlog needs. A license missing
   from `deny.toml`'s allow list goes to the user; it is theirs to allow.
 - **Program**: into the module of the aspect that uses it: `devshell.nix`
   for a general tool, or a new `modules/<tool>.nix` when it contributes to

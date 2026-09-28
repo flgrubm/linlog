@@ -114,6 +114,12 @@ even to read.** Every operation goes through `jj`, including lock updates:
   with no references to other repositories, machines or conversations.
 - Every Rust function gets a concise `///` doc comment that a human
   understands at first read: what it does and returns, not how.
+- Dependencies are welcome where they earn their place: prefer well-made
+  library code over an ad-hoc implementation, and among candidates the more
+  popular, better maintained and faster one. Each serves a particular reason
+  and is scoped to it: only the crate that uses it, behind the feature that
+  needs it (or in `[dev-dependencies]`), with only the crate features used.
+  Never add one for its own sake.
 - `core/src/lib.rs` allows `dead_code` and `unused_variables` crate-wide while
   things are scaffolded. The `add` function and its test there are template leftovers.
 - `scratchpad*.md` are the author's gitignored notes. `scratchpad1.md` is about
