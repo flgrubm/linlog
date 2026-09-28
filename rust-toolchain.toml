@@ -1,0 +1,5 @@
+# Read by rustup and by modules/toolchain.nix. rust-src lets rust-analyzer
+# see the standard library.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy", "rust-src", "rust-analyzer"]

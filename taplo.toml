@@ -1,0 +1,11 @@
+# Read by `nix fmt` and `taplo fmt` alike. Only the dependency tables are
+# sorted, so a `cargo add` lands where `nix fmt` would put it.
+[formatting]
+reorder_keys = false
+
+[[rule]]
+include = ["**/Cargo.toml"]
+keys = ["dependencies", "dev-dependencies", "build-dependencies"]
+
+[rule.formatting]
+reorder_keys = true

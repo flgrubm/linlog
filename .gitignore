@@ -1,7 +1,19 @@
-.envrc
-.direnv
+# cargo
 /target
-result
+
+# nix
+result*
+.direnv/
+
+# Tracked even where a global ignore excludes .envrc files.
+!.envrc
+
+# Emacs auto-save files (#file#), lock files (.#file) and backups (file~)
+\#*\#
+.\#*
+*~
+
+# The author's notes
 scratchpad*.md
 
 # Claude Code: personal, per-machine overrides

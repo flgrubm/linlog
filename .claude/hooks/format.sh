@@ -3,8 +3,8 @@
 # Licensed under the EUPL
 #
 # PostToolUse(Write|Edit): run the flake's formatter (`nix fmt`, i.e. treefmt
-# with rustfmt, nixfmt and taplo) on the one file that was just written, so an
-# edit never leaves the tree failing the `linlog-crate-fmt`/treefmt checks.
+# as modules/treefmt.nix configures it) on the one file that was just written,
+# so an edit never leaves the tree failing the `treefmt` check.
 #
 # `nix fmt` rather than calling rustfmt directly: treefmt passes rustfmt
 # `--edition 2024 --config skip_children=true`, and going through it keeps one
@@ -36,11 +36,11 @@ except Exception:
 if not (isinstance(path, str) and isinstance(cwd, str) and path and cwd):
     sys.exit(0)
 
-# Only what treefmt has a formatter for (see flake.nix, `treefmt.programs`),
-# and only inside the checkout: a memory or scratchpad file is none of its business.
+# Only what treefmt has a formatter for (modules/treefmt.nix), and only
+# inside the checkout: a memory or scratchpad file is none of its business.
 root = os.path.realpath(cwd)
 real = os.path.realpath(path)
-if real.endswith((".rs", ".nix", ".toml")) and real.startswith(root + os.sep):
+if real.endswith((".rs", ".nix", ".toml", ".sh", ".envrc")) and real.startswith(root + os.sep):
     print(real)
     print(root)
 ' 2>/dev/null) || exit 0

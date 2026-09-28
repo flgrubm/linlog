@@ -32,23 +32,24 @@ arena DAGs in negation normal form. The invariants live in
 
 ## Commands
 
-The dev environment comes from the Nix flake (direnv `use flake`, or
-`nix develop`). It provides the stable Rust toolchain via rust-overlay
-(edition 2024), rust-analyzer, cargo-hack and cargo-deny. Running `dev` opens
-the zellij layout.
+The dev environment is the flake's devshell (direnv, or `nix develop`): the
+toolchain `rust-toolchain.toml` names (edition 2024; rustfmt, clippy and
+rust-analyzer included), cargo-hack, cargo-deny, bacon and treefmt. `menu`
+lists its commands: `check`, `tests`, `launch` (the CLI), `live` (bacon),
+`dev` (zellij) and `up`.
 
 ```sh
 cargo build
 cargo test --workspace
 cargo test -p linlog <test_name>                           # single test in core
-cargo clippy --workspace --all-targets -- --deny warnings  # what `nix flake check` enforces
+cargo clippy --workspace --all-targets -- --deny warnings
 cargo hack check --feature-powerset -p linlog              # every parse/serialize combination
-cargo deny check                                           # licenses + advisories (deny.toml)
+cargo deny check                                           # licenses, bans, sources + advisories (online)
 cargo run -p linlog-cli -- <args>
 
-nix flake check   # builds linlog-cli + clippy (deny warnings) + cargo fmt + taplo + treefmt
-nix fmt           # treefmt: rustfmt, nixfmt, taplo (a hook already runs it on each edited file)
-nix build         # builds linlog-cli
+nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), deadnix, treefmt
+nix fmt           # nixfmt, rustfmt, taplo, shfmt, shellcheck (a hook runs it on each edited file)
+nix build         # linlog-cli
 ```
 
 Verify as much as the change needs:
@@ -58,7 +59,18 @@ Verify as much as the change needs:
 | any `.rs` edit | `cargo clippy …` and `cargo test --workspace` |
 | touches `#[cfg(feature = …)]` or `[features]` | add `cargo hack check --feature-powerset -p linlog` |
 | adds or changes a dependency | add `cargo deny check`. New deps must use a license `deny.toml` allows: EUPL-1.2, MIT, Apache-2.0 (± LLVM-exception), Unicode-3.0 or Zlib |
-| `flake.nix`, the toolchain, a lock bump | `nix flake check` |
+| `flake.nix`, `modules/`, the toolchain, a lock bump, or before a push | `nix flake check`, which runs all of the above |
+
+## The flake
+
+Dendritic flake-parts: `flake.nix` only declares inputs, and import-tree loads
+every `.nix` file under `modules/` as a flake-parts module. No file is ever
+added to an imports list; a path segment starting with `_` is skipped. One
+aspect per file, contributing to every output it needs (`treefmt.nix` also puts
+treefmt in the shell). Modules share values through `_module.args`:
+`rustToolchain` and `craneLib` (`toolchain.nix`), `workspace` (the crane
+arguments, `workspace.nix`). `checks.nix`, `devshell.nix`, `treefmt.nix` and
+`systems.nix` are what their names say.
 
 ## Version control
 

@@ -32,7 +32,7 @@ Current contents:
   against the Cargo.lock-pinned sources in `~/.cargo/registry`, never the web.
 - `skills/update-deps/`: the lock-file bump procedure (verify, then commit).
 - `hooks/format.sh`: `PostToolUse(Write|Edit)`, runs `nix fmt` on the one
-  `.rs`/`.nix`/`.toml` file that changed.
+  file that changed, if `modules/treefmt.nix` formats its type.
 - `settings.json`: allow rules for the build/check commands, `ask` on
   `git push`, deny on `cargo publish`/`yank`/`owner`/`login` and on hand edits
   of `LICENSE` and both lock files, plus the `rust-analyzer-lsp` plugin
