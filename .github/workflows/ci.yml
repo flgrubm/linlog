@@ -1,0 +1,49 @@
+# linlog © Fabian Lukas Grubmüller 2026
+# Licensed under the EUPL
+
+# Everything runs through the flake, so CI checks exactly what `nix flake
+# check` checks locally, with the tools and toolchain flake.lock pins.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Weekly: advisories get published against dependencies that did not move.
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: nix flake check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          # Fetching the `github:` inputs anonymously runs into rate limits.
+          github_access_token: ${{ github.token }}
+      - run: nix flake check --print-build-logs --keep-going
+
+  # The one check that needs the network, so `nix flake check` cannot run it.
+  advisories:
+    name: cargo deny check advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          github_access_token: ${{ github.token }}
+      - run: nix develop --command cargo deny check advisories

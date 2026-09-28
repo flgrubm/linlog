@@ -3,7 +3,7 @@
 
 # `nix flake check', besides treefmt-nix's own `treefmt' check. cargo-deny's
 # `advisories' needs the network, so it is not a check here: run
-# `cargo deny check' in the shell.
+# `cargo deny check' in the shell (CI runs it on every push and weekly).
 {
   perSystem =
     {
@@ -22,6 +22,11 @@
       nixSources = lib.fileset.toSource {
         root = ../.;
         fileset = lib.fileset.fileFilter (file: file.hasExt "nix") ../.;
+      };
+
+      workflowSources = lib.fileset.toSource {
+        root = ../.;
+        fileset = ../.github/workflows;
       };
     in
     {
@@ -62,6 +67,14 @@
         deadnix = pkgs.runCommand "check-deadnix" { nativeBuildInputs = [ pkgs.deadnix ]; } ''
           cd ${nixSources}
           deadnix --fail .
+          touch $out
+        '';
+
+        # The GitHub workflows, which no local run exercises otherwise;
+        # nixpkgs' actionlint runs shellcheck on their `run' scripts.
+        actionlint = pkgs.runCommand "check-actionlint" { nativeBuildInputs = [ pkgs.actionlint ]; } ''
+          cd ${workflowSources}
+          actionlint .github/workflows/*
           touch $out
         '';
       };

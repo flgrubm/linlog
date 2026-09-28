@@ -1,0 +1,14 @@
+# linlog © Fabian Lukas Grubmüller 2026
+# Licensed under the EUPL
+
+# Only the actions, which the workflows pin by commit. Cargo.lock and
+# flake.lock move through /update-deps, which verifies before it commits.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

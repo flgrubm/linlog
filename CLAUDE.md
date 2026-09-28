@@ -47,7 +47,7 @@ cargo hack check --feature-powerset -p linlog              # every parse/seriali
 cargo deny check                                           # licenses, bans, sources + advisories (online)
 cargo run -p linlog-cli -- <args>
 
-nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), deadnix, treefmt
+nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), deadnix, actionlint, treefmt, claude-hooks
 nix fmt           # nixfmt, rustfmt, taplo, shfmt, shellcheck (a hook runs it on each edited file)
 nix build         # linlog-cli
 ```
@@ -59,7 +59,7 @@ Verify as much as the change needs:
 | any `.rs` edit | `cargo clippy …` and `cargo test --workspace` |
 | touches `#[cfg(feature = …)]` or `[features]` | add `cargo hack check --feature-powerset -p linlog` |
 | adds or changes a dependency | add `cargo deny check`. New deps must use a license `deny.toml` allows: EUPL-1.2, MIT, Apache-2.0 (± LLVM-exception), Unicode-3.0 or Zlib |
-| `flake.nix`, `modules/`, the toolchain, a lock bump, or before a push | `nix flake check`, which runs all of the above |
+| `flake.nix`, `modules/`, `.github/`, the toolchain, a lock bump, or before a push | `nix flake check`, which runs all of the above |
 
 ## The flake
 
@@ -71,6 +71,14 @@ treefmt in the shell). Modules share values through `_module.args`:
 `rustToolchain` and `craneLib` (`toolchain.nix`), `workspace` (the crane
 arguments, `workspace.nix`). `checks.nix`, `devshell.nix`, `treefmt.nix` and
 `systems.nix` are what their names say.
+
+## CI
+
+GitHub Actions runs `.github/workflows/ci.yml` on every push to `main`, on
+every pull request and weekly: `nix flake check`, and the online
+`cargo deny check advisories` in the devshell. A workflow installs nothing
+but Nix, so CI checks with exactly the tools flake.lock pins. The rules for
+editing workflows are in `.claude/rules/ci.md`, which loads under `.github/`.
 
 ## Version control: jj only
 

@@ -25,7 +25,7 @@
         commands = [
           {
             name = "check";
-            help = "Run every flake check: build, clippy, tests, rustdoc, cargo-deny, cargo-hack, deadnix, formatting";
+            help = "Run every flake check: build, clippy, tests, rustdoc, cargo-deny, cargo-hack, deadnix, actionlint, formatting";
             command = "nix flake check";
           }
           {
