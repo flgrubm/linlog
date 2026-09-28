@@ -19,6 +19,7 @@ pub use errors::ParseError;
 
 pub use errors::Error;
 
+/// Returns the sum of `left` and `right`.
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
 }
@@ -27,6 +28,7 @@ pub fn add(left: u64, right: u64) -> u64 {
 mod tests {
     use super::*;
 
+    /// `add` sums two small numbers.
     #[test]
     fn two_plus_two_is_four() {
         let result = add(2, 2);

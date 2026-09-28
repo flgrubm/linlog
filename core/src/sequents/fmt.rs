@@ -8,6 +8,8 @@ use crate::logics::Logic;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 impl<I: Index, L: Logic<I>> Sequent<I, L> {
+    /// Writes the term at `index`, in brackets if it is binary and
+    /// `NEEDS_BRACKETS` is set.
     fn display_term<const NEEDS_BRACKETS: bool>(
         &self,
         index: I,
@@ -99,6 +101,8 @@ impl<I: Index, L: Logic<I>> Sequent<I, L> {
 }
 
 impl<I: Index, L: Logic<I>> Display for Sequent<I, L> {
+    /// Writes the sequent one-sided: `⊢` followed by its formulas, separated by
+    /// commas.
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "⊢")?;
 

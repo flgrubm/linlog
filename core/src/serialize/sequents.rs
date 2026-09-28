@@ -43,6 +43,7 @@ struct Sequent {
 }
 
 impl From<LLExpression<usize>> for Expression {
+    /// Converts an arena expression into its serialized form.
     fn from(e: LLExpression<usize>) -> Self {
         use Expression as E;
         use LLExpression::*;
@@ -64,6 +65,7 @@ impl From<LLExpression<usize>> for Expression {
 }
 
 impl From<Expression> for LLExpression<usize> {
+    /// Converts a serialized expression back into an arena expression.
     fn from(e: Expression) -> Self {
         use Expression::*;
         use LLExpression as E;
@@ -85,6 +87,7 @@ impl From<Expression> for LLExpression<usize> {
 }
 
 impl From<Seq<usize, LL>> for Sequent {
+    /// Converts a sequent into its serialized form.
     fn from(s: Seq<usize, LL>) -> Sequent {
         Sequent {
             terms: s.term_arena.into_iter().map(Expression::from).collect(),
@@ -97,6 +100,8 @@ impl From<Seq<usize, LL>> for Sequent {
 impl TryFrom<Sequent> for Seq<usize, LL> {
     type Error = crate::Error;
 
+    /// Converts a deserialized sequent back, failing if its arena breaks the
+    /// invariants.
     fn try_from(s: Sequent) -> Result<Seq<usize, LL>, Self::Error> {
         let s = Seq::<usize, LL> {
             term_arena: s.terms.into_iter().map(LLExpression::from).collect(),
@@ -109,6 +114,7 @@ impl TryFrom<Sequent> for Seq<usize, LL> {
 }
 
 impl serde::Serialize for Seq<usize, LL> {
+    /// Serializes the sequent as its arena, root term indices and variable names.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let proxy = Sequent::from(self.clone());
         proxy.serialize(serializer)
@@ -116,6 +122,7 @@ impl serde::Serialize for Seq<usize, LL> {
 }
 
 impl<'a> serde::Deserialize<'a> for Seq<usize, LL> {
+    /// Deserializes a sequent and checks that its arena keeps the invariants.
     fn deserialize<D: Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
         let proxy = Sequent::deserialize(deserializer)?;
         Seq::try_from(proxy).map_err(serde::de::Error::custom)

@@ -13,6 +13,7 @@ pub struct ParseError {
 }
 
 impl fmt::Display for ParseError {
+    /// Writes where parsing failed, what was found there and what was expected.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -31,6 +32,8 @@ impl fmt::Display for ParseError {
 }
 
 impl<'a, T: fmt::Display> From<Simple<'a, T>> for ParseError {
+    /// Copies the span and the token found out of a chumsky error, which borrows
+    /// the input.
     fn from(e: Simple<'a, T>) -> Self {
         ParseError {
             span: (*e.span()).into_range(),

@@ -18,12 +18,14 @@ pub struct Sequent<I: Index, L: Logic<I>> {
 }
 
 impl<I: Index, L: Logic<I>> std::default::Default for Sequent<I, L> {
+    /// Returns the empty sequent.
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl<I: Index, L: Logic<I>> Sequent<I, L> {
+    /// Returns the empty sequent.
     pub const fn new() -> Self {
         Self {
             term_arena: vec![],

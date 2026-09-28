@@ -45,11 +45,13 @@ fn constant_parser<'a>() -> impl Parser<'a, &'a str, Term<'a>, extra::Err<Simple
     ))
 }
 
+/// Parses a variable name: a Unicode identifier.
 fn variable_parser<'a>() -> impl Parser<'a, &'a str, Term<'a>, extra::Err<Simple<'a, char>>> + Clone
 {
     text::ident().map(Term::Var)
 }
 
+/// Parses a formula, with its operators' precedence and associativity.
 fn term_parser<'a>() -> impl Parser<'a, &'a str, Term<'a>, extra::Err<Simple<'a, char>>> + Clone {
     recursive(|term| {
         let atom = choice((
@@ -108,6 +110,7 @@ fn term_parser<'a>() -> impl Parser<'a, &'a str, Term<'a>, extra::Err<Simple<'a,
     })
 }
 
+/// Parses a two-sided sequent, `Γ |- Δ`, which must span the whole input.
 fn sequent_parser<'a>() -> impl Parser<'a, &'a str, Sequent<'a>, extra::Err<Simple<'a, char>>> {
     let terms_list = term_parser()
         .clone()
@@ -127,6 +130,8 @@ fn sequent_parser<'a>() -> impl Parser<'a, &'a str, Sequent<'a>, extra::Err<Simp
 impl<'a> TryFrom<&'a str> for Sequent<'a> {
     type Error = crate::Error;
 
+    /// Parses `input` into a syntax tree that borrows its variable names, or
+    /// returns every parse error.
     fn try_from(input: &'a str) -> Result<Sequent<'a>, Self::Error> {
         sequent_parser()
             .parse(input)
@@ -143,7 +148,11 @@ impl<'a> TryFrom<&'a str> for Sequent<'a> {
 }
 
 impl<'a> From<(Term<'a>, bool)> for Seq<usize, LL> {
+    /// Lowers a formula into a one-sided sequent of that formula alone, dualised
+    /// if `polarity` is false.
     fn from((t, polarity): (Term<'a>, bool)) -> Self {
+        /// Pushes `t` and its subterms onto the arena, dualised if `polarity` is
+        /// false, and returns the index of `t`.
         fn recursion_helper<'a>(
             t: Term<'a>,
             polarity: bool,
@@ -222,6 +231,8 @@ impl<'a> From<(Term<'a>, bool)> for Seq<usize, LL> {
 }
 
 impl<'a> From<Sequent<'a>> for Seq<usize, LL> {
+    /// Lowers a parsed two-sided sequent into an optimized one-sided one, with
+    /// the left side dualised.
     fn from(s: Sequent<'a>) -> Self {
         let lhs_terms = s.left.into_iter().map(|t| (t, false));
         let rhs_terms = s.right.into_iter().map(|t| (t, true));
@@ -238,6 +249,7 @@ impl<'a> From<Sequent<'a>> for Seq<usize, LL> {
 impl std::str::FromStr for Seq<usize, LL> {
     type Err = crate::Error;
 
+    /// Parses a two-sided sequent such as `A, B |- A * B`.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Seq::from(Sequent::try_from(s)?))
     }

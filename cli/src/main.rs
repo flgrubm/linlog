@@ -6,6 +6,7 @@ mod argument_parsing;
 use argument_parsing::Cli;
 use clap::Parser;
 
+/// Parses the command line arguments and runs the CLI.
 fn main() {
     let cli = Cli::parse();
 

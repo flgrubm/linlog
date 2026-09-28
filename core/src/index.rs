@@ -55,7 +55,10 @@ pub trait Index:
     + PartialOrd
     + Ord
 {
+    /// Returns the index as a `usize`.
     fn as_usize(self) -> usize;
+
+    /// Returns `n` as this index type, truncated if it does not fit.
     fn from_usize(n: usize) -> Self;
 }
 
@@ -64,11 +67,13 @@ mod impls {
     use super::Index;
 
     impl Index for usize {
+        /// Returns the index as a `usize`.
         #[inline(always)]
         fn as_usize(self) -> usize {
             self
         }
 
+        /// Returns `n` as this index type, truncated if it does not fit.
         #[inline(always)]
         fn from_usize(n: usize) -> Self {
             n as Self
@@ -82,11 +87,13 @@ mod impls {
         target_pointer_width = "128"
     ))]
     impl Index for u8 {
+        /// Returns the index as a `usize`.
         #[inline(always)]
         fn as_usize(self) -> usize {
             self as usize
         }
 
+        /// Returns `n` as this index type, truncated if it does not fit.
         #[inline(always)]
         fn from_usize(n: usize) -> Self {
             n as Self
@@ -100,11 +107,13 @@ mod impls {
         target_pointer_width = "128"
     ))]
     impl Index for u16 {
+        /// Returns the index as a `usize`.
         #[inline(always)]
         fn as_usize(self) -> usize {
             self as usize
         }
 
+        /// Returns `n` as this index type, truncated if it does not fit.
         #[inline(always)]
         fn from_usize(n: usize) -> Self {
             n as Self
@@ -117,11 +126,13 @@ mod impls {
         target_pointer_width = "128"
     ))]
     impl Index for u32 {
+        /// Returns the index as a `usize`.
         #[inline(always)]
         fn as_usize(self) -> usize {
             self as usize
         }
 
+        /// Returns `n` as this index type, truncated if it does not fit.
         #[inline(always)]
         fn from_usize(n: usize) -> Self {
             n as Self
@@ -130,11 +141,13 @@ mod impls {
 
     #[cfg(any(target_pointer_width = "64", target_pointer_width = "128"))]
     impl Index for u64 {
+        /// Returns the index as a `usize`.
         #[inline(always)]
         fn as_usize(self) -> usize {
             self as usize
         }
 
+        /// Returns `n` as this index type, truncated if it does not fit.
         #[inline(always)]
         fn from_usize(n: usize) -> Self {
             n as Self
@@ -143,11 +156,13 @@ mod impls {
 
     #[cfg(any(target_pointer_width = "128"))]
     impl Index for u128 {
+        /// Returns the index as a `usize`.
         #[inline(always)]
         fn as_usize(self) -> usize {
             self as usize
         }
 
+        /// Returns `n` as this index type, truncated if it does not fit.
         #[inline(always)]
         fn from_usize(n: usize) -> Self {
             n as Self

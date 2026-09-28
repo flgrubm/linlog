@@ -28,6 +28,8 @@ pub enum LLExpression<I: Index> {
     Quest(I),
 }
 
+/// Returns `e` with its top node dualised (`⊗` to `⅋`, `A` to `~A`, …) and
+/// the same subterm indices.
 #[inline(always)]
 const fn dualize_ll<I: Index>(e: LLExpression<I>) -> LLExpression<I> {
     use LLExpression::*;
@@ -47,6 +49,7 @@ const fn dualize_ll<I: Index>(e: LLExpression<I>) -> LLExpression<I> {
     }
 }
 
+/// Shifts the variable and subterm indices in `e` by the given offsets.
 #[inline(always)]
 fn offset_ll<I: Index>(e: LLExpression<I>, offset_variable: I, offset_terms: I) -> LLExpression<I> {
     use LLExpression::*;
@@ -66,6 +69,8 @@ fn offset_ll<I: Index>(e: LLExpression<I>, offset_variable: I, offset_terms: I) 
     }
 }
 
+/// Checks that `e` refers only to variables below `variable_bound` and to
+/// subterms below `index_bound`.
 #[inline(always)]
 fn check_bounds_ll<I: Index>(
     e: LLExpression<I>,
@@ -103,14 +108,19 @@ pub trait Expression<I: Index>:
     + Eq
     + std::hash::Hash
 {
+    /// Returns the expression with its top node dualised (`⊗` to `⅋`, `A` to
+    /// `~A`, …) and the same subterm indices.
     fn dualize(self) -> Self {
         Self::try_from(dualize_ll(self.into())).unwrap()
     }
 
+    /// Shifts the variable and subterm indices by the given offsets.
     fn offset(self, offset_variable: I, offset_terms: I) -> Self {
         Self::try_from(offset_ll(self.into(), offset_variable, offset_terms)).unwrap()
     }
 
+    /// Checks that the expression refers only to variables below
+    /// `variable_bound` and to subterms below `index_bound`.
     fn check_bounds(self, variable_bound: I, index_bound: I) -> Result<(), Error> {
         check_bounds_ll(self.into(), variable_bound, index_bound)
     }
