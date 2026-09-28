@@ -31,12 +31,20 @@ Current contents:
 - `agents/crate-source-explorer.md`: read-only, answers dependency-API questions
   against the Cargo.lock-pinned sources in `~/.cargo/registry`, never the web.
 - `skills/update-deps/`: the lock-file bump procedure (verify, then commit).
+- `hooks/block-git.py`, `hooks/block-jj-new-message.py`: `PreToolUse(Bash)`
+  guards, see below.
 - `hooks/format.sh`: `PostToolUse(Write|Edit)`, runs `nix fmt` on the one
   file that changed, if `modules/treefmt.nix` formats its type.
-- `settings.json`: allow rules for the build/check commands, `ask` on
-  `git push`, deny on `cargo publish`/`yank`/`owner`/`login` and on hand edits
-  of `LICENSE` and both lock files, plus the `rust-analyzer-lsp` plugin
-  (code intelligence; needs `rust-analyzer` on PATH, which the devshell provides).
+- `hooks/session-jj-state.sh`: `SessionStart`, prints `@` and `@-` and any
+  bookmark `@` is stacked on that `main` lacks.
+- `settings.json`: allow rules for the build/check commands and jj's read-only
+  ones, `ask` on `jj git push`, deny on every `git` command, on
+  `cargo publish`/`yank`/`owner`/`login` and on hand edits of `LICENSE` and both
+  lock files. `env` sets `CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS`, which drops
+  Claude Code's built-in commit/PR instructions and its git status snapshot:
+  both describe git, and in a colocated jj repo the snapshot shows a detached
+  HEAD. It also enables the `rust-analyzer-lsp` plugin (code intelligence;
+  needs `rust-analyzer` on PATH, which the devshell provides).
 
 ## Hooks
 
@@ -47,8 +55,21 @@ Current contents:
   enters a worktree.
 - **Fail open.** A missing tool, an unparseable payload or any error exits 0.
   A hook that can wedge the session is worse than no hook. Only a guard that
-  is confident blocks, with exit 2. There is no guard here yet. If one is added,
-  pin its blocked, allowed and fail-open cases with a check in the same change.
+  is confident blocks, with exit 2.
+- **The guards are plain Python** and catch every exception. Without python3
+  the harness reports a non-blocking hook error, which is still open.
+- `block-git.py` blocks every git invocation, read-only ones too, and
+  `--commit-lock-file`. It resolves the program a command line runs (past
+  `VAR=value`, wrappers such as `env`/`timeout`/`run0`/`xargs`, `bash -c`,
+  `nix shell … -c`, `nix run nixpkgs#git`, `jj util exec`), which the
+  `Bash(git *)` deny rule cannot. Quoted text is masked first, so searching
+  for `git push` is not running it. A heredoc line that starts with `git`
+  still reads as a command: write files with Write/Edit.
+- `block-jj-new-message.py` blocks `jj new -m`.
+- **The `claude-hooks` flake check (`modules/claude-hooks.nix`) pins every
+  guard**: the commands it blocks and allows, that malformed payloads pass, and
+  that `settings.json` registers it. A new guard gets its cases there in the
+  same change.
 - `jq` is not installed on this machine. Parse payloads with python3.
 
 ## Permission rules
@@ -62,7 +83,7 @@ Current contents:
 - A deny rule does not see through `nix develop -c …`. So do not add a broad
   `Bash(nix develop -c cargo *)` allow, which would route around the
   `cargo publish` deny. Grant specific commands instead, as `update-deps`
-  does in its `allowed-tools`.
+  does in its `allowed-tools`. (`block-git.py` does see through it.)
 - `settings.local.json` is gitignored: one-off grants go there, durable rules here.
 
 ## Third-party components

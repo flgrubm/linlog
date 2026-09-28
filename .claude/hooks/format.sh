@@ -40,7 +40,7 @@ if not (isinstance(path, str) and isinstance(cwd, str) and path and cwd):
 # inside the checkout: a memory or scratchpad file is none of its business.
 root = os.path.realpath(cwd)
 real = os.path.realpath(path)
-if real.endswith((".rs", ".nix", ".toml", ".sh", ".envrc")) and real.startswith(root + os.sep):
+if real.endswith((".rs", ".nix", ".toml", ".sh", ".envrc", ".py")) and real.startswith(root + os.sep):
     print(real)
     print(root)
 ' 2>/dev/null) || exit 0

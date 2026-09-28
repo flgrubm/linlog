@@ -32,6 +32,8 @@
 
           shfmt.enable = true;
           shellcheck.enable = true;
+
+          ruff-format.enable = true;
         };
 
         # treefmt walks the whole directory outside a VCS work tree.

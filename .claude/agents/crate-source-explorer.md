@@ -14,7 +14,7 @@ An answer for the wrong version compiles in your head and nowhere else.
 
 ## Locating the sources
 
-From the workspace root (`git rev-parse --show-toplevel`), resolve each crate's
+From the workspace root (`jj root`; this repo never runs git), resolve each crate's
 source directory through Cargo itself. `--locked --offline` guarantees the answer
 is the pinned version and that nothing is fetched. `jq` is not installed, so use
 python3:

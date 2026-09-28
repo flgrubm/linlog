@@ -72,18 +72,33 @@ treefmt in the shell). Modules share values through `_module.args`:
 arguments, `workspace.nix`). `checks.nix`, `devshell.nix`, `treefmt.nix` and
 `systems.nix` are what their names say.
 
-## Version control
+## Version control: jj only
 
-- Plain git, with remote `origin` on Codeberg (`codeberg.org/flgrubm/linlog`).
-  Work lands on `main` directly or through a Codeberg pull request.
-- Commits are GPG-signed automatically (`commit.gpgsign = true`). Never pass
-  `--no-gpg-sign`.
+A jj repository, colocated with git only so that nix and the Codeberg remote
+`origin` (`codeberg.org/flgrubm/linlog`) keep working. **Never run git, not
+even to read.** Every operation goes through `jj`, including lock updates:
+`nix … --commit-lock-file` commits through git. The `Bash(git *)` deny rule and
+`.claude/hooks/block-git.py` enforce this.
+
+- Reading: `jj st`, `jj log`, `jj diff`, `jj show`, `jj file annotate`, `jj root`.
+- **Commit thematically, without being asked**: one logical unit per change,
+  committed as soon as it is done with `jj commit -m`, which describes `@` and
+  opens a fresh change on top. `jj describe -m` only names `@`; `jj squash`
+  folds `@` into its parent (the amend). Never `jj new -m`: it describes a new,
+  empty change and leaves the work behind (a hook blocks it).
+- Edits land in `@` retroactively. If `@` already holds unrelated work, run
+  `jj new` before editing.
+- nix sees only files in the git tree, which any jj command updates: run
+  `jj st` after creating a file, before a `nix` command that must see it.
 - Subjects are short, imperative and capitalised, with no type prefix
   ("Fix bug in reachability analysis for exponentials"). Add a body only when
-  the why is not obvious.
-- Lock bumps are commits of their own, "Cargo update" and "flake.lock: Update".
-  `/update-deps` does both, verifying before it commits.
-- Pushing is outward-facing: only when asked.
+  the why is not obvious. jj signs every commit.
+- Lock bumps are changes of their own, "Cargo update" and "flake.lock: Update".
+  `/update-deps` does both, verifying before it commits; the shell's `up` is
+  the unverified shortcut.
+- Work lands on `main` directly or through a Codeberg pull request. Pushing is
+  outward-facing, so only when asked: `jj bookmark set main -r @-`, then
+  `jj git push`.
 
 ## Conventions
 
@@ -100,9 +115,12 @@ arguments, `workspace.nix`). `checks.nix`, `devshell.nix`, `treefmt.nix` and
 
 ## Claude Code setup
 
-`.claude/` is checked in. It holds a formatter hook, permission rules, the
-`crate-source-explorer` agent (dependency APIs against the locked sources; use it
-before guessing at chumsky 0.12), the `update-deps` skill, and the path-scoped
-rules. `.claude/rules/claude-infra.md` documents it and loads when anything
-under `.claude/` is opened. When the repo changes shape, amend `.claude/` and
-this file in the same change.
+`.claude/` is checked in. It holds the hooks (the git and `jj new -m` guards,
+the formatter, a SessionStart note on the jj working copy), permission rules,
+the `crate-source-explorer` agent (dependency APIs against the locked sources;
+use it before guessing at chumsky 0.12), the `update-deps` skill, and the
+path-scoped rules. Claude Code's built-in git instructions and git status
+snapshot are switched off (`env` in `settings.json`).
+`.claude/rules/claude-infra.md` documents it and loads when anything under
+`.claude/` is opened. When the repo changes shape, amend `.claude/` and this
+file in the same change.

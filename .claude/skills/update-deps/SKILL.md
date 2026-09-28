@@ -2,14 +2,15 @@
 name: update-deps
 description: >-
   Update linlog's lock files (Cargo.lock with `cargo update`, flake.lock with
-  `nix flake update`, which also moves the Rust toolchain), verify each against
-  the checks before committing, and commit each on its own in the repo's
-  established form, "Cargo update" and "flake.lock: Update" with nix's summary.
-  Reports semver-incompatible releases it did not take and any failure a bump
-  introduces. Use when asked to update or bump dependencies, crates, the lock
-  files, nixpkgs, the flake inputs or the Rust toolchain.
+  `nix flake update`, which also moves the Rust toolchain), verify each with
+  `nix flake check` before committing, and commit each with jj as a change of
+  its own in the repo's established form, "Cargo update" and "flake.lock:
+  Update" with nix's summary. Reports semver-incompatible releases it did not
+  take and any failure a bump introduces. Use when asked to update or bump
+  dependencies, crates, the lock files, nixpkgs, the flake inputs or the Rust
+  toolchain.
 argument-hint: "[cargo|flake]"
-allowed-tools: Bash(cargo update *) Bash(nix flake update *) Bash(nix develop -c cargo test *) Bash(nix develop -c cargo clippy *) Bash(nix develop -c rustc --version) Bash(git commit *)
+allowed-tools: Bash(cargo update *) Bash(nix flake update *) Bash(nix develop -c rustc --version) Bash(jj new) Bash(jj restore *) Bash(jj commit *)
 ---
 
 # Updating the lock files
@@ -21,98 +22,90 @@ workspace still builds, tests and lints clean with it, and what moved.
 
 ## Invariants
 
-- **Nothing unverified enters history.** Update, verify, then commit, in that
-  order. In particular, never use `nix flake update --commit-lock-file`, which
-  commits before anything is checked.
-- **Each lock commit touches its lock file and nothing else** (`git commit -- <file>`).
-  A code change a bump forces is a separate commit on top. Propose it and ask
-  before making it: it is a change the user did not request.
-- **Commits are signed automatically** (`commit.gpgsign = true`). Never pass
-  `--no-gpg-sign`. If signing hangs on a stale keyring lock, follow the note in
-  `~/.claude/CLAUDE.md`.
-- **Pushing is not part of this.** Only push when asked.
+- **Nothing unverified enters history.** Update, verify, then commit. Never
+  `nix flake update --commit-lock-file`: it commits through git, before
+  anything is checked, and a hook blocks it.
+- **Each lock change holds its lock file and nothing else**:
+  `jj commit <lock file> -m …` takes only that path. A code change a bump
+  forces is a separate change on top. Propose it and ask before making it.
+- **jj only.** Commits are signed by jj itself.
+- **Pushing is not part of this.**
+
+`$S` below is the session's scratchpad directory: outside the tree, and it
+survives a context compaction.
 
 ## 0. Baseline
 
 ```sh
-git status --porcelain -- Cargo.lock flake.lock   # must print nothing; stop and ask otherwise
-cargo clippy --workspace --all-targets -- --deny warnings
-cargo test --workspace
+jj st
+jj op log --limit 1 --no-graph -T 'id.short(16)'
+nix flake check
 ```
 
-Note every failure that already exists. A failure present before the bump is
-not the bump's, and a failure absent before it is. `nix flake check` runs the
-same clippy with the same toolchain, so a clippy failure here shows up there too.
+`@` must be empty and undescribed. If it holds work, ask before going on, and
+if the user agrees, `jj new` so the bumps start from a clean change. Keep the
+operation id: `jj op restore <id>` puts the lock files *and* history back as
+they were, whatever happens below.
+
+Note every check that already fails. A failure present before a bump is not
+the bump's, and one absent before it is.
 
 ## 1. Cargo.lock
 
 ```sh
-cargo update --dry-run --verbose    # preview; "Unchanged x (available: y)" = semver-incompatible, not taken
+cargo update --dry-run --verbose    # "Unchanged x (available: y)": semver-incompatible, not taken
 cargo update
 ```
 
 Verify:
 
 ```sh
-cargo build --workspace
-cargo test --workspace
-cargo clippy --workspace --all-targets -- --deny warnings
-cargo hack check --feature-powerset -p linlog
-cargo deny check                    # licenses and advisories of anything new
-nix flake check                     # crane builds from the lock too
+nix flake check                     # build, clippy, tests, rustdoc, cargo-deny, cargo-hack, formatting
+cargo deny check advisories         # online; the flake check cannot fetch the database
 ```
 
-If anything new fails, restore the lock (`git checkout -- Cargo.lock`), and
-report the failure and the crate that caused it. Otherwise:
+If anything newly fails, back out with `jj restore Cargo.lock` and report the
+failure and the crate that caused it. Otherwise:
 
 ```sh
-git commit -m "Cargo update" -- Cargo.lock
+jj commit Cargo.lock -m "Cargo update"
 ```
 
 ## 2. flake.lock
 
-`rust-overlay`'s `stable.latest` makes this bump also move rustc, clippy and
-rustfmt. New clippy lints are the usual fallout. The current shell still holds
-the old devshell, so verify through `nix develop -c`, not bare `cargo`.
-
-Keep nix's summary: it becomes the commit body. Write it inside `.git/`,
-where it survives a context compaction and stays out of the tree:
+A rust-overlay bump moves rustc, clippy and rustfmt along with nixpkgs; new
+clippy lints are the usual fallout. The running shell still holds the old
+toolchain, so ask the flake's shell for it:
 
 ```sh
 nix develop -c rustc --version      # before
-log=$(git rev-parse --git-path flake-update.log)
-nix flake update 2> "$log"
+nix flake update 2> "$S/flake-update.txt"; cat "$S/flake-update.txt"
 nix develop -c rustc --version      # after
 ```
 
-Verify:
+Nothing moved (`jj diff --name-only` is empty)? Say so and stop. Verify:
 
 ```sh
-nix flake check                     # build, clippy --deny warnings, cargo fmt, taplo, treefmt
-nix develop -c cargo test --workspace
+nix flake check
 ```
 
 If the only new failures are lints from the toolchain bump, stop and ask:
-commit the lock with a separate lint-fix commit on top, or back out. If
-anything else newly fails, restore (`git checkout -- flake.lock`) and report
-it. Otherwise:
+commit the lock with a lint fix as a separate change on top, or back out. If
+anything else newly fails, back out with `jj restore flake.lock` and report
+it. Otherwise commit with nix's own summary as the body, the form every
+earlier `flake.lock: Update` in history has:
 
 ```sh
-log=$(git rev-parse --git-path flake-update.log)
-{ printf 'flake.lock: Update\n\nFlake lock file updates:\n\n'; sed -n '/^•/,$p' "$log"; } \
-  | git commit -F - -- flake.lock
-rm -f "$log"
+jj commit flake.lock -m "$(printf 'flake.lock: Update\n\nFlake lock file updates:\n\n'; awk '/^•/{p=1} p' "$S/flake-update.txt")"
+jj log -r @- --no-graph -T 'signature.status()'    # good
 ```
-
-This reproduces the message `nix flake update --commit-lock-file` writes,
-which is the form every earlier `flake.lock: Update` commit in history has.
 
 ## 3. Report
 
-- per lock file: committed or backed out, and the commit hash
-- crates that moved, as `name old -> new`. Call out any that linlog depends on
+- per lock file: committed or backed out, and the change id
+- crates that moved, as `name old -> new`. Call out the ones linlog depends on
   directly (chumsky, clap, serde, subenum, thiserror, anyhow, serde_json)
-- semver-incompatible releases available but not taken, since each needs a
+- semver-incompatible releases available but not taken: each needs a
   `Cargo.toml` change and probably code changes
 - the rustc version before → after
 - every failure the bump introduced, and what fixing it would take
