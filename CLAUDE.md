@@ -74,8 +74,8 @@ arguments, `workspace.nix`). `checks.nix`, `devshell.nix`, `treefmt.nix` and
 
 ## Version control: jj only
 
-A jj repository, colocated with git only so that nix and the Codeberg remote
-`origin` (`codeberg.org/flgrubm/linlog`) keep working. **Never run git, not
+A jj repository, colocated with git only so that nix and the GitHub remote
+`origin` (`github.com/flgrubm/linlog`) keep working. **Never run git, not
 even to read.** Every operation goes through `jj`, including lock updates:
 `nix … --commit-lock-file` commits through git. The `Bash(git *)` deny rule and
 `.claude/hooks/block-git.py` enforce this.
@@ -96,9 +96,9 @@ even to read.** Every operation goes through `jj`, including lock updates:
 - Lock bumps are changes of their own, "Cargo update" and "flake.lock: Update".
   `/update-deps` does both, verifying before it commits; the shell's `up` is
   the unverified shortcut.
-- Work lands on `main` directly or through a Codeberg pull request. Pushing is
+- Work lands on `main` directly or through a GitHub pull request. Pushing is
   outward-facing, so only when asked: `jj bookmark set main -r @-`, then
-  `jj git push`.
+  `jj git push --bookmark main`.
 
 ## Conventions
 
