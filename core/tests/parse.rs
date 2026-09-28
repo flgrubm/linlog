@@ -96,6 +96,18 @@ fn operator_spellings_are_interchangeable() {
     }
 }
 
+/// A variable may occur any number of times, in any order with the others.
+#[test]
+fn repeated_variables() {
+    for (input, printed) in [
+        ("|- A, A, B", "⊢ A, A, B"),
+        ("A, A -o B |- B", "⊢ ~A, A ⊗ ~B, B"),
+        ("B, A |- A * B", "⊢ ~B, ~A, A ⊗ B"),
+    ] {
+        assert_eq!(pretty(input), printed, "{input:?}");
+    }
+}
+
 /// A word that merely starts like a constant is a variable or an error.
 #[test]
 fn constant_prefixes() {

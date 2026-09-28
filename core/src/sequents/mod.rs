@@ -240,6 +240,7 @@ impl<I: Index, L: Logic<I>> Sequent<I, L> {
         Ok(())
     }
 
+    /// Merges variables of the same name, numbered in order of first occurrence.
     fn optimize_variable_dict(&mut self) -> Result<(), crate::Error> {
         use LLExpression::*;
         let num_variables = Index::from_usize(self.variable_dict.len());
@@ -258,19 +259,22 @@ impl<I: Index, L: Logic<I>> Sequent<I, L> {
                             num_variables.as_usize(),
                         ))?
                         .as_ref();
-                    if let Some(k) = hm.get(name_ref) {
-                        let _e = match e_in_ll {
-                            Var(_) => Var(*k),
-                            DualVar(_) => DualVar(*k),
-                            _ => unreachable!(),
-                        };
-                        *e = L::Expression::try_from(_e).unwrap();
-                    } else {
-                        let fresh_variable_id = Index::from_usize(var_dict_.len());
-                        let name = name_ref.to_string();
-                        hm.insert(name.clone(), fresh_variable_id);
-                        var_dict_.push(name);
-                    }
+                    let k = match hm.get(name_ref) {
+                        Some(k) => *k,
+                        None => {
+                            let fresh_variable_id = Index::from_usize(var_dict_.len());
+                            let name = name_ref.to_string();
+                            hm.insert(name.clone(), fresh_variable_id);
+                            var_dict_.push(name);
+                            fresh_variable_id
+                        }
+                    };
+                    let renamed = match e_in_ll {
+                        Var(_) => Var(k),
+                        DualVar(_) => DualVar(k),
+                        _ => unreachable!(),
+                    };
+                    *e = L::Expression::try_from(renamed).unwrap();
                 }
                 _ => {}
             }
@@ -319,5 +323,20 @@ mod tests {
         let mut s = Sequent::<usize, LL>::new();
         s.optimize().unwrap();
         assert!(s.term_arena.is_empty() && s.term_ids.is_empty() && s.variable_dict.is_empty());
+    }
+
+    /// Variables of one name merge, and the rest are renumbered to match, also
+    /// when a repeated name comes before a new one.
+    #[test]
+    fn optimize_merges_variables() {
+        use LLExpression::*;
+        let mut s = Sequent::<usize, LL> {
+            term_arena: vec![Var(0), DualVar(1), Var(2)],
+            term_ids: vec![0, 1, 2],
+            variable_dict: vec!["A".into(), "A".into(), "B".into()],
+        };
+        s.optimize().unwrap();
+        assert_eq!(s.variable_dict, ["A", "B"]);
+        assert_eq!(s.term_arena, [Var(0), DualVar(0), Var(1)]);
     }
 }
