@@ -108,6 +108,12 @@ even to read.** Every operation goes through `jj`, including lock updates:
   // Licensed under the EUPL
   ```
   The project is EUPL-1.2.
+- Comments are short and targeted: they say why, or what the code cannot.
+  Types and names carry the rest.
+- Comments are self-contained: they make sense from inside this repository,
+  with no references to other repositories, machines or conversations.
+- Every Rust function gets a concise `///` doc comment that a human
+  understands at first read: what it does and returns, not how.
 - `core/src/lib.rs` allows `dead_code` and `unused_variables` crate-wide while
   things are scaffolded. The `add` function and its test there are template leftovers.
 - `scratchpad*.md` are the author's gitignored notes. `scratchpad1.md` is about
