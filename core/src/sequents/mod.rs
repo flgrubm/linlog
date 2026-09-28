@@ -78,10 +78,11 @@ impl<I: Index, L: Logic<I>> Sequent<I, L> {
         }
     }
 
+    /// Drops the terms no root formula reaches and merges equal terms, keeping
+    /// the arena topologically sorted. Fails if an index breaks that order or
+    /// points outside the arena.
     fn optimize_term_arena(&mut self) -> Result<(), crate::Error> {
         use LLExpression::*;
-
-        // determine cleanup measures and check integrity
 
         let num_terms = Index::from_usize(self.term_arena.len());
 
@@ -137,99 +138,43 @@ impl<I: Index, L: Logic<I>> Sequent<I, L> {
             }
         }
 
-        #[derive(Copy, Clone, Debug)]
-        enum TermState<I: Index> {
-            Remain,
-            Unreachable,
-            DuplicateOf(I),
-        }
-
-        use TermState::*;
-
-        let mut hm = HashMap::<L::Expression, I>::new();
-        let mut states = Vec::<TermState<I>>::with_capacity(num_terms.as_usize());
+        // In index order, every subterm has its final index before its parents
+        // are rebuilt, so hashing the rebuilt terms merges equal terms at any
+        // depth.
+        let mut new_index = vec![None; num_terms.as_usize()];
+        let mut term_arena = Vec::with_capacity(num_terms.as_usize());
+        let mut kept = HashMap::<L::Expression, I>::new();
 
         for (n, (is_reachable, e)) in zip(reachable, self.term_arena.iter()).enumerate() {
-            if is_reachable {
-                if let Some(k) = hm.get(e) {
-                    states.push(DuplicateOf(*k));
-                } else {
-                    hm.insert(*e, Index::from_usize(n));
-                    states.push(Remain);
-                }
-            } else {
-                states.push(Unreachable);
+            if !is_reachable {
+                continue;
             }
+            // The subterms of a reachable term are reachable and precede it.
+            let moved = |k: I| new_index[k.as_usize()].unwrap();
+            let e = L::Expression::try_from(match (*e).into() {
+                Tensor(k, l) => Tensor(moved(k), moved(l)),
+                Par(k, l) => Par(moved(k), moved(l)),
+                With(k, l) => With(moved(k), moved(l)),
+                Plus(k, l) => Plus(moved(k), moved(l)),
+                Bang(k) => Bang(moved(k)),
+                Quest(k) => Quest(moved(k)),
+                e => e,
+            })
+            .unwrap();
+            let fresh_index = Index::from_usize(term_arena.len());
+            let index = *kept.entry(e).or_insert(fresh_index);
+            if index == fresh_index {
+                term_arena.push(e);
+            }
+            new_index[n] = Some(index);
         }
 
-        // Both indices are in the optimized arena.
-        #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-        enum RedirectState<I: Index> {
-            Remove,
-            MoveTo(I),
-            RemoveAndPointTo(I),
-        }
-
-        use RedirectState::*;
-
-        let mut fresh_index = Index::from_usize(0);
-        let mut redirects = Vec::<RedirectState<I>>::with_capacity(num_terms.as_usize());
-
-        for s in states.into_iter() {
-            match s {
-                Unreachable => redirects.push(Remove),
-                Remain => {
-                    redirects.push(MoveTo(fresh_index));
-                    fresh_index += Index::from_usize(1);
-                }
-                DuplicateOf(n) => {
-                    if let MoveTo(k) = redirects[n.as_usize()] {
-                        redirects.push(RemoveAndPointTo(k));
-                    } else {
-                        unreachable!()
-                    }
-                }
-            }
-        }
-
-        // execute cleanup
-
-        let where_to_find = |k: &I| {
-            debug_assert!(*k < Index::from_usize(redirects.len()));
-            debug_assert!(redirects[(*k).as_usize()] != Remove);
-
-            match redirects[(*k).as_usize()] {
-                MoveTo(n) | RemoveAndPointTo(n) => n,
-                _ => {
-                    unreachable!()
-                }
-            }
-        };
-
-        let apply_cleanup_terms = |(state, e): (&RedirectState<I>, &L::Expression)| {
-            if let MoveTo(_) = state {
-                Some(
-                    L::Expression::try_from(match (*e).into() {
-                        Tensor(m, n) => Tensor(where_to_find(&m), where_to_find(&n)),
-                        Par(m, n) => Par(where_to_find(&m), where_to_find(&n)),
-                        With(m, n) => With(where_to_find(&m), where_to_find(&n)),
-                        Plus(m, n) => Plus(where_to_find(&m), where_to_find(&n)),
-                        Bang(m) => Bang(where_to_find(&m)),
-                        Quest(m) => Quest(where_to_find(&m)),
-                        e => e,
-                    })
-                    .unwrap(),
-                )
-            } else {
-                None
-            }
-        };
-
-        self.term_arena = zip(redirects.iter(), self.term_arena.iter())
-            .filter_map(apply_cleanup_terms)
+        self.term_arena = term_arena;
+        self.term_ids = self
+            .term_ids
+            .iter()
+            .map(|k| new_index[k.as_usize()].unwrap())
             .collect();
-
-        self.term_ids = self.term_ids.iter().map(where_to_find).collect();
 
         Ok(())
     }
@@ -278,8 +223,9 @@ impl<I: Index, L: Logic<I>> Sequent<I, L> {
         Ok(())
     }
 
-    /// Remove unreachable terms and collapse duplicate items
-    /// This is rather inefficient, so use only if necessary
+    /// Merges variables of the same name and equal terms, drops the terms no
+    /// root formula reaches and sorts the root formulas. Fails if the arena
+    /// breaks its invariants.
     pub fn optimize(&mut self) -> Result<(), crate::Error> {
         self.optimize_variable_dict()?;
         self.optimize_term_arena()?;
@@ -347,5 +293,28 @@ mod tests {
         s.optimize().unwrap();
         assert_eq!(s.term_arena, [One, Top, Tensor(0, 1)]);
         assert_eq!(s.term_ids, [1, 2]);
+    }
+
+    /// Equal terms merge at every depth, not only equal leaves.
+    #[test]
+    fn optimize_merges_equal_subterms() {
+        use LLExpression::*;
+        let mut s = Sequent::<usize, LL> {
+            term_arena: vec![
+                Var(0),
+                Var(1),
+                Tensor(0, 1),
+                Bang(2),
+                Var(0),
+                Var(1),
+                Tensor(4, 5),
+                Bang(6),
+            ],
+            term_ids: vec![3, 7],
+            variable_dict: vec!["A".into(), "B".into()],
+        };
+        s.optimize().unwrap();
+        assert_eq!(s.term_arena, [Var(0), Var(1), Tensor(0, 1), Bang(2)]);
+        assert_eq!(s.term_ids, [3, 3]);
     }
 }
