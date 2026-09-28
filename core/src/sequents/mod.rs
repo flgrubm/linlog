@@ -146,8 +146,7 @@ impl<I: Index, L: Logic<I>> Sequent<I, L> {
         let mut hm = HashMap::<L::Expression, I>::new();
         let mut states = Vec::<TermState<I>>::with_capacity(num_terms.as_usize());
 
-        for (n, (is_reachable, e)) in zip(reachable.into_iter(), self.term_arena.iter()).enumerate()
-        {
+        for (n, (is_reachable, e)) in zip(reachable, self.term_arena.iter()).enumerate() {
             if is_reachable {
                 if let Some(k) = hm.get(e) {
                     states.push(DuplicateOf(*k));

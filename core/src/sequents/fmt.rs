@@ -18,11 +18,11 @@ impl<I: Index, L: Logic<I>> Sequent<I, L> {
         match (self.term_arena[index.as_usize()]).into() {
             Var(var_index) => {
                 debug_assert!(var_index < Index::from_usize(self.variable_dict.len()));
-                write!(f, "{}", &self.variable_dict[var_index.as_usize()])
+                write!(f, "{}", self.variable_dict[var_index.as_usize()])
             }
             DualVar(var_index) => {
                 debug_assert!(var_index < Index::from_usize(self.variable_dict.len()));
-                write!(f, "~{}", &self.variable_dict[var_index.as_usize()])
+                write!(f, "~{}", self.variable_dict[var_index.as_usize()])
             }
             One => write!(f, "1"),
             Bot => write!(f, "⊥"),
