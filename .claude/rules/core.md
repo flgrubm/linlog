@@ -51,7 +51,7 @@ only `DualVar`. `A ⊸ B` becomes `A^⊥ ⅋ B`. Printing therefore gives
 ## Parsing
 
 `core/src/parse/mod.rs` has two stages:
-1. A chumsky 0.12 Pratt parser produces a borrowed AST (`parse::Term`/`parse::Sequent`).
+1. A chumsky Pratt parser produces a borrowed AST (`parse::Term`/`parse::Sequent`).
 2. That AST is lowered into the arena, which creates one variable entry per occurrence and then calls `optimize()`.
 
 chumsky's API changed wholesale after 0.9, and most examples online and in
