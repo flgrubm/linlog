@@ -47,6 +47,55 @@ fn empty_sides() {
     }
 }
 
+/// Operators bind from tightest to loosest: `^`, then `~ ! ?`, tensor, par,
+/// with, plus and lollipop.
+#[test]
+fn precedence() {
+    for (input, printed) in [
+        ("|- !A^ * ?~B", "⊢ !~A ⊗ ?~B"),
+        (
+            "|- A -o B + C & D par E * F",
+            "⊢ ~A ⅋ (B ⊕ (C & (D ⅋ (E ⊗ F))))",
+        ),
+        (
+            "|- A * B par C & D + E -o F",
+            "⊢ ((((~A ⅋ ~B) ⊗ ~C) ⊕ ~D) & ~E) ⅋ F",
+        ),
+    ] {
+        assert_eq!(pretty(input), printed, "{input:?}");
+    }
+}
+
+/// Lollipop associates to the right, every other binary operator to the left.
+#[test]
+fn associativity() {
+    for (input, printed) in [
+        ("|- A -o B -o C", "⊢ ~A ⅋ (~B ⅋ C)"),
+        ("|- A * B * C", "⊢ (A ⊗ B) ⊗ C"),
+        ("|- A par B par C", "⊢ (A ⅋ B) ⅋ C"),
+        ("|- A & B & C", "⊢ (A & B) & C"),
+        ("|- A + B + C", "⊢ (A ⊕ B) ⊕ C"),
+    ] {
+        assert_eq!(pretty(input), printed, "{input:?}");
+    }
+}
+
+/// Every spelling of a binary operator binds and associates like the others,
+/// also when spellings are mixed in one formula.
+#[test]
+fn operator_spellings_are_interchangeable() {
+    let operators: [&[&str]; 4] = [&["*", "⊗"], &["par", "|", "⅋"], &["+", "⊕"], &["-o", "⊸"]];
+    for spellings in operators {
+        let expected = pretty(&format!("|- A {0} B {0} C", spellings[0]));
+        for first in spellings {
+            for second in spellings {
+                let input = format!("|- A {first} B {second} C");
+                assert_eq!(pretty(&input), expected, "{input:?}");
+            }
+        }
+    }
+}
+
 /// A word that merely starts like a constant is a variable or an error.
 #[test]
 fn constant_prefixes() {

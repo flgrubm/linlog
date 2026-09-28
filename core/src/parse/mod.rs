@@ -101,7 +101,7 @@ fn term_parser<'a>() -> impl Parser<'a, &'a str, Term<'a>, extra::Err<Simple<'a,
             infix(right(1), just("-o").padded(), |l, _, r, _| {
                 Term::Lollipop(Box::new(l), Box::new(r))
             }),
-            infix(right(0), just('⊸').padded(), |l, _, r, _| {
+            infix(right(1), just('⊸').padded(), |l, _, r, _| {
                 Term::Lollipop(Box::new(l), Box::new(r))
             }),
         ))
