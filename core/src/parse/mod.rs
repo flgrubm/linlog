@@ -31,15 +31,17 @@ pub(super) struct Sequent<'a> {
     pub(super) right: Vec<Term<'a>>,
 }
 
+/// Parses a unit constant: `0`, `1`, `bot`/`⊥` or `top`/`⊤`.
 fn constant_parser<'a>() -> impl Parser<'a, &'a str, Term<'a>, extra::Err<Simple<'a, char>>> + Clone
 {
+    // `text::keyword` only matches identifiers, so digits and symbols need `just`.
     choice((
-        text::keyword("0").map(|_| Term::Zero),
-        text::keyword("1").map(|_| Term::One),
+        just('0').map(|_| Term::Zero),
+        just('1').map(|_| Term::One),
         text::keyword("bot").map(|_| Term::Bot),
-        text::keyword("⊥").map(|_| Term::Bot),
+        just('⊥').map(|_| Term::Bot),
         text::keyword("top").map(|_| Term::Top),
-        text::keyword("⊤").map(|_| Term::Top),
+        just('⊤').map(|_| Term::Top),
     ))
 }
 

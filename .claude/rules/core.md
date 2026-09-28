@@ -59,8 +59,9 @@ memory are for the old one. When a signature is in doubt, ask the
 `crate-source-explorer` agent rather than guessing.
 
 Every operator has ASCII and Unicode spellings: `* ⊗`, `| par ⅋`, `&`,
-`+ ⊕`, `-o ⊸`, prefix `~ ! ?`, postfix `^`, and `|-`/`⊢`. Precedence, from
-tightest: `^` > `~ ! ?` > tensor > par > with > plus > lollipop (right-associative).
+`+ ⊕`, `-o ⊸`, prefix `~ ! ?`, postfix `^`, and `|-`/`⊢`. The constants are
+`0`, `1`, `bot ⊥` and `top ⊤`. Precedence, from tightest: `^` > `~ ! ?` > tensor > par > with > plus > lollipop (right-associative).
+`core/tests/parse.rs` pins this behaviour through the public API.
 
 ## Serialization
 
