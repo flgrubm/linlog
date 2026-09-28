@@ -60,10 +60,13 @@ impl<I: Index, L: Logic<I>> Sequent<I, L> {
         Ok(())
     }
 
+    /// Sorts the root term indices and checks that each names a term.
     fn optimize_term_ids(&mut self) -> Result<(), crate::Error> {
         self.term_ids.sort();
         self.term_ids.shrink_to_fit();
-        let n = self.term_ids.last().unwrap();
+        let Some(n) = self.term_ids.last() else {
+            return Ok(());
+        };
         let num_terms = Index::from_usize(self.term_arena.len());
         if *n >= num_terms {
             Err(crate::Error::TermIndexOutOfBounds(
@@ -302,5 +305,19 @@ impl<I: Index, L: Logic<I>> Sequent<I, L> {
             .extend(s.term_ids.into_iter().map(|n| n + offset_terms));
 
         self.variable_dict.extend(s.variable_dict);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::logics::LL;
+
+    /// The empty sequent survives optimisation unchanged.
+    #[test]
+    fn optimize_empty() {
+        let mut s = Sequent::<usize, LL>::new();
+        s.optimize().unwrap();
+        assert!(s.term_arena.is_empty() && s.term_ids.is_empty() && s.variable_dict.is_empty());
     }
 }

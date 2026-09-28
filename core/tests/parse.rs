@@ -39,6 +39,14 @@ fn constants() {
     }
 }
 
+/// A sequent may have no formulas on either side, or on both.
+#[test]
+fn empty_sides() {
+    for (input, printed) in [("|-", "⊢"), ("⊢", "⊢"), ("A |-", "⊢ ~A"), ("|- A", "⊢ A")] {
+        assert_eq!(pretty(input), printed, "{input:?}");
+    }
+}
+
 /// A word that merely starts like a constant is a variable or an error.
 #[test]
 fn constant_prefixes() {
