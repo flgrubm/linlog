@@ -108,6 +108,18 @@ fn repeated_variables() {
     }
 }
 
+/// Repeated formulas are all kept, each with its own subformulas.
+#[test]
+fn repeated_formulas() {
+    for (input, printed) in [
+        ("|- A, A, B, C, C", "⊢ A, A, B, C, C"),
+        ("|- ⊤, ⊤, ⊥, ⊥", "⊢ ⊤, ⊤, ⊥, ⊥"),
+        ("|- A, A, B * B", "⊢ A, A, B ⊗ B"),
+    ] {
+        assert_eq!(pretty(input), printed, "{input:?}");
+    }
+}
+
 /// A word that merely starts like a constant is a variable or an error.
 #[test]
 fn constant_prefixes() {

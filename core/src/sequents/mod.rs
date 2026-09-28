@@ -162,6 +162,7 @@ impl<I: Index, L: Logic<I>> Sequent<I, L> {
             }
         }
 
+        // Both indices are in the optimized arena.
         #[derive(Copy, Clone, Debug, PartialEq, Eq)]
         enum RedirectState<I: Index> {
             Remove,
@@ -198,14 +199,7 @@ impl<I: Index, L: Logic<I>> Sequent<I, L> {
             debug_assert!(redirects[(*k).as_usize()] != Remove);
 
             match redirects[(*k).as_usize()] {
-                MoveTo(n) => n,
-                RemoveAndPointTo(n) => {
-                    if let MoveTo(m) = redirects[n.as_usize()] {
-                        m
-                    } else {
-                        unreachable!()
-                    }
-                }
+                MoveTo(n) | RemoveAndPointTo(n) => n,
                 _ => {
                     unreachable!()
                 }
@@ -338,5 +332,20 @@ mod tests {
         s.optimize().unwrap();
         assert_eq!(s.variable_dict, ["A", "B"]);
         assert_eq!(s.term_arena, [Var(0), DualVar(0), Var(1)]);
+    }
+
+    /// References to a duplicate term point to its kept copy, also after
+    /// unreachable terms before it are dropped.
+    #[test]
+    fn optimize_redirects_duplicates() {
+        use LLExpression::*;
+        let mut s = Sequent::<usize, LL> {
+            term_arena: vec![Zero, One, Top, Top, Tensor(1, 3)],
+            term_ids: vec![2, 4],
+            variable_dict: vec![],
+        };
+        s.optimize().unwrap();
+        assert_eq!(s.term_arena, [One, Top, Tensor(0, 1)]);
+        assert_eq!(s.term_ids, [1, 2]);
     }
 }
