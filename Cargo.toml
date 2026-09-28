@@ -8,3 +8,11 @@ name = "linlog-workspace"
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+
+# Every item gets a doc comment (CLAUDE.md, Conventions): rustc checks the
+# public ones, clippy the private ones.
+[workspace.lints.rust]
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+missing_docs_in_private_items = "warn"

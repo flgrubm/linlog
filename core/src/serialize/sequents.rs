@@ -6,39 +6,57 @@ use crate::sequents::Sequent as Seq;
 use crate::sequents::expressions::LLExpression;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+/// The serialized form of an arena expression. Its tags are part of the
+/// interchange format, so renaming one breaks it.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 #[serde(rename = "E")]
 enum Expression {
+    /// A variable, by dictionary index.
     #[serde(rename = "V")]
     Var(usize),
+    /// A negated variable, by dictionary index.
     #[serde(rename = "D")]
     DualVar(usize),
+    /// `1`
     #[serde(rename = "1")]
     One,
+    /// `⊥`
     #[serde(rename = "⊥")]
     Bot,
+    /// `⊤`
     #[serde(rename = "⊤")]
     Top,
+    /// `0`
     #[serde(rename = "0")]
     Zero,
+    /// `A ⊗ B`
     #[serde(rename = "⊗")]
     Tensor(usize, usize),
+    /// `A ⅋ B`
     #[serde(rename = "⅋")]
     Par(usize, usize),
+    /// `A & B`
     #[serde(rename = "&")]
     With(usize, usize),
+    /// `A ⊕ B`
     #[serde(rename = "⊕")]
     Plus(usize, usize),
+    /// `!A`
     #[serde(rename = "!")]
     Bang(usize),
+    /// `?A`
     #[serde(rename = "?")]
     Quest(usize),
 }
 
+/// The serialized form of a sequent.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Sequent {
+    /// The arena.
     terms: Vec<Expression>,
+    /// The root formulas, as arena indices.
     ids: Vec<usize>,
+    /// The variable names.
     var_dict: Vec<String>,
 }
 

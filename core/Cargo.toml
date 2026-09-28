@@ -15,3 +15,6 @@ thiserror = "2.0.17"
 default = ["parse", "serialize"]
 parse = ["dep:chumsky"]
 serialize = ["dep:serde"]
+
+[lints]
+workspace = true

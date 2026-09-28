@@ -1,6 +1,8 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
+//! What sequents parse to and print as, through the public API.
+
 #![cfg(feature = "parse")]
 
 use linlog::logics::LL;

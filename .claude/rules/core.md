@@ -44,7 +44,9 @@ only `DualVar`. `A ⊸ B` becomes `A^⊥ ⅋ B`. Printing therefore gives
   `LLExpression` first, as the existing code does.
 - `logics.rs` connects a marker type (`LL`, `MLL`) to its expression type. A
   new fragment needs a `#[subenum(...)]` marker on each variant it keeps and a
-  `Logic` impl.
+  `Logic` impl. Its doc comment goes into the top `#[subenum]` attribute as
+  `Name(doc = "…")`: subenum copies a `///` on `LLExpression` to every
+  fragment.
 - `core/src/linear/{ll,mll}` are empty placeholders for per-fragment algorithms
   such as proof search.
 

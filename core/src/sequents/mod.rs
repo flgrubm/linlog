@@ -1,7 +1,9 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
+/// The expression nodes an arena is built from.
 pub mod expressions;
+/// Printing sequents in one-sided notation.
 pub mod fmt;
 
 use super::logics::Logic;
@@ -10,10 +12,15 @@ use expressions::{Expression, LLExpression};
 use std::collections::HashMap;
 use std::iter::zip;
 
+/// A one-sided sequent in negation normal form: root formulas over an arena of
+/// shared subterms.
 #[derive(Clone, Debug)]
 pub struct Sequent<I: Index, L: Logic<I>> {
+    /// Every subformula; a term refers only to terms at lower indices.
     pub(crate) term_arena: Vec<L::Expression>,
+    /// The root formulas, as arena indices.
     pub(crate) term_ids: Vec<I>,
+    /// The variable names that `Var` and `DualVar` refer to by index.
     pub(crate) variable_dict: Vec<String>,
 }
 

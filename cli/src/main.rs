@@ -1,6 +1,9 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
+//! The linlog command line interface.
+
+/// The command line arguments.
 mod argument_parsing;
 
 use argument_parsing::Cli;

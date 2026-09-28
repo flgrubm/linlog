@@ -9,34 +9,42 @@ use std::path::PathBuf;
 #[command(version, about, long_about)]
 pub(crate) struct Cli {
     #[arg(short, long)]
+    /// Placeholder flag, until the subcommands are dispatched
     pub(crate) bb: bool,
     #[command(subcommand)]
+    /// The subcommand to run
     pub(crate) command: Command,
 }
 
+/// The top-level subcommands.
 #[derive(Subcommand, Debug)]
 pub(crate) enum Command {
     /// Transform sequent representations
     Seq {
         #[command(subcommand)]
+        /// What to do with the sequent
         action: SeqCommand,
     },
 }
 
+/// The subcommands of `seq`.
 #[derive(Subcommand, Debug)]
 pub(crate) enum SeqCommand {
     /// Pretty print a sequent
     Pretty {
         #[command(subcommand)]
+        /// The input format
         action: PrettyCommand,
     },
     /// Output a sequent in JSON format
     Serialize {
         #[command(subcommand)]
+        /// The input format
         action: SerializeCommand,
     },
 }
 
+/// The input formats of `seq pretty`.
 #[derive(Subcommand, Debug)]
 pub(crate) enum PrettyCommand {
     /// Parse human readable sequent
@@ -65,6 +73,7 @@ pub(crate) enum PrettyCommand {
     },
 }
 
+/// The input formats of `seq serialize`.
 #[derive(Subcommand, Debug)]
 pub(crate) enum SerializeCommand {
     /// Parse human readable sequent

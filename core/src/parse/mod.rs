@@ -8,26 +8,43 @@ use crate::sequents::expressions::{Expression, LLExpression};
 use chumsky::pratt::*;
 use chumsky::prelude::*;
 
+/// A parsed formula, before it is lowered into an arena.
 #[derive(Debug)]
 pub(super) enum Term<'a> {
+    /// A variable, by name.
     Var(&'a str),
+    /// `0`
     Zero,
+    /// `1`
     One,
+    /// `⊥`
     Bot,
+    /// `⊤`
     Top,
+    /// Linear negation, `~A` or `A^`.
     Dual(Box<Term<'a>>),
+    /// `!A`
     Bang(Box<Term<'a>>),
+    /// `?A`
     Quest(Box<Term<'a>>),
+    /// `A ⊗ B`
     Tensor(Box<Term<'a>>, Box<Term<'a>>),
+    /// `A ⅋ B`
     Par(Box<Term<'a>>, Box<Term<'a>>),
+    /// `A & B`
     With(Box<Term<'a>>, Box<Term<'a>>),
+    /// `A ⊕ B`
     Plus(Box<Term<'a>>, Box<Term<'a>>),
+    /// `A ⊸ B`
     Lollipop(Box<Term<'a>>, Box<Term<'a>>),
 }
 
+/// A parsed two-sided sequent, `left ⊢ right`.
 #[derive(Debug)]
 pub(super) struct Sequent<'a> {
+    /// The formulas left of the turnstile.
     pub(super) left: Vec<Term<'a>>,
+    /// The formulas right of the turnstile.
     pub(super) right: Vec<Term<'a>>,
 }
 

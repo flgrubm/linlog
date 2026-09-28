@@ -5,26 +5,49 @@ use crate::Error;
 use crate::index::Index;
 use subenum::subenum;
 
-#[subenum(MLLExpression)]
+// subenum copies a `///` on `LLExpression` to every subenum, so each gets its
+// own doc here instead.
+#[subenum(
+    LLExpression(
+        doc = "A node of a classical linear logic formula, which refers to its \
+               subterms by arena index."
+    ),
+    MLLExpression(
+        doc = "A node of a multiplicative linear logic formula, which refers to its \
+               subterms by arena index."
+    )
+)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LLExpression<I: Index> {
+    /// A variable, by its index in the variable dictionary.
     #[subenum(MLLExpression)]
     Var(I),
+    /// The negation of a variable, by its index in the variable dictionary.
     #[subenum(MLLExpression)]
     DualVar(I),
+    /// `1`, the unit of `⊗`.
     #[subenum(MLLExpression)]
     One,
+    /// `⊥`, the unit of `⅋`.
     #[subenum(MLLExpression)]
     Bot,
+    /// `⊤`, the unit of `&`.
     Top,
+    /// `0`, the unit of `⊕`.
     Zero,
+    /// `A ⊗ B`
     #[subenum(MLLExpression)]
     Tensor(I, I),
+    /// `A ⅋ B`
     #[subenum(MLLExpression)]
     Par(I, I),
+    /// `A & B`
     With(I, I),
+    /// `A ⊕ B`
     Plus(I, I),
+    /// `!A`
     Bang(I),
+    /// `?A`
     Quest(I),
 }
 
@@ -98,6 +121,8 @@ fn check_bounds_ll<I: Index>(
     }
 }
 
+/// An expression node of any logic fragment. Every operation is implemented
+/// once, on `LLExpression`, and reached through conversion.
 pub trait Expression<I: Index>:
     Into<LLExpression<I>>
     + TryFrom<LLExpression<I>, Error: std::error::Error>

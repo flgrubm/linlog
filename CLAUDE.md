@@ -112,8 +112,12 @@ even to read.** Every operation goes through `jj`, including lock updates:
   Types and names carry the rest.
 - Comments are self-contained: they make sense from inside this repository,
   with no references to other repositories, machines or conversations.
-- Every Rust function gets a concise `///` doc comment that a human
-  understands at first read: what it does and returns, not how.
+- Every Rust item gets a concise doc comment that a human understands at
+  first read: a function says what it does and returns, not how; a type,
+  field, variant or module says what it is. The workspace lints in
+  `Cargo.toml` enforce it (rustc's `missing_docs` for public items, clippy's
+  `missing_docs_in_private_items` for the rest). clap shows the docs on
+  `cli/`'s argument types as `--help` text.
 - Dependencies are welcome where they earn their place: prefer well-made
   library code over an ad-hoc implementation, and among candidates the more
   popular, better maintained and faster one. Each serves a particular reason

@@ -1,8 +1,10 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
+/// Keeps `Index` implementable only in this crate.
 #[allow(unexpected_cfgs, clippy::non_minimal_cfg)]
 mod sealed {
+    /// Implemented exactly by the types that may be an `Index`.
     pub trait Sealed {}
 
     impl Sealed for usize {}
@@ -62,6 +64,7 @@ pub trait Index:
     fn from_usize(n: usize) -> Self;
 }
 
+/// `Index` for every unsigned integer type no wider than `usize`.
 #[allow(unexpected_cfgs, clippy::non_minimal_cfg)]
 mod impls {
     use super::Index;
