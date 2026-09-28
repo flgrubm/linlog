@@ -22,7 +22,7 @@ pub enum Error {
     TermIndexOutOfBounds(usize, usize),
     /// A subterm index (first) is not below the index of its parent term
     /// (second).
-    #[error("Term index not decreasing: term at index {0} has subterm at index {1} >= {0}")]
+    #[error("Term index not decreasing: term at index {1} has subterm at index {0} >= {1}")]
     SubtermIndexNotDecreasing(usize, usize),
     /// The input is not a sequent, for each of the reasons listed.
     #[cfg(feature = "parse")]

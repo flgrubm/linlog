@@ -304,6 +304,22 @@ mod tests {
         assert_eq!(s.term_ids, [1, 2]);
     }
 
+    /// A subterm that does not precede its parent is reported with each index
+    /// in its place.
+    #[test]
+    fn subterm_order_error_names_both_terms() {
+        use LLExpression::*;
+        let s = Sequent::<usize, LL> {
+            term_arena: vec![One, Bang(2), Bot],
+            term_ids: vec![1],
+            variable_dict: vec![],
+        };
+        assert_eq!(
+            s.verify_integrity().unwrap_err().to_string(),
+            "Term index not decreasing: term at index 1 has subterm at index 2 >= 1"
+        );
+    }
+
     /// Equal terms merge at every depth, not only equal leaves.
     #[test]
     fn optimize_merges_equal_subterms() {
