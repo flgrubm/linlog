@@ -121,7 +121,7 @@ even to read.** Every operation goes through `jj`, including lock updates:
   needs it (or in `[dev-dependencies]`), with only the crate features used.
   Never add one for its own sake.
 - `core/src/lib.rs` allows `dead_code` and `unused_variables` crate-wide while
-  things are scaffolded. The `add` function and its test there are template leftovers.
+  things are scaffolded.
 - `scratchpad*.md` are the author's gitignored notes. `scratchpad1.md` is about
   250 KB, so don't read it in full.
 
