@@ -50,6 +50,7 @@ cargo run -p linlog-cli -- <args>
 nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), deadnix, actionlint, treefmt, claude-hooks
 nix fmt           # nixfmt, rustfmt, taplo, shfmt, shellcheck (a hook runs it on each edited file)
 nix build         # linlog-cli
+nix build .#doc   # the rustdoc site, as the Docs workflow publishes it
 ```
 
 Verify as much as the change needs:
@@ -77,8 +78,10 @@ arguments, `workspace.nix`). `checks.nix`, `devshell.nix`, `treefmt.nix` and
 GitHub Actions runs `.github/workflows/ci.yml` on every push to `main`, on
 every pull request and weekly: `nix flake check`, and the online
 `cargo deny check advisories` in the devshell. A workflow installs nothing
-but Nix, so CI checks with exactly the tools flake.lock pins. The rules for
-editing workflows are in `.claude/rules/ci.md`, which loads under `.github/`.
+but Nix, so CI checks with exactly the tools flake.lock pins.
+`.github/workflows/docs.yml` publishes the flake's `doc` package, the rustdoc
+of `main`, to GitHub Pages on every push to `main`. The rules for editing
+workflows are in `.claude/rules/ci.md`, which loads under `.github/`.
 
 ## Version control: jj only
 

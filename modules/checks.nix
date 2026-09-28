@@ -43,12 +43,7 @@
         # `cargo test', not nextest: nextest skips doc tests.
         test = craneLib.cargoTest withArtifacts;
 
-        doc = craneLib.cargoDoc (
-          withArtifacts
-          // {
-            env.RUSTDOCFLAGS = "--deny warnings";
-          }
-        );
+        doc = config.packages.doc;
 
         deny = craneLib.cargoDeny { inherit (workspace) src; };
 

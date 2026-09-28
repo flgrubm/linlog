@@ -28,3 +28,5 @@ Loaded when a file under `.github/` is read.
   syntax, unknown runner labels, bad expressions and shell mistakes, not
   behaviour on GitHub. Read run results with `gh run list` and
   `gh run view --log-failed`.
+- **Docs** deploys `result/share/doc` of `nix build .#doc` with GitHub's own
+  Pages actions. The repository's Pages source must be "GitHub Actions".

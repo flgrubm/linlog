@@ -45,6 +45,26 @@
           }
         );
 
+        # The rustdoc site the Docs workflow publishes, which the `doc' check
+        # also builds. rustdoc writes no top-level index, so one redirects to
+        # the core crate.
+        doc = craneLib.cargoDoc (
+          commonArgs
+          // {
+            inherit cargoArtifacts;
+            env.RUSTDOCFLAGS = "--deny warnings";
+            postInstall = ''
+              cat > $out/share/doc/index.html <<'EOF'
+              <!DOCTYPE html>
+              <meta charset="utf-8">
+              <title>linlog</title>
+              <meta http-equiv="refresh" content="0; url=linlog/">
+              <a href="linlog/">linlog</a>
+              EOF
+            '';
+          }
+        );
+
         default = config.packages.linlog-cli;
       };
     };
