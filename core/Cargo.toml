@@ -6,7 +6,10 @@ edition = "2024"
 license = "EUPL-1.2"
 
 [dependencies]
-chumsky = { version = "0.12.0", features = ["memoization", "pratt"], optional = true }
+chumsky = { version = "0.12.0", features = [
+  "memoization",
+  "pratt",
+], optional = true }
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 subenum = "1.1.3"
 thiserror = "2.0.17"
