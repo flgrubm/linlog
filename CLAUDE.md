@@ -124,7 +124,8 @@ even to read.** Every operation goes through `jj`, including lock updates:
 `.claude/` is checked in. It holds the hooks (the git and `jj new -m` guards,
 the formatter, a SessionStart note on the jj working copy), permission rules,
 the `crate-source-explorer` agent (dependency APIs against the locked sources;
-use it before guessing at chumsky 0.12), the `update-deps` skill, and the
+use it before guessing at chumsky 0.12), the `update-deps` skill, the
+`new-tool` skill (use it whenever a crate or tool is added or adopted), and the
 path-scoped rules. Claude Code's built-in git instructions and git status
 snapshot are switched off (`env` in `settings.json`).
 `.claude/rules/claude-infra.md` documents it and loads when anything under

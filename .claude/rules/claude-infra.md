@@ -31,6 +31,9 @@ Current contents:
 - `agents/crate-source-explorer.md`: read-only, answers dependency-API questions
   against the Cargo.lock-pinned sources in `~/.cargo/registry`, never the web.
 - `skills/update-deps/`: the lock-file bump procedure (verify, then commit).
+- `skills/new-tool/`: getting to know a crate, program, toolchain component or
+  flake input from its pinned version, wiring it in and recording what is not
+  obvious.
 - `hooks/block-git.py`, `hooks/block-jj-new-message.py`: `PreToolUse(Bash)`
   guards, see below.
 - `hooks/format.sh`: `PostToolUse(Write|Edit)`, runs `nix fmt` on the one
