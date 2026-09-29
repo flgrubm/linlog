@@ -450,6 +450,34 @@ fn latex_and_typst_formats() {
     );
 }
 
+/// `--format rocq` prints the verdict as a Rocq comment and the
+/// derivation as a lemma with its proof script for `prove` and `check`;
+/// `--standalone` adds the import; a proof with Mix has no certificate.
+#[test]
+fn rocq_format() {
+    let (status, out, _) = linlog(&["prove", "--format", "rocq", "A |- A"], "");
+    assert_eq!(status, 0);
+    assert_eq!(
+        out,
+        "(* provable (MLL, classical, net engine) *)\n\
+         Lemma certificate (A : formula) : ll [dual A; A].\nProof.\nax_expansion.\nQed.\n"
+    );
+    let (_, json, _) = linlog(&["prove", "--format", "json", "A * B |- B * A"], "");
+    let (status, out, _) = linlog(&["check", "--format", "rocq", "--standalone"], &json);
+    assert_eq!(status, 0);
+    assert!(
+        out.starts_with(
+            "(* valid proof of ⊢ ~A ⅋ ~B, B ⊗ A (classical) *)\n\
+             From NanoYalla Require Import macroll.\n\nLemma certificate (A B : formula)"
+        ),
+        "{out}"
+    );
+    assert!(out.contains("apply (ex_perm_r [2; 0; 1] [dual B; tens B A; dual A]).\n"));
+    let (status, out, err) = linlog(&["prove", "--mix", "--format", "rocq", "A, B |- A, B"], "");
+    assert_eq!((status, out.as_str()), (2, ""));
+    assert!(err.contains("NanoYalla has no Mix rule"), "{err}");
+}
+
 /// `--format svg` and `--format net-svg` print the verdict as an XML
 /// comment, with no `--` in it, and the derivation or the proof net as an
 /// SVG document, for `prove`, `check`, `seq print` and the session's

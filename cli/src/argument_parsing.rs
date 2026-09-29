@@ -323,6 +323,14 @@ pub enum Format {
     /// drawn as an SVG document: the formula trees with the axiom links as
     /// arcs over the literals; for the sequents `net` takes
     NetSvg,
+    /// The verdict as a comment, then the derivation as a Rocq proof
+    /// script for NanoYalla 1.1.3, the kernel of Click & coLLecT (the
+    /// nanoyalla directory of github.com/ComputerAidedLL/click-and-collect,
+    /// built with Rocq 9 and its standard library, no Yalla needed): a
+    /// lemma stating the sequent one-sided, proved rule by rule and closed
+    /// by Qed; `--standalone` adds the import line; a proof with Mix or
+    /// with the weakening of affine mode is refused
+    Rocq,
 }
 
 /// The output formats of `seq print`.

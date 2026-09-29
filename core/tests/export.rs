@@ -1,19 +1,22 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-//! The LaTeX, Typst and SVG exports through the public API. Derivations
-//! are pinned as standalone documents in `tests/snapshots/`, which the
-//! flake's `export` check compiles and renders; run with `BLESS=1` to rewrite them after an
+//! The LaTeX, Typst, SVG and Rocq exports through the public API.
+//! Derivations are pinned as standalone documents in `tests/snapshots/`,
+//! which the flake's `export` check compiles and renders and its `rocq`
+//! check runs through Rocq; run with `BLESS=1` to rewrite them after an
 //! intended change, and review the diff.
 
 #![cfg(all(
     feature = "parse",
     feature = "interactive",
     feature = "latex",
+    feature = "rocq",
     feature = "svg",
     feature = "typst"
 ))]
 
+use linlog::export::rocq::{self, Unsupported};
 use linlog::export::svg::{self, Style};
 use linlog::export::{Form, latex, typst};
 use linlog::{Derivation, Forest, InfId, Interactive, Mode, OccId, Options, Proof, ProofStructure};
@@ -62,8 +65,14 @@ fn proof(input: &str, mode: Mode) -> Proof {
     *proof
 }
 
+/// Pins a derivation's certificate as the snapshot `name.v`.
+fn pin_certificate(name: &str, derivation: &Derivation) {
+    let script = rocq::derivation(derivation, Form::Standalone, &rocq::Options::default());
+    snapshot(&format!("{name}.v"), &script.unwrap());
+}
+
 /// Proves `input` in `mode` and pins its derivation, two-sided in
-/// intuitionistic mode.
+/// intuitionistic mode, and its certificate.
 fn pin_proof(name: &str, input: &str, mode: Mode) {
     let proof = proof(input, mode);
     let derivation = if mode.intuitionistic {
@@ -71,11 +80,13 @@ fn pin_proof(name: &str, input: &str, mode: Mode) {
     } else {
         proof.derivation()
     };
-    pin(name, &derivation.unwrap());
+    let derivation = derivation.unwrap();
+    pin(name, &derivation);
+    pin_certificate(name, &derivation);
 }
 
 /// Derivations of each fragment, one-sided and two-sided, as ebproof,
-/// curryst and SVG trees.
+/// curryst and SVG trees, and as Rocq scripts.
 #[test]
 fn derivations() {
     pin_proof("mll", "A * B |- B * A", Mode::CLASSICAL);
@@ -85,7 +96,7 @@ fn derivations() {
 }
 
 /// An open goal of a proof in progress is its sequent under vertical dots,
-/// with no inference line, in every target.
+/// with no inference line, in every drawn target, and has no certificate.
 #[test]
 fn open_goal() {
     let sequent: Sequent = "A, A -o B |- B".parse().unwrap();
@@ -93,6 +104,41 @@ fn open_goal() {
     let goals = state.apply(InfId::new(0), 1, Rule::ImpLeft, &[0]).unwrap();
     state.apply(goals[0], 0, Rule::Ax, &[]).unwrap();
     pin("open", &state.derivation());
+    let options = rocq::Options::default();
+    assert_eq!(
+        rocq::derivation(&state.derivation(), Form::Fragment, &options),
+        Err(Unsupported::Open)
+    );
+}
+
+/// A proof of full linear logic with a contraction is pinned as a
+/// certificate; the lemma's name and the prelude are options; a proof
+/// with Mix or with the weakening of affine mode has no certificate.
+#[test]
+fn certificates() {
+    let ll = proof("!(A & B) |- !A * !B", Mode::CLASSICAL);
+    let derivation = ll.derivation().unwrap();
+    pin_certificate("ll", &derivation);
+    let options = rocq::Options {
+        lemma: "bang_with".to_owned(),
+        prelude: "Require Import kernel.".to_owned(),
+    };
+    let script = rocq::derivation(&derivation, Form::Standalone, &options).unwrap();
+    assert!(script.starts_with("Require Import kernel.\n\nLemma bang_with (A B : formula) : ll ["));
+    assert!(script.contains("apply (co_r_ext []); cbn_sequent.\n"));
+    assert!(script.ends_with("\nQed."));
+
+    let options = rocq::Options::default();
+    let mix = proof("A, B |- A, B", Mode::CLASSICAL.with_mix());
+    assert_eq!(
+        rocq::derivation(&mix.derivation().unwrap(), Form::Fragment, &options),
+        Err(Unsupported::Mix)
+    );
+    let affine = proof("A, B |- A", Mode::CLASSICAL.affine());
+    assert_eq!(
+        rocq::derivation(&affine.derivation().unwrap(), Form::Fragment, &options),
+        Err(Unsupported::AffineWeakening)
+    );
 }
 
 /// Sequents print as math, one-sided or two-sided, with longer names in

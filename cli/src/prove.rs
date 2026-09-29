@@ -6,7 +6,7 @@ use crate::io;
 use crate::{Status, catch_interrupt, interrupted};
 use anyhow::{Context, Result, anyhow, bail};
 use linlog::export::svg::{self, Style};
-use linlog::export::{Form, latex, typst};
+use linlog::export::{Form, latex, rocq, typst};
 use linlog::search::{Engine, Options, Outcome, Reason, Statistics, Verdict, prove_until};
 use linlog::{Error, Forest, Fragment, Mode, Proof, ProofStructure, Reading, Sequent};
 use std::fmt::Write;
@@ -72,14 +72,17 @@ pub(crate) fn derivation(proof: &Proof, mode: Mode, format: Format, form: Form) 
     } else {
         proof.derivation()
     };
-    derivation
-        .map(|d| match format {
-            Format::Latex => latex::derivation(&d, form),
-            Format::Typst => typst::derivation(&d, form),
-            Format::Svg => svg::derivation(&d, &Style::default()),
-            Format::Text | Format::Json | Format::Net | Format::NetSvg => d.to_string(),
-        })
-        .map_err(|e| anyhow!("the proof is invalid: {}", e.describe(proof.forest())))
+    let d =
+        derivation.map_err(|e| anyhow!("the proof is invalid: {}", e.describe(proof.forest())))?;
+    Ok(match format {
+        Format::Latex => latex::derivation(&d, form),
+        Format::Typst => typst::derivation(&d, form),
+        Format::Svg => svg::derivation(&d, &Style::default()),
+        Format::Rocq => {
+            rocq::derivation(&d, form, &rocq::Options::default()).context("no certificate")?
+        }
+        Format::Text | Format::Json | Format::Net | Format::NetSvg => d.to_string(),
+    })
 }
 
 /// Returns a sequent as text: one-sided, or two-sided in intuitionistic
@@ -116,23 +119,24 @@ pub fn sequent_in(
     })
 }
 
-/// Returns the form `--standalone` asks for, which only the LaTeX and
-/// Typst formats (`exported`) have: the others have one form, an SVG
+/// Returns the form `--standalone` asks for, which only the LaTeX, Typst
+/// and Rocq formats (`exported`) have: the others have one form, an SVG
 /// always being a document, so the flag would change nothing.
 pub fn form(standalone: bool, exported: bool) -> Result<Form> {
     match (standalone, exported) {
         (false, _) => Ok(Form::Fragment),
         (true, true) => Ok(Form::Standalone),
-        (true, false) => bail!("--standalone needs --format latex or --format typst"),
+        (true, false) => bail!("--standalone needs --format latex, typst or rocq"),
     }
 }
 
 /// Returns a line or lines of text as the format writes them next to its
-/// output: as they are, or as LaTeX, Typst or XML comments.
+/// output: as they are, or as LaTeX, Typst, XML or Rocq comments.
 fn note(format: Format, text: &str) -> String {
     let comment = |line: &str| match format {
         Format::Latex => format!("% {line}"),
         Format::Typst => format!("// {line}"),
+        Format::Rocq => format!("(* {line} *)"),
         // An XML comment cannot hold `--`, which flag names bring.
         Format::Svg | Format::NetSvg => format!("<!-- {} -->", line.replace('-', "\u{2010}")),
         Format::Text | Format::Json | Format::Net => line.to_owned(),
@@ -212,7 +216,7 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
     let quiet = args.output.quiet;
     let form = form(
         args.output.standalone,
-        matches!(format, Format::Latex | Format::Typst),
+        matches!(format, Format::Latex | Format::Typst | Format::Rocq),
     )?;
     catch_interrupt();
 
@@ -240,7 +244,7 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         let derivation = match (&outcome.verdict, format, quiet) {
             (
                 Verdict::Proved(proof),
-                Format::Text | Format::Latex | Format::Typst | Format::Svg,
+                Format::Text | Format::Latex | Format::Typst | Format::Svg | Format::Rocq,
                 false,
             ) => Some(derivation(proof, mode, format, form)?),
             (Verdict::Proved(proof), Format::Net | Format::NetSvg, false) => {
@@ -258,7 +262,8 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         | Format::Latex
         | Format::Typst
         | Format::Svg
-        | Format::NetSvg => {
+        | Format::NetSvg
+        | Format::Rocq => {
             let mut text = note(
                 format,
                 &verdict_line(&outcome, args.fragment.is_some(), stop),
@@ -348,7 +353,7 @@ pub fn check(args: &CheckArgs) -> Result<Status> {
     let quiet = args.output.quiet;
     let form = form(
         args.output.standalone,
-        matches!(format, Format::Latex | Format::Typst),
+        matches!(format, Format::Latex | Format::Typst | Format::Rocq),
     )?;
     let (valid, text) = on_large_stack(Options::DEFAULT_RECURSION_LIMIT, || {
         check_text(&proof, mode, format, form, quiet)
@@ -378,7 +383,8 @@ fn check_text(
         | Format::Latex
         | Format::Typst
         | Format::Svg
-        | Format::NetSvg => {
+        | Format::NetSvg
+        | Format::Rocq => {
             // A sequent with no intuitionistic reading is an invalid proof
             // in intuitionistic mode, printed one-sided.
             let sequent =
