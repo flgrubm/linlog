@@ -1,6 +1,6 @@
 ---
 name: crate-source-explorer
-description: Answer questions about a Rust dependency's API by reading the exact version that Cargo.lock pins, from the local cargo registry, instead of relying on memory or the web. This matters most for chumsky, whose API changed wholesale after 0.9 and differs from most examples online. Use it before writing or changing code against chumsky, clap, serde, subenum or thiserror when a signature, trait bound, feature gate or idiom is in doubt, and to diagnose a compiler error that points into a dependency. Returns signatures with file:line citations and never edits.
+description: Answer questions about a Rust dependency's API by reading the exact version that Cargo.lock pins, from the local cargo registry, instead of relying on memory or the web. This matters most for chumsky, whose API changed wholesale after 0.9 and differs from most examples online. Use it before writing or changing code against chumsky, clap, serde, foldhash or thiserror when a signature, trait bound, feature gate or idiom is in doubt, and to diagnose a compiler error that points into a dependency. Returns signatures with file:line citations and never edits.
 tools: Bash, Read, Grep, Glob
 model: sonnet
 effort: medium

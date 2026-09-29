@@ -104,7 +104,7 @@ jj log -r @- --no-graph -T 'signature.status()'    # good
 
 - per lock file: committed or backed out, and the change id
 - crates that moved, as `name old -> new`. Call out the ones linlog depends on
-  directly (chumsky, clap, serde, subenum, thiserror, anyhow, serde_json)
+  directly (chumsky, serde, foldhash, thiserror, clap, anyhow, serde_json)
 - semver-incompatible releases available but not taken: each needs a
   `Cargo.toml` change and probably code changes
 - the rustc version before → after

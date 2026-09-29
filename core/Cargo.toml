@@ -7,6 +7,7 @@ license = "EUPL-1.2"
 
 [dependencies]
 chumsky = { version = "0.13.0", features = ["pratt"], optional = true }
+foldhash = "0.1.5"
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 thiserror = "2.0.17"
 

@@ -9,7 +9,7 @@ pub mod term;
 pub use fmt::Formula;
 pub use term::{Atom, Kind, Term, TermId};
 
-use std::collections::HashMap;
+use crate::hash::HashMap;
 
 /// A one-sided sequent in negation normal form: root formulas over an arena of
 /// shared subterms.

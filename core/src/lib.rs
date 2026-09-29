@@ -9,6 +9,8 @@
 
 /// The error types of this crate.
 mod errors;
+/// The hash tables of this crate.
+mod hash;
 /// Algorithms specific to one logic fragment, such as proof search.
 pub mod linear;
 /// Parsing sequents from text.

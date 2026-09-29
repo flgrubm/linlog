@@ -218,6 +218,7 @@ name = "linlog"
 version = "0.1.0"
 dependencies = [
  "chumsky",
+ "foldhash",
  "serde",
  "serde_json",
  "thiserror",
