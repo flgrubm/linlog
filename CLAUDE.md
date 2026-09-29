@@ -94,7 +94,8 @@ cargo build
 cargo test --workspace
 cargo test -p linlog <test_name>                           # single test in core
 cargo clippy --workspace --all-targets -- --deny warnings
-cargo hack check --feature-powerset -p linlog              # every parse/serialize combination
+cargo hack check --each-feature -p linlog                  # each feature alone, all, none
+cargo hack check --feature-powerset --depth 2 -p linlog    # and every pair
 cargo deny check                                           # licenses, bans, sources + advisories (online)
 cargo run -p linlog-cli -- <args>
 
@@ -109,7 +110,7 @@ Verify as much as the change needs:
 | the change | the proof |
 |---|---|
 | any `.rs` edit | `cargo clippy …` and `cargo test --workspace` |
-| touches `#[cfg(feature = …)]` or `[features]` | add `cargo hack check --feature-powerset -p linlog` |
+| touches `#[cfg(feature = …)]` or `[features]` | add `cargo hack check --each-feature -p linlog` and `cargo hack check --feature-powerset --depth 2 -p linlog` |
 | adds or changes a dependency | add `cargo deny check`. New deps must use a license `deny.toml` allows: EUPL-1.2, MIT, Apache-2.0 (± LLVM-exception), Unicode-3.0 or Zlib |
 | `flake.nix`, `modules/`, `.github/`, the toolchain, a lock bump, or before a push | `nix flake check`, which runs all of the above |
 

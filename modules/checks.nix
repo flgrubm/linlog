@@ -47,14 +47,19 @@
 
         deny = craneLib.cargoDeny { inherit (workspace) src; };
 
-        # Every combination of the core crate's features; the CLI enables all
-        # of them and would never notice one that breaks alone.
+        # The core crate's features one at a time and in pairs, with all of
+        # them and with none; the CLI enables all of them and would never
+        # notice one that breaks alone. The full powerset doubles with every
+        # feature, and a breakage needs more than two features rarely.
         features = craneLib.mkCargoDerivation (
           withArtifacts
           // {
             pnameSuffix = "-features";
             nativeBuildInputs = [ pkgs.cargo-hack ];
-            buildPhaseCargoCommand = "cargo hack check --feature-powerset --locked --package linlog";
+            buildPhaseCargoCommand = ''
+              cargo hack check --each-feature --locked --package linlog
+              cargo hack check --feature-powerset --depth 2 --locked --package linlog
+            '';
             doInstallCargoArtifacts = false;
           }
         );
