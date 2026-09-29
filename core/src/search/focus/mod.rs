@@ -1359,6 +1359,9 @@ mod tests {
             ("|- ?a", false),
             ("|- ?a, ?b, ~a", true),
             ("|- ?a, b, ~a", false),
+            ("|- 0, ?top", true),
+            ("|- ~b, 0 par (c * (0 + a)), ?(top + b)", true),
+            ("|- 0, ?a", false),
         ] {
             assert_eq!(provable(input, m), expected, "{input:?}");
         }
@@ -1631,7 +1634,7 @@ mod tests {
     }
 
     /// Proves `samples` generated sequents of up to `budget` rules per rule
-    /// set, each within the copies its proof took, and decides one mutant
+    /// set, each within the derelictions of its proof, and decides one mutant
     /// of each with and without the memo. Returns how many sequents and
     /// mutants were decided, how many mutants were provable, how many were
     /// undecided within the copy bound, and the most stable sequents one
@@ -1681,7 +1684,7 @@ mod tests {
     }
 
     /// Every generated provable sequent is proved with a checked proof
-    /// within the copies its proof took, in every fragment with and
+    /// within the derelictions of its proof, in every fragment with and
     /// without Mix, and its mutant is decided the same way with and
     /// without the memo.
     #[test]
@@ -1797,12 +1800,14 @@ mod tests {
     #[test]
     #[ignore = "a few seconds in release mode; run with --release -- --ignored --nocapture"]
     fn horn_programs_slow() {
-        for (n, copies) in [(8, 7), (16, 15), (32, 31)] {
+        // A branch to a token of the goal fires one clause per level of
+        // the counter, so the bound is the number of levels.
+        for (n, copies) in [(8, 3), (16, 4), (32, 5)] {
             let (clauses, marking, goal) = counter(n);
             let clauses: Vec<(&str, &str)> = clauses.iter().map(|(b, h)| (&**b, &**h)).collect();
             for (goal, mode, copies) in [
                 (vec![goal], Mode::CLASSICAL, copies),
-                (vec![goal, "a"], Mode::CLASSICAL, 3),
+                (vec![goal, "a"], Mode::CLASSICAL, copies),
                 (vec![goal, "a"], Mode::CLASSICAL.affine(), copies),
             ] {
                 let text = horn(&clauses, &marking, &goal);

@@ -76,14 +76,17 @@ impl Rules {
     };
 }
 
-/// A generated provable sequent: its formulas, and the most derelictions
-/// on one branch of the proof it was read off, which bounds the copies a
-/// dyadic proof of it needs per branch.
+/// A generated provable sequent: its formulas, and the derelictions of the
+/// proof it was read off, which bound the copies a focused dyadic proof of
+/// it needs on any branch. (The most derelictions on one branch would
+/// not: a focused proof copies at a stable sequent whatever the positive
+/// phase above needs, on every branch of that phase, where the standard
+/// proof derelicts on each branch separately.)
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Provable {
     /// The formulas.
     pub(crate) formulas: Vec<Tree>,
-    /// The most derelictions on one branch.
+    /// The derelictions of the proof, all branches together.
     pub(crate) copies: u32,
 }
 
@@ -174,8 +177,7 @@ pub(crate) fn sequent(formulas: &[Tree]) -> String {
 
 /// Builds a random provable sequent: a cut-free proof of about `budget`
 /// rule applications over `atoms` atom names, using the rules allowed, and
-/// returns its conclusion with the most derelictions on one of its
-/// branches.
+/// returns its conclusion with the derelictions of the proof.
 pub(crate) fn provable(rng: &mut Rng, rules: Rules, atoms: u8, budget: usize) -> Provable {
     let mut generator = Generator { rng, rules, atoms };
     let (formulas, copies) = generator.proof(budget);
@@ -209,7 +211,7 @@ struct Generator<'a> {
 
 impl Generator<'_> {
     /// Builds the conclusion of a random proof of about `budget` rules,
-    /// with the most derelictions on one of its branches.
+    /// with its derelictions, all branches together.
     fn proof(&mut self, budget: usize) -> (Vec<Tree>, u32) {
         if budget <= 1 {
             return (self.leaf(), 0);
@@ -239,7 +241,7 @@ impl Generator<'_> {
                 let b = right.swap_remove(self.rng.below(right.len()));
                 left.append(&mut right);
                 left.push(Tree::Tensor(Box::new(a), Box::new(b)));
-                (left, lc.max(rc))
+                (left, lc + rc)
             }
             b'p' => {
                 // ⊢ Γ, A, B gives ⊢ Γ, A ⅋ B; with one formula only, `⊥`
@@ -264,12 +266,13 @@ impl Generator<'_> {
             }
             b'&' => {
                 // ⊢ Γ, A and ⊢ Γ, B give ⊢ Γ, A & B: B is a twin of A that
-                // the same context proves.
+                // the same context proves, by the same proof, whose
+                // derelictions count twice.
                 let (mut premise, copies) = self.proof(budget - 1);
                 let a = premise.swap_remove(self.rng.below(premise.len()));
                 let b = self.twin(&a, 2);
                 premise.push(Tree::With(Box::new(a), Box::new(b)));
-                (premise, copies)
+                (premise, 2 * copies)
             }
             b'+' => {
                 let (mut premise, copies) = self.proof(budget - 1);
@@ -295,11 +298,10 @@ impl Generator<'_> {
                 let (mut left, lc) = self.proof(left_budget);
                 let (mut right, rc) = self.proof(budget - left_budget);
                 left.append(&mut right);
-                (left, lc.max(rc))
+                (left, lc + rc)
             }
             b'd' => {
-                // Dereliction: ⊢ Γ, A gives ⊢ Γ, ?A, one more copy on every
-                // branch.
+                // Dereliction: ⊢ Γ, A gives ⊢ Γ, ?A.
                 let (mut premise, copies) = self.proof(budget - 1);
                 let a = premise.swap_remove(self.rng.below(premise.len()));
                 premise.push(Tree::Quest(Box::new(a)));
@@ -330,7 +332,7 @@ impl Generator<'_> {
                 sequent.extend(rest);
                 sequent.extend(quests);
                 sequent.push(Tree::Tensor(Box::new(a.clone()), Box::new(a)));
-                (sequent, copies)
+                (sequent, 2 * copies)
             }
             b'!' => {
                 // Promotion: ⊢ ?Γ, A gives ⊢ ?Γ, !A; whatever of Γ is not a
