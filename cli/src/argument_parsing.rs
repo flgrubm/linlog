@@ -130,16 +130,22 @@ pub struct CheckArgs {
 /// The subcommands of `seq`.
 #[derive(Subcommand, Debug)]
 pub enum SeqCommand {
-    /// Print a sequent one-sided, in negation normal form
+    /// Print a sequent one-sided, in negation normal form, or two-sided
     ///
     /// `A, A -o B |- B` prints as `⊢ ~A, A ⊗ ~B, B`: hypotheses are negated
     /// onto the right, implications become pars, and negation is pushed down
-    /// to the atoms.
+    /// to the atoms. With --intuitionistic it prints as `A, A ⊸ B ⊢ B`
+    /// again, which requires an intuitionistic sequent: one formula on the
+    /// right, and pars only as implications.
     #[command(after_help = SYNTAX)]
     Print {
         /// The sequent.
         #[command(flatten)]
         input: SequentInput,
+        /// Print the sequent two-sided, as intuitionistic linear logic
+        /// reads it
+        #[arg(short, long)]
+        intuitionistic: bool,
         /// Write to this file instead of standard output
         #[arg(short, long, value_name = "PATH")]
         output: Option<PathBuf>,
@@ -159,12 +165,16 @@ pub enum SeqCommand {
         output: Option<PathBuf>,
     },
     /// Print the smallest fragment a sequent lives in: MLL, MLL with units,
-    /// ALL, MALL, MELL or LL
+    /// ALL, MALL, MELL or LL, or with --intuitionistic IMLL, IMLL with
+    /// units, IALL, IMALL, IMELL or ILL
     #[command(after_help = SYNTAX)]
     Fragment {
         /// The sequent.
         #[command(flatten)]
         input: SequentInput,
+        /// Name the intuitionistic fragment
+        #[arg(short, long)]
+        intuitionistic: bool,
     },
 }
 
@@ -186,7 +196,8 @@ pub struct SequentInput {
 /// The logic a sequent is proved in.
 #[derive(Args, Debug)]
 pub struct ModeArgs {
-    /// Intuitionistic linear logic: one formula on the right of ⊢
+    /// Intuitionistic linear logic: one formula on the right of ⊢, pars
+    /// only as implications, and two-sided derivations
     #[arg(short, long)]
     pub intuitionistic: bool,
     /// Affine logic: a hypothesis may go unused (weakening)
@@ -273,10 +284,18 @@ impl From<FragmentArg> for Fragment {
 pub enum EngineArg {
     /// The engine the fragment and the mode call for
     Auto,
-    /// Focused sequent search, for MLL and MALL with or without units and Mix
+    /// Focused sequent search, for every classical fragment, with or
+    /// without units, Mix, exponentials and weakening
     Focus,
-    /// Proof-net search, for MLL without units, with or without Mix
+    /// Proof-net search, for MLL without units, with or without Mix; in
+    /// intuitionistic mode for IMLL without units, by its embedding into
+    /// MLL
     Net,
+    /// Focused sequent search two-sided, for every intuitionistic fragment
+    TwoSided,
+    /// The fast path for a sequent of two additive-only formulas, in every
+    /// mode
+    Additive,
 }
 
 impl From<EngineArg> for Option<Engine> {
@@ -286,6 +305,8 @@ impl From<EngineArg> for Option<Engine> {
             EngineArg::Auto => None,
             EngineArg::Focus => Some(Engine::Focus),
             EngineArg::Net => Some(Engine::Net),
+            EngineArg::TwoSided => Some(Engine::TwoSided),
+            EngineArg::Additive => Some(Engine::Additive),
         }
     }
 }

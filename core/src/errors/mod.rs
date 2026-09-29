@@ -90,6 +90,10 @@ pub enum Error {
         /// How many formulas the sequent has.
         roots: usize,
     },
+    /// Mix was asked for in intuitionistic mode, where it has no form: a
+    /// premise of a Mix would have no goal.
+    #[error("Mix has no intuitionistic form: a premise of a Mix would have no goal")]
+    IntuitionisticMix,
     /// No engine handles the fragment in the mode yet.
     #[error("no engine for {fragment} in {mode} mode yet")]
     NoEngine {

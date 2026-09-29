@@ -15,7 +15,7 @@ pub mod prove;
 use anyhow::Result;
 use argument_parsing::{Cli, Command, SeqCommand};
 use clap::Parser;
-use linlog::Error;
+use linlog::{Error, Mode};
 use std::fmt::Write;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -95,8 +95,17 @@ fn run(cli: &Cli) -> Result<Status> {
         Command::Check(args) => prove::check(args),
         Command::Seq { command } => {
             match command {
-                SeqCommand::Print { input, output } => {
-                    io::write(output.as_deref(), &input.sequent()?.to_string())?;
+                SeqCommand::Print {
+                    input,
+                    intuitionistic,
+                    output,
+                } => {
+                    let mode = Mode {
+                        intuitionistic: *intuitionistic,
+                        ..Mode::CLASSICAL
+                    };
+                    let text = prove::sequent_text(&input.sequent()?, mode)?;
+                    io::write(output.as_deref(), &text)?;
                 }
                 SeqCommand::Json {
                     input,
@@ -109,8 +118,15 @@ fn run(cli: &Cli) -> Result<Status> {
                     }
                     io::write(output.as_deref(), &serde_json::to_string(&sequent)?)?;
                 }
-                SeqCommand::Fragment { input } => {
-                    io::write(None, input.sequent()?.fragment().name())?;
+                SeqCommand::Fragment {
+                    input,
+                    intuitionistic,
+                } => {
+                    let mode = Mode {
+                        intuitionistic: *intuitionistic,
+                        ..Mode::CLASSICAL
+                    };
+                    io::write(None, input.sequent()?.fragment().name_in(mode))?;
                 }
             }
             Ok(Status::Yes)

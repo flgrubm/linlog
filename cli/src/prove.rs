@@ -6,7 +6,7 @@ use crate::io;
 use crate::{Status, catch_interrupt, interrupted};
 use anyhow::{Context, Result, anyhow, bail};
 use linlog::search::{Engine, Options, Outcome, Reason, Statistics, Verdict, prove_until};
-use linlog::{Error, Fragment, Mode, Proof, ProofStructure, Sequent};
+use linlog::{Error, Forest, Fragment, Mode, Proof, ProofStructure, Reading, Sequent};
 use std::fmt::Write;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -57,13 +57,40 @@ enum Stop {
     Interrupt,
 }
 
-/// Returns the derivation of a proof as a text tree, or the checker's
-/// complaint with formulas.
-fn derivation(proof: &Proof) -> Result<String> {
-    proof
-        .derivation()
+/// Returns the derivation of a proof as a text tree, two-sided in
+/// intuitionistic mode, or the checker's complaint with formulas.
+fn derivation(proof: &Proof, mode: Mode) -> Result<String> {
+    let derivation = if mode.intuitionistic {
+        proof.two_sided_derivation()
+    } else {
+        proof.derivation()
+    };
+    derivation
         .map(|d| d.to_string())
         .map_err(|e| anyhow!("the proof is invalid: {}", e.describe(proof.forest())))
+}
+
+/// Returns a sequent as text: one-sided, or two-sided in intuitionistic
+/// mode when it has an intuitionistic reading.
+pub fn sequent_text(sequent: &Sequent, mode: Mode) -> Result<String> {
+    if !mode.intuitionistic {
+        return Ok(sequent.to_string());
+    }
+    let forest = Forest::new(sequent)?;
+    Reading::new(&forest)
+        .map(|r| r.to_string())
+        .map_err(|e| anyhow!("not an intuitionistic sequent: {}", e.describe(&forest)))
+}
+
+/// Returns a search error with formulas where the library's message has
+/// occurrence ids.
+fn describe(error: Error, sequent: &Sequent) -> anyhow::Error {
+    match (&error, Forest::new(sequent)) {
+        (Error::NotIntuitionistic(e), Ok(forest)) => {
+            anyhow!("not an intuitionistic sequent: {}", e.describe(&forest))
+        }
+        _ => error.into(),
+    }
 }
 
 /// Returns the proof net of a proof as text, or why its links are not
@@ -82,10 +109,11 @@ fn net_of(outcome: &Outcome, proof: &Proof, mode: Mode) -> Result<String> {
 }
 
 /// Fails unless proof nets exist for the sequent in the mode: unit-free
-/// MLL, classical, with or without Mix.
+/// MLL, linear, with or without Mix, classical or intuitionistic (where
+/// the net is the one of the one-sided sequent).
 fn nets_exist(sequent: &Sequent, mode: Mode) -> Result<()> {
-    if mode.intuitionistic || mode.affine {
-        bail!("proof nets exist in classical mode only, with or without --mix, not in {mode} mode");
+    if mode.affine {
+        bail!("proof nets exist in linear mode only, with or without --mix, not in {mode} mode");
     }
     let fragment = sequent.fragment();
     if !Fragment::MLL.contains(fragment) {
@@ -131,10 +159,11 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
                 stop = Some(Stop::Timeout(t));
             }
             stop.is_some()
-        })?;
+        })
+        .map_err(|e| describe(e, &sequent))?;
         let elapsed = start.elapsed();
         let derivation = match (&outcome.verdict, format, quiet) {
-            (Verdict::Proved(proof), Format::Text, false) => Some(derivation(proof)?),
+            (Verdict::Proved(proof), Format::Text, false) => Some(derivation(proof, mode)?),
             (Verdict::Proved(proof), Format::Net, false) => Some(net_of(&outcome, proof, mode)?),
             _ => None,
         };
@@ -171,7 +200,7 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
 fn verdict_line(outcome: &Outcome, asserted: bool, stop: Option<Stop>) -> String {
     let context = format!(
         "{}{}, {}, {} engine",
-        outcome.fragment,
+        outcome.fragment.name_in(outcome.mode),
         if asserted { " as asserted" } else { "" },
         outcome.mode,
         outcome.engine
@@ -200,6 +229,12 @@ fn verdict_line(outcome: &Outcome, asserted: bool, stop: Option<Stop>) -> String
 /// engine that ran keeps.
 fn statistics(engine: Engine, s: &Statistics, elapsed: Duration) -> String {
     match engine {
+        Engine::Additive => format!(
+            "pairs of subformulas visited: {} ({} from the memo)\n\
+             memo entries: {}\n\
+             time: {elapsed:.2?}",
+            s.nodes, s.memo_hits, s.memo_entries
+        ),
         Engine::Net => format!(
             "literals chosen: {}\n\
              links tried: {}\n\
@@ -243,14 +278,20 @@ fn check_text(proof: &Proof, mode: Mode, format: Format, quiet: bool) -> Result<
         })
         .to_string(),
         Format::Text | Format::Net => {
-            let sequent = proof.sequent();
+            // A sequent with no intuitionistic reading is an invalid proof
+            // in intuitionistic mode, printed one-sided.
+            let sequent =
+                sequent_text(proof.sequent(), mode).unwrap_or_else(|_| proof.sequent().to_string());
             match &result {
                 Ok(()) if quiet => format!("valid proof of {sequent} ({mode})"),
                 Ok(()) if format == Format::Net => {
-                    nets_exist(sequent, mode)?;
+                    nets_exist(proof.sequent(), mode)?;
                     format!("valid proof of {sequent} ({mode})\n{}", net(proof, mode)?)
                 }
-                Ok(()) => format!("valid proof of {sequent} ({mode})\n{}", derivation(proof)?),
+                Ok(()) => format!(
+                    "valid proof of {sequent} ({mode})\n{}",
+                    derivation(proof, mode)?
+                ),
                 Err(e) => format!(
                     "invalid proof of {sequent} ({mode}): {}",
                     e.describe(proof.forest())

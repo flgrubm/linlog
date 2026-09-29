@@ -35,7 +35,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 /// A sequent outside the fragment the options assert is refused
 /// ([`Error::FragmentMismatch`]); in intuitionistic mode a sequent with no
 /// intuitionistic reading ([`Error::NotIntuitionistic`]) and Mix
-/// ([`Error::NoEngine`]); the net engine outside unit-free MLL
+/// ([`Error::IntuitionisticMix`]); the net engine outside unit-free MLL
 /// ([`Error::NetFragment`]) and in affine mode ([`Error::NetMode`]); the
 /// focus engine in intuitionistic mode and the two-sided engine in
 /// classical mode ([`Error::EngineMode`]); the additive engine on anything
@@ -118,7 +118,7 @@ pub fn prove_until(
     // fragment, and every fragment in affine mode, to the focused engine,
     // one-sided or two-sided by the mode. Mix has no intuitionistic form.
     if mode.intuitionistic && mode.mix {
-        return Err(Error::NoEngine { fragment, mode });
+        return Err(Error::IntuitionisticMix);
     }
     let forest = Forest::new(sequent)?;
     let reading = if mode.intuitionistic {
@@ -641,7 +641,7 @@ mod tests {
         let error = prove(&sequent("a |- a"), i.with_mix(), &Options::default()).unwrap_err();
         assert_eq!(
             error.to_string(),
-            "no engine for MLL in intuitionistic with Mix mode yet"
+            "Mix has no intuitionistic form: a premise of a Mix would have no goal"
         );
         let focus = Options::default().engine(Some(Engine::Focus));
         let error = prove(&sequent("a |- a"), i, &focus).unwrap_err();

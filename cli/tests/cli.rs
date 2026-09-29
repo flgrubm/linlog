@@ -129,6 +129,123 @@ fn prove_verdicts_and_exit_statuses() {
     }
 }
 
+/// Intuitionistic mode: the verdict line names the intuitionistic fragment
+/// and the engine, the derivation is two-sided, `check -i` reads what
+/// `prove -i` writes and prints the sequent two-sided, and a sequent with
+/// no intuitionistic reading is an error that names the subformula.
+#[test]
+fn intuitionistic_mode() {
+    let (status, out, _) = linlog(&["prove", "-i", "A, A -o B |- B"], "");
+    assert_eq!(status, 0);
+    assert_eq!(
+        out,
+        "provable (IMLL, intuitionistic, net engine)\n\
+         ───── ax   ───── ax\n\
+         A ⊢ A      B ⊢ B\n\
+         ──────────────── ⊸L\n\
+         \x20 A, A ⊸ B ⊢ B\n"
+    );
+    for (args, status, line) in [
+        (
+            &["prove", "-i", "-q", "A & B |- A"][..],
+            0,
+            "provable (IALL, intuitionistic, additive engine)",
+        ),
+        (
+            &["prove", "-i", "-q", "!A, !(A -o B) |- !B"],
+            0,
+            "provable (IMELL, intuitionistic, two-sided engine)",
+        ),
+        (
+            &["prove", "-i", "-a", "-q", "A, B |- A"],
+            0,
+            "provable (IMLL, intuitionistic affine, two-sided engine)",
+        ),
+        (
+            &["prove", "-i", "-q", "--engine", "two-sided", "A |- A"],
+            0,
+            "provable (IMLL, intuitionistic, two-sided engine)",
+        ),
+        (
+            &["prove", "-i", "-q", "(A -o B) -o A |- A"],
+            1,
+            "unprovable (IMLL, intuitionistic, net engine): the search was exhaustive",
+        ),
+        (
+            &["prove", "-q", "--engine", "additive", "|- A & B, ~A + ~B"],
+            0,
+            "provable (ALL, classical, additive engine)",
+        ),
+    ] {
+        let (got, out, err) = linlog(args, "");
+        assert_eq!(got, status, "{args:?}: {err}");
+        assert_eq!(out.lines().next(), Some(line), "{args:?}");
+    }
+    for (args, error) in [
+        (
+            &["prove", "-i", "|- A par B"][..],
+            "not an intuitionistic sequent: the subformula A ⅋ B is neither an intuitionistic \
+             formula nor the negation of one",
+        ),
+        (
+            &["prove", "-i", "A |- B, C"],
+            "both B and C can only be the goal",
+        ),
+        (
+            &["prove", "-i", "--engine", "focus", "A |- A"],
+            "the focus engine does not search in intuitionistic mode",
+        ),
+        (
+            &["prove", "-i", "--mix", "A |- A"],
+            "Mix has no intuitionistic form",
+        ),
+        (
+            &["prove", "--engine", "additive", "A, B |- A * B"],
+            "the additive engine decides a sequent of two additive-only formulas, not 3 formulas of MLL",
+        ),
+    ] {
+        let (status, out, err) = linlog(args, "");
+        assert_eq!((status, out.as_str()), (2, ""), "{args:?}");
+        assert!(err.contains(error), "{args:?}: {err}");
+    }
+
+    let (status, json, _) = linlog(&["prove", "-i", "--format", "json", "A & B |- B"], "");
+    assert_eq!(status, 0);
+    assert!(
+        json.starts_with(r#"{"verdict":"proved","fragment":"IALL","#),
+        "{json}"
+    );
+    let (status, out, _) = linlog(&["check", "-i"], &json);
+    assert_eq!(status, 0);
+    assert_eq!(
+        out,
+        "valid proof of A & B ⊢ B (intuitionistic)\n\
+         \x20 ───── ax\n\
+         \x20 B ⊢ B\n\
+         ───────── &L₂\n\
+         A & B ⊢ B\n"
+    );
+    // The classical proof of a sequent classical linear logic proves and
+    // intuitionistic linear logic does not is an invalid proof under -i.
+    let schellinx = "((A * top) & (B * top)) -o 0 |- (A -o C) + (B -o C)";
+    let (status, json, _) = linlog(&["prove", "--format", "json", schellinx], "");
+    assert_eq!(status, 0);
+    let (status, out, _) = linlog(&["check", "-i", "-q"], &json);
+    assert_eq!(status, 1);
+    assert!(
+        out.contains("a sequent of the rule has 2 formulas on the right of ⊢ instead of one"),
+        "{out}"
+    );
+
+    let (status, out, _) = linlog(&["seq", "print", "-i", "A, A -o B |- B"], "");
+    assert_eq!((status, out.as_str()), (0, "A, A ⊸ B ⊢ B\n"));
+    let (status, _, err) = linlog(&["seq", "print", "-i", "A, B |-"], "");
+    assert_eq!(status, 2);
+    assert!(err.contains("no formula can be the goal"), "{err}");
+    let (status, out, _) = linlog(&["seq", "fragment", "-i", "!A |- A & 1"], "");
+    assert_eq!((status, out.as_str()), (0, "ILL\n"));
+}
+
 /// The JSON output of `prove` is a proof file that `check` accepts in the
 /// mode it was found in and rejects in a stricter one.
 #[test]
@@ -195,7 +312,7 @@ fn net_format() {
         ),
         (
             &["prove", "--format", "net", "--affine", "A |- A"],
-            "proof nets exist in classical mode only",
+            "proof nets exist in linear mode only",
         ),
     ] {
         let (status, out, err) = linlog(args, "");
