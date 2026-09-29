@@ -13,11 +13,19 @@
 //! a `Derived` sequent; the one rule whose conclusion the premises do not
 //! determine, `⊤`, is handled by a flag that says the subproof proves its
 //! sequent under any further context.
+//!
+//! In intuitionistic mode the same pass also checks the one-succedent
+//! condition against the sequent's intuitionistic reading: every derived
+//! linear zone holds at most one formula in output position, exactly one
+//! unless a `⊤` above absorbs the rest, a `⊤` never absorbs a second
+//! output, weakening never discards the goal, and Mix has no premise with
+//! a goal at all. Every intuitionistic rule is a classical rule on the
+//! one-sided sequent, so nothing else is intuitionistic about a proof.
 
 use super::multiset::Multiset;
 use super::{Node, NodeId, Proof, Side};
 use crate::fragment::Mode;
-use crate::occurrences::{Forest, OccId, OccSet};
+use crate::occurrences::{Forest, OccId, OccSet, Position, Reading, ShapeError};
 use crate::sequents::Kind;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
@@ -113,7 +121,7 @@ fn occurrence(f: &mut Formatter<'_>, forest: Option<&Forest>, o: OccId) -> FmtRe
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CheckError {
     /// The node at fault; the root when the proof concludes the wrong sequent
-    /// or the mode cannot be checked.
+    /// or the sequent has no intuitionistic reading.
     pub node: NodeId,
     /// The node's rule instance.
     pub rule: Node,
@@ -127,11 +135,16 @@ pub struct CheckError {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Problem {
     /// The mode forbids the rule: weakening of a formula that is not a `?`
-    /// outside affine mode, or Mix without Mix.
+    /// outside affine mode, Mix without Mix or in intuitionistic mode.
     Forbidden,
-    /// The mode is intuitionistic, whose one-succedent condition the checker
-    /// does not test yet; only classical proofs are checked.
-    Intuitionistic,
+    /// The mode is intuitionistic and the sequent has no intuitionistic
+    /// reading, so no proof of it is checked.
+    Shape(ShapeError),
+    /// The mode is intuitionistic and a sequent of the rule has this many
+    /// formulas on the right of `⊢` instead of one: the premise's linear
+    /// zone after the rule, or the context a `⊤` would absorb, or a
+    /// weakening of the goal.
+    Succedents(usize),
     /// The occurrence is not of the kind the rule acts on.
     Kind(OccId),
     /// The two literals of an axiom are not an atom and its negation.
@@ -198,7 +211,17 @@ impl CheckError {
         use Problem::*;
         match &self.problem {
             Forbidden => f.write_str("the mode forbids the rule"),
-            Intuitionistic => f.write_str("intuitionistic proofs cannot be checked yet"),
+            Shape(e) => {
+                f.write_str("not an intuitionistic sequent: ")?;
+                match forest {
+                    Some(forest) => write!(f, "{}", e.describe(forest)),
+                    None => write!(f, "{e}"),
+                }
+            }
+            Succedents(n) => write!(
+                f,
+                "a sequent of the rule has {n} formulas on the right of ⊢ instead of one"
+            ),
             Kind(o) => {
                 if forest.is_none() {
                     f.write_str("occurrence ")?;
@@ -256,28 +279,40 @@ impl std::error::Error for CheckError {}
 /// Checks that a proof proves its sequent: every node applies its rule to
 /// what its premises derive, the mode allows the rule, and the root derives
 /// exactly the sequent's formulas with nothing left in the unrestricted
-/// zone. Returns the first node that fails, in arena order, with what it
-/// needed. Intuitionistic mode is refused: its one-succedent condition is
-/// not tested yet.
+/// zone; in intuitionistic mode also that the sequent has an intuitionistic
+/// reading and every sequent of the proof one formula on the right of `⊢`.
+/// Returns the first node that fails, in arena order, with what it needed.
 pub fn check(proof: &Proof, mode: Mode) -> Result<(), CheckError> {
-    if mode.intuitionistic {
-        return Err(CheckError {
-            node: proof.root(),
-            rule: proof.node(proof.root()),
-            premises: vec![],
-            problem: Problem::Intuitionistic,
-        });
-    }
-    let derived = derive(proof, mode)?;
+    let reading = if mode.intuitionistic {
+        match Reading::new(proof.forest()) {
+            Ok(reading) => Some(reading),
+            Err(e) => {
+                return Err(CheckError {
+                    node: proof.root(),
+                    rule: proof.node(proof.root()),
+                    premises: vec![],
+                    problem: Problem::Shape(e),
+                });
+            }
+        }
+    } else {
+        None
+    };
+    let derived = derive(proof, mode, reading.as_ref())?;
     conclude(proof, mode, &derived)
 }
 
 /// Derives what every node proves, in arena order, or reports the first
-/// node that misapplies its rule or uses one the mode forbids.
-pub(crate) fn derive(proof: &Proof, mode: Mode) -> Result<Vec<Derived>, CheckError> {
+/// node that misapplies its rule or uses one the mode forbids; with a
+/// reading, also the first sequent that breaks the one-succedent condition.
+pub(crate) fn derive(
+    proof: &Proof,
+    mode: Mode,
+    reading: Option<&Reading>,
+) -> Result<Vec<Derived>, CheckError> {
     let mut derived = Vec::with_capacity(proof.nodes().len());
     for id in proof.ids() {
-        let d = Step::new(proof, mode, id, &derived).derive()?;
+        let d = Step::new(proof, mode, id, &derived, reading).derive()?;
         derived.push(d);
     }
     Ok(derived)
@@ -296,7 +331,7 @@ pub(crate) fn conclude(proof: &Proof, mode: Mode, derived: &[Derived]) -> Result
     if d.theta.is_empty() && concludes {
         Ok(())
     } else {
-        Err(Step::new(proof, mode, root, derived).fail(Problem::Conclusion(d.to_dyadic())))
+        Err(Step::new(proof, mode, root, derived, None).fail(Problem::Conclusion(d.to_dyadic())))
     }
 }
 
@@ -312,18 +347,27 @@ struct Step<'a> {
     node: Node,
     /// What the nodes before it derived.
     derived: &'a [Derived],
+    /// The intuitionistic reading, in intuitionistic mode.
+    reading: Option<&'a Reading<'a>>,
 }
 
 impl<'a> Step<'a> {
     /// The step for node `id`, whose premises have their entries in
     /// `derived`.
-    fn new(proof: &'a Proof, mode: Mode, id: NodeId, derived: &'a [Derived]) -> Self {
+    fn new(
+        proof: &'a Proof,
+        mode: Mode,
+        id: NodeId,
+        derived: &'a [Derived],
+        reading: Option<&'a Reading<'a>>,
+    ) -> Self {
         Self {
             forest: proof.forest(),
             mode,
             id,
             node: proof.node(id),
             derived,
+            reading,
         }
     }
 
@@ -357,16 +401,46 @@ impl<'a> Step<'a> {
 
     /// Consumes one copy of `o` from the linear zone of `d`, the derived
     /// sequent of premise `premise`; a `⊤` above stands in for a missing
-    /// one.
+    /// one, but never for a second goal.
     fn take(&self, d: &mut Derived, o: OccId, premise: usize) -> Result<(), CheckError> {
-        if d.gamma.remove(o) || d.any {
-            Ok(())
-        } else {
-            Err(self.fail(Problem::Missing {
+        if d.gamma.remove(o) {
+            return Ok(());
+        }
+        if !d.any {
+            return Err(self.fail(Problem::Missing {
                 premise,
                 occurrence: o,
-            }))
+            }));
         }
+        // The premise's sequent holds `o` besides its zone: one goal at
+        // most.
+        if let Some(reading) = self.reading
+            && reading.position(o) == Position::Output
+            && self.outputs(&d.gamma) > 0
+        {
+            return Err(self.fail(Problem::Succedents(2)));
+        }
+        Ok(())
+    }
+
+    /// Counts the formulas of a linear zone in output position, in
+    /// intuitionistic mode.
+    fn outputs(&self, gamma: &Multiset) -> usize {
+        self.reading
+            .map_or(0, |r| r.outputs(gamma.as_slice().iter().copied()))
+    }
+
+    /// Checks the one-succedent condition on what the node derived: one
+    /// output at most, and exactly one unless a `⊤` above supplies it.
+    fn one_succedent(&self, d: Derived) -> Result<Derived, CheckError> {
+        if self.reading.is_none() {
+            return Ok(d);
+        }
+        let outputs = self.outputs(&d.gamma);
+        if outputs > 1 || (outputs == 0 && !d.any) {
+            return Err(self.fail(Problem::Succedents(outputs)));
+        }
+        Ok(d)
     }
 
     /// The left subformula of `o`, which must have one.
@@ -401,6 +475,12 @@ impl<'a> Step<'a> {
 
     /// Derives what the node proves from what its premises derived.
     fn derive(self) -> Result<Derived, CheckError> {
+        let d = self.rule()?;
+        self.one_succedent(d)
+    }
+
+    /// Applies the node's rule to what its premises derived.
+    fn rule(&self) -> Result<Derived, CheckError> {
         use Node::*;
         let f = self.forest;
         match self.node {
@@ -515,16 +595,25 @@ impl<'a> Step<'a> {
                 Ok(d)
             }
             Weaken(o, p) => {
-                // Weakening a `?` formula is a rule of every mode.
+                // Weakening a `?` formula is a rule of every mode; the goal
+                // is never weakened.
                 if !self.mode.affine && f.kind(o) != Kind::Quest {
                     return Err(self.fail(Problem::Forbidden));
+                }
+                if self
+                    .reading
+                    .is_some_and(|r| r.position(o) == Position::Output)
+                {
+                    return Err(self.fail(Problem::Succedents(0)));
                 }
                 let mut d = self.premise(p);
                 d.gamma.insert(o);
                 Ok(d)
             }
             Mix(l, r) => {
-                if !self.mode.mix {
+                // Mix has no intuitionistic form: a premise would lack the
+                // goal.
+                if !self.mode.mix || self.mode.intuitionistic {
                     return Err(self.fail(Problem::Forbidden));
                 }
                 Ok(self.join(self.premise(l), self.premise(r)))
@@ -904,13 +993,14 @@ mod tests {
                     any: false,
                 }),
             ),
-            // Intuitionistic mode is not checked yet, whatever the root.
+            // Intuitionistic mode needs an intuitionistic sequent, whatever
+            // the proof.
             (
-                "|- A par ~A",
-                vec![Ax(o(2), o(1)), Par(o(0), n(0))],
+                "|- A par B",
+                vec![Ax(o(1), o(2))],
                 Mode::INTUITIONISTIC,
-                1,
-                Intuitionistic,
+                0,
+                Shape(crate::occurrences::ShapeError::Formula(o(0))),
             ),
         ] {
             let p = proof(input, nodes);
@@ -922,6 +1012,110 @@ mod tests {
                 "{input:?}: {message}"
             );
         }
+    }
+
+    /// Intuitionistic mode accepts the classical terms of intuitionistic
+    /// proofs and rejects a sequent with two goals or none: a `⊸L` split
+    /// that keeps the goal on the antecedent's side, a weakened goal, Mix.
+    #[test]
+    fn intuitionistic() {
+        use Node::*;
+        use Problem::*;
+        let m = Mode::INTUITIONISTIC;
+        for (input, nodes) in [
+            // A, A ⊸ B ⊢ B: 0 ~A, 1 ⊗, 2 A, 3 ~B, 4 B
+            (
+                "A, A -o B |- B",
+                vec![Ax(o(0), o(2)), Ax(o(3), o(4)), Tensor(o(1), n(0), n(1))],
+            ),
+            // A & B ⊢ A & B: 0 ⊕, 1 ~A, 2 ~B, 3 &, 4 A, 5 B
+            (
+                "A & B |- A & B",
+                vec![
+                    Ax(o(1), o(4)),
+                    Plus(o(0), Side::Left, n(0)),
+                    Ax(o(2), o(5)),
+                    Plus(o(0), Side::Right, n(2)),
+                    With(o(3), n(1), n(3)),
+                ],
+            ),
+            // A ⊸ 0, A ⊢ B: 0 ⊗, 1 A, 2 ⊤, 3 ~A, 4 B: the `0` on the left
+            // absorbs the goal.
+            (
+                "A -o 0, A |- B",
+                vec![Ax(o(1), o(3)), Top(o(2)), Tensor(o(0), n(0), n(1))],
+            ),
+            // ⊢ ⊤, ⊤ ⊗ ⊤ is read with the last root as the goal, 0 ⊢ ⊤ ⊗ ⊤:
+            // 0 ⊤, 1 ⊗, 2 ⊤, 3 ⊤; the hypothesis `0` is absorbed by one
+            // `⊤R`.
+            (
+                "|- top, top * top",
+                vec![Top(o(2)), Top(o(3)), Tensor(o(1), n(0), n(1))],
+            ),
+            // !A, !(A ⊸ B) ⊢ !B: 0 ?, 1 ~A, 2 ?, 3 ⊗, 4 A, 5 ~B, 6 !, 7 B
+            (
+                "!A, !(A -o B) |- !B",
+                vec![
+                    Ax(o(1), o(4)),
+                    Copy(o(1), n(0)),
+                    Ax(o(5), o(7)),
+                    Tensor(o(3), n(1), n(2)),
+                    Copy(o(3), n(3)),
+                    Bang(o(6), n(4)),
+                    Quest(o(2), n(5)),
+                    Quest(o(0), n(6)),
+                ],
+            ),
+        ] {
+            let p = proof(input, nodes);
+            p.check(m)
+                .unwrap_or_else(|e| panic!("{input:?}: {}", e.describe(p.forest())));
+        }
+        // A, B ⊢ A in affine mode: weakening the hypothesis is fine, the
+        // goal never.
+        let p = proof("A, B |- A", vec![Ax(o(0), o(2)), Weaken(o(1), n(0))]);
+        assert_eq!(p.check(m.affine()), Ok(()));
+        // A, 0 ⊢ B: 0 ~A, 1 ⊤, 2 B
+        let p = proof("A, 0 |- B", vec![Top(o(1)), Weaken(o(2), n(0))]);
+        assert_eq!(p.check(m.affine()).unwrap_err().problem, Succedents(0));
+        // ((A ⊗ ⊤) & (B ⊗ ⊤)) ⊸ 0 ⊢ (A ⊸ C) ⊕ (B ⊸ C), which classical
+        // linear logic proves and intuitionistic linear logic does not:
+        // 0 ⊗, 1 &, 2 ⊗, 3 A, 4 ⊤, 5 ⊗, 6 B, 7 ⊤, 8 ⊤, 9 ⊕, 10 ⅋, 11 ~A,
+        // 12 C, 13 ⅋, 14 ~B, 15 C. The classical proof splits the `⊸L`
+        // with the goal on the antecedent's side, where a `⊤` absorbs it.
+        let p = proof(
+            "((A * top) & (B * top)) -o 0 |- (A -o C) + (B -o C)",
+            vec![
+                Ax(o(3), o(11)),
+                Top(o(4)),
+                Tensor(o(2), n(0), n(1)),
+                Par(o(10), n(2)),
+                Plus(o(9), Side::Left, n(3)),
+                Ax(o(6), o(14)),
+                Top(o(7)),
+                Tensor(o(5), n(5), n(6)),
+                Par(o(13), n(7)),
+                Plus(o(9), Side::Right, n(8)),
+                With(o(1), n(4), n(9)),
+                Top(o(8)),
+                Tensor(o(0), n(10), n(11)),
+            ],
+        );
+        assert_eq!(p.check(Mode::CLASSICAL), Ok(()));
+        let e = p.check(m).unwrap_err();
+        assert_eq!((e.node, e.problem.clone()), (n(3), Succedents(2)));
+        assert_eq!(
+            e.describe(p.forest()).to_string(),
+            "node 3 (⅋ on ~A ⅋ C from 2) with premises ⊢ A ⊗ ⊤, ~A, …: \
+             a sequent of the rule has 2 formulas on the right of ⊢ instead of one"
+        );
+        // Mix is never intuitionistic. 0 ⊗, 1 A, 2 ~B, 3 ~A, 4 B: A ⊸ B, A
+        // ⊢ B with a Mix of the axioms.
+        let p = proof(
+            "A -o B, A |- B",
+            vec![Ax(o(1), o(3)), Ax(o(2), o(4)), Mix(n(0), n(1))],
+        );
+        assert_eq!(p.check(m.with_mix()).unwrap_err().problem, Forbidden);
     }
 
     /// The error names the node, its premises and the problem.

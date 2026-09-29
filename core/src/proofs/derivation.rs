@@ -148,7 +148,7 @@ impl<'a> Derivation<'a> {
     /// question: a derivation shows every rule the proof uses.
     pub fn new(proof: &'a Proof) -> Result<Self, CheckError> {
         let permissive = Mode::CLASSICAL.affine().with_mix();
-        let derived = check::derive(proof, permissive)?;
+        let derived = check::derive(proof, permissive, None)?;
         check::conclude(proof, permissive, &derived)?;
         let mut build = Build {
             proof,
