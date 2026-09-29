@@ -32,8 +32,9 @@ Current contents:
   checker and the derivation view, interactive proving and its
   translation back to terms, the LaTeX, Typst, SVG and Rocq exports, the search
   front door (sequents and goals), the focused engine (one- and
-  two-sided), the additive path, proof nets and their criterion, and
-  their invariants.
+  two-sided), the parallel runtime (the pool, the stop flags, the
+  shared memo and arena, cubes), the additive path, proof nets and
+  their criterion, and their invariants.
 - `rules/cli.md` (`cli/**`): the `linlog` command's layout, exit statuses,
   search thread, stop polling, the interactive session, and where a new
   engine, output format or session command plugs in.

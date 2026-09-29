@@ -22,7 +22,9 @@ Workspace crates:
 - `core/` is package **`linlog`**: all logic.
   It has seven optional default features, `parse` (chumsky), `serialize`
   (serde), `interactive` (step-by-step proving), and `latex`, `typst`,
-  `svg` and `rocq` (the exports); the CLI enables the last five.
+  `svg` and `rocq` (the exports), and one off by default, `parallel`
+  (rayon: the search on a thread pool, off for wasm); the CLI enables the
+  last six.
 - `cli/` is package **`linlog-cli`**, library **`linlog_cli`** and binary
   **`linlog`** (one call into the library; `doc = false` because it shares
   the core crate's name): a clap front end with `prove`, `check`,
@@ -32,8 +34,10 @@ Workspace crates:
   `--standalone` for a document), `svg` and `net-svg`. The tree and its
   `--help` text are the doc comments in `argument_parsing.rs`; `prove.rs`
   runs the search on a thread sized from `--recursion-limit` and owns the
-  output; `--copies` bounds the copies of `?` formulas per branch; exit
-  status 0 proved/valid, 1 unprovable/invalid, 2 error, 3 unknown. Its
+  output; `--copies` bounds the copies of `?` formulas per branch;
+  `--jobs N` (default: every core) runs the search on a pool and
+  `--deterministic` the sequential engines; exit status 0 proved/valid,
+  1 unprovable/invalid, 2 error, 3 unknown. Its
   invariants and extension points live in `.claude/rules/cli.md`, which
   loads when a file under `cli/` is read.
 
@@ -65,7 +69,14 @@ on the consequent's side of every `⊸L` split) and `search::additive` (two
 additive-only formulas, by a memoized recursion on subformula pairs, in
 every mode); `Options::engine` forces one. `prove_goal(&forest, goal, mode,
 &options, stop)` decides any multiset of occurrences of a forest, the
-roots being the sequent itself. `Interactive` (`proofs::interactive`,
+roots being the sequent itself. With the `parallel` feature and
+`Options::jobs` above one, the focused and the net engine run on a rayon
+pool of their own (`search::parallel`: cube-and-conquer over the choices
+near the root, and-parallel `&` premises, a sharded memo and one arena
+shared by the workers, cubes of the first links for the net engine; the
+caller's stop closure is polled on the calling thread and raises the
+workers' flag); `Options::portfolio` gives every worker an order of its
+own; the additive path stays sequential. `Interactive` (`proofs::interactive`,
 feature `interactive`) is a proof in progress: `new(&sequent, mode)`,
 `goals()`, `rules(goal, position)`, `apply(goal, position, rule, left)`,
 `undo()`, `close(goal, …)`/`close_all`, `derivation()` with open goals as
@@ -129,7 +140,8 @@ Verify as much as the change needs:
 | the change | the proof |
 |---|---|
 | any `.rs` edit | `cargo clippy …` and `cargo test --workspace` |
-| touches `#[cfg(feature = …)]` or `[features]` | add `cargo hack check --each-feature -p linlog` and `cargo hack check --feature-powerset --depth 2 -p linlog` |
+| touches `#[cfg(feature = …)]` or `[features]` | add `cargo hack check --each-feature -p linlog` and `cargo hack check --feature-powerset --depth 2 -p linlog` (both cover `parallel`, which is off by default: `--each-feature`'s `--all-features` run is the one that differs from the defaults) |
+| touches `search/parallel.rs`, `focus/parallel.rs` or `net::parallel` | `cargo test --workspace` covers them (the CLI depends on `parallel`, and cargo unifies features across a workspace run); `cargo test -p linlog` alone needs `--features parallel` |
 | adds or changes a dependency | add `cargo deny check`. New deps must use a license `deny.toml` allows: EUPL-1.2, MIT, Apache-2.0 (± LLVM-exception), Unicode-3.0 or Zlib |
 | `flake.nix`, `modules/`, `.github/`, the toolchain, a lock bump, or before a push | `nix flake check`, which runs all of the above |
 

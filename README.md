@@ -152,6 +152,21 @@ $ linlog prove -q -a "!(A -o A * A), A |- ?B"
 unknown (MELL, classical affine, focus engine): the copy bound of 3 was reached; raise it with --copies
 ```
 
+The search runs on every core by default: `--jobs N` (`-j`) sets the
+threads, and `--deterministic` runs the sequential engines, whose proof
+and statistics are a function of the input, where a parallel run may find
+a different proof of the same sequent, never a different verdict. The
+focus engine splits the choices nearest the root among the threads and
+shares its memo; the net engine splits the first links into cubes; the
+additive engine is sequential in every case:
+
+```console
+$ linlog prove -q -j 4 "!(A -o A * A), !(B * B -o C), A, B |- A * A * A"
+unknown (MELL, classical, focus engine): the copy bound of 3 was reached; raise it with --copies
+$ linlog prove -q --deterministic "!(A -o A * A), !(B * B -o C), A, B |- A * A * A"
+unknown (MELL, classical, focus engine): the copy bound of 3 was reached; raise it with --copies
+```
+
 `--intuitionistic` (`-i`) reads the sequent as intuitionistic linear logic:
 one formula on the right of `⊢` and pars only as implications, which the
 one-sided form keeps as `~A ⅋ B`. The verdict line names the intuitionistic
@@ -469,14 +484,20 @@ Built:
   kernel, a lemma proved rule by rule and closed by `Qed`, for every
   classical fragment and for intuitionistic proofs as the classical
   proofs they are, with a flake check that runs Rocq on them.
+- Parallel search, behind the library's `parallel` feature and on by
+  default in the command: the focus engine runs the choices nearest the
+  root on a thread pool, cube-and-conquer style, with the `&` premises in
+  parallel and one memo shared by every thread; the net engine splits the
+  first links into cubes for the pool; a stop condition reaches every
+  thread; the sequential engines stay one flag away.
 - The `linlog` command: `prove`, `check`, `interact` and `seq`, with time
-  limits, Ctrl-C, statistics, JSON output, proof nets, and LaTeX, Typst,
-  SVG and Rocq output.
+  limits, Ctrl-C, statistics, JSON output, proof nets, LaTeX, Typst,
+  SVG and Rocq output, and `--jobs` and `--deterministic` for the search.
 
 Planned, in roughly this order:
 
-- Parallel search, a benchmark harness with the standard problem
-  libraries, and performance work driven by its numbers.
+- A benchmark harness with the standard problem libraries, and
+  performance work driven by its numbers.
 - Later: proof nets with exponential boxes, essential nets for
   intuitionistic MLL, the inverse method, the Lambek calculus, and a web
   front end.
@@ -490,7 +511,8 @@ contributions are welcome. All code is licensed under the EUPL.
 Two crates, with a third to come: the library `linlog` in `core/` holds all
 the logic; the command line program `linlog` (package `linlog-cli`) in
 `cli/` is a thin front end; a web front end will compile the library to
-WebAssembly, so the library uses neither threads nor the clock on its own.
+WebAssembly, so the library uses no clock, and threads only behind its
+`parallel` feature, which the web front end leaves off.
 
 The library keeps a sequent as a compact arena of subformulas in negation
 normal form, one-sided (`Γ ⊢ Δ` becomes `⊢ Γ^⊥, Δ`); an intuitionistic
