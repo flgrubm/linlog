@@ -46,8 +46,14 @@ pools, so one engine per worker; there is no global.
    `seed` entry that takes a list of links): cubes from the first `d` link choices with `d` chosen for
    8–32× more cubes than cores, smallest-multiplicity atoms first, no shared
    state beyond the stop flag.
-4. **Exponentials**: one deepening level at a time; parallelism within a
-   level; the memo's bound entries under concurrency.
+4. **Exponentials** (step 7's report, "For step 13"): one deepening
+   level at a time, never concurrently; parallelism within a level; the
+   memo's three kinds of entry merged so that validity only grows (a
+   larger `Exhausted` budget wins, `Complete` and `Proved` win over
+   `Exhausted`), which is the compare-and-swap; the `exhausted` flag
+   or-reduced over the workers before a level is called failed; a worker
+   that starts from a cube starts with the branch stack of the cube's
+   ancestors, or the loop check loses those prunes.
 5. **Correctness**: every result still passes the checker; `Unprovable`
    still requires the whole space to have been searched by some worker with
    no cube abandoned; document how cancellation and `Unknown` interact.

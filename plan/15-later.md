@@ -23,6 +23,19 @@ closure bit-matrix and an undo log (Moot 2008). Compare against the
 embedding route of step 8 on the benchmarks of step 14 before making it the
 default for IMLL. Fable 5.1, xhigh.
 
+## 15a'. Focused-engine follow-ups from the exponentials
+
+For the performance pass (14b), with step 14's numbers: a canonical choice
+among identical members of a stable sequent (hypotheses that are the same
+formula are distinct occurrences today, so the memo sees `C(n, k)` sequents
+where there is one up to renaming), a nested forced rule for a `⊗` factor
+that is itself a tensor of positive literals, a per-level restart from the
+frontier of exhausted sequents rather than re-exploring the levels below,
+and a hash per branch-stack entry for the loop check. Separately, whether
+a sound and useful affine prune exists (Kopylov's decidability argument
+does not give one directly; the spec's was unsound) is a research question
+to keep open; until then affine mode stays bounded.
+
 ## 15b'. Net-engine pruning for repeated literals
 
 Part of the performance pass (14b) if step 14's numbers ask for it: leaf

@@ -58,14 +58,16 @@ and resumed and so that a web client can hold it.
    needed. Structural rules of the standard calculus (`?d`, `?c`, `?w`,
    `wk`, Mix) are rules the user applies explicitly; the dyadic
    bookkeeping of the term is not the user's business.
-4. **Search from a goal.** `search` gains an entry that decides a goal
-   given as a multiset of occurrences of an existing forest rather than a
-   `Sequent`'s roots (the engines already work on sets of occurrences; the
-   focused engine starts its asynchronous phase from the given ones, with
-   `?` formulas entering `Θ` there, and the additive path and the two-sided
-   engine likewise; whether the net engine accepts subtrees as conclusions
-   or such goals go to the focused engine is your call, stated in the
-   report). The interactive state uses it to close one goal or every open
+4. **Search from a goal.** `search` gains a public entry that decides a
+   goal given as a multiset of occurrences of an existing forest rather
+   than a `Sequent`'s roots. Step 7 already built the crate-private
+   `search::focus::search_goal(&Forest, &[OccId], …)` (its report, "The
+   API"): the asynchronous phase starts from the given occurrences with
+   an empty `Θ`, `?` formulas enter `Θ` there, and it returns the node,
+   the arena and the statistics rather than a `Proof`; wrap it, extend
+   the additive path and the two-sided engine likewise, and decide
+   whether the net engine accepts subtrees as conclusions or such goals go
+   to the focused engine (state it in the report). The interactive state uses it to close one goal or every open
    goal, with the usual `Options` and stop condition, and grafts the found
    proof's derivation view onto the goal. The outcome per goal is the
    three-valued one of D9.

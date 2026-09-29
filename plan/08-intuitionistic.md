@@ -55,7 +55,13 @@ fast path of D8.
    polarization) prints as `Γ ⊢ A` with ILL formulas and `⊸`; the parser's
    output for `A, A -o B |- B` in intuitionistic mode prints back as
    `A, A ⊸ B ⊢ B`. Property test: parse, print, parse again.
-3. **The two-sided focused engine** as the spec states it: sequents
+3. **The two-sided focused engine** as the spec states it (step 7's
+   report, "For step 8": the dyadic machinery, the copy budget, the memo
+   entries, the stack and the loop check are indifferent to the side of an
+   occurrence; `Rules` is where a `one_sided: false` switch goes, and
+   `initial` and `decide_with` are the two places that look at the shape
+   of a stable sequent; a `!` hypothesis is a `?` formula of the lowered
+   sequent and lands in `Θ` through `quest` with no new rule): sequents
    `Θ ; Δ ⊢ A`, right-negative goals and left-positive hypotheses decompose
    invertibly (`0` on the left succeeds; `⊤` on the left is inert), stable
    sequents memoized on `(Θ, Δ, goal)`, decide right on a positive goal or

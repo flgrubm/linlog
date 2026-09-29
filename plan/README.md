@@ -223,7 +223,7 @@ whether it is a parameter or a sibling module). Proof-net search is
 | classical | MLL without units, some literal three or more times | focus (step 3); threshold tuned in step 14 |
 | classical | MLL with units, MALL | focus (step 3) |
 | classical | MELL, LL | focus with exponentials and copy bound (step 7) |
-| affine | anything | focus with weakening and the supermultiset prune (step 7) |
+| affine | anything | focus with weakening at the leaves, bounded like linear mode (step 7); the spec's supermultiset prune is unsound, so affine mode is not a decision procedure |
 | intuitionistic | IMLL over `⊗ ⊸ 1` | embedding into net search (step 8), essential nets later (step 15) |
 | intuitionistic | IMALL, IMELL, ILL, affine variants | two-sided focus (step 8) |
 
@@ -389,3 +389,29 @@ full powerset; the step that adds the fifth feature makes that change in
   (leaf symmetry breaking, a per-atom balance over skeleton components, a
   portfolio), now listed as 15b' for the performance pass. Prompts 8, 13
   and 14 amended.
+- 2026-09-29: step 7 reviewed and accepted, after a first attempt whose
+  reply exceeded the output token limit (the limit is raised to 128 000
+  in `.claude/settings.json`, and `conduct.md` warns against composing a
+  module in one reply). Thirteen commits, "Add exponentials and affine
+  mode to the focused engine" to "Keep the large generated sample to the
+  fragments without exponentials"; all checks pass including
+  `nix flake check`; the engine was exercised by hand. Dyadic sequents
+  with `Θ` as a set and `Γ` as a bitset plus a sorted list of extra
+  copies, a per-branch copy budget deepened from 0 to `Options::copies`
+  (default 3), memo entries `Proved`/`Failed(Complete)`/
+  `Failed(Exhausted(r))` merged so that validity only grows, an
+  ancestor-repeat loop check whose failures are not memoized, both
+  initial rules, `Reason::CopyBound`, `--copies`. A fresh-context
+  reviewer ran an independent unfocused dyadic prover on 5 200 random
+  sequents at every bound with no disagreement in linear mode, and
+  showed the spec's affine supermultiset-ancestor prune unsound (426
+  wrong refutations; `⊢ ?(a ⅋ ~a)` is provable only through a stable
+  sequent containing its ancestor). The prune is gone, affine mode is the
+  bounded search with weakening, D8 and the spec's errata say so; whether
+  a sound and useful affine prune exists stays open (15a'). Further spec
+  corrections recorded by the session: a `⊤` below a `?` or `!` disables
+  the interval check, a `0` is not fatal when a `Θ` member absorbs, the
+  literal-only failure is wrong with a non-empty `Θ`. Follow-ups for
+  the performance pass (identical members, nested forced factors,
+  per-level restarts, a hashed loop check) are in 14 and 15a'. Prompts 8,
+  9, 13 and 14 amended.

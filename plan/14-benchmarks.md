@@ -54,7 +54,18 @@ change shows its effect.
    `.claude/rules/core.md`; the spec forbade it), a per-atom balance over
    the `⊗`-skeleton components of a partial structure, and a portfolio
    once threads exist.
-6. **The known slow cases as benchmark families.** Step 3's report
+6. **The exponential families and their follow-ups.** Step 7's report
+   ("Timings", "Open questions and follow-ups") measured the counter
+   program `!(a ⊗ a ⊸ b), !(b ⊗ b ⊸ c), !(c ⊗ c ⊸ d), a^8 ⊢ d` (millions of
+   memo hits on thousands of entries, because the eight `a` hypotheses
+   are distinct occurrences of one formula) and a growing-context family;
+   sixteen tokens did not finish. Put both in the harness at several
+   sizes, with the ILLTP Petri-net problems when they are read, so that
+   the performance pass can measure a canonical choice among identical
+   members, a nested forced rule for a factor that is a tensor of positive
+   literals, a per-level restart from the frontier of exhausted sequents
+   instead of re-exploring, and a hashed loop check.
+7. **The known slow cases as benchmark families.** Step 3's report
    ("Performance observations", "Open questions and follow-ups") names
    them: refuting a wide sequent under Mix costs about `3^k`; refuting an
    unsolvable 3-Partition instance takes 55 s for bins of size 4 (3.9
@@ -64,11 +75,11 @@ change shows its effect.
    step (branch-and-bound splitting instead of Gray-code enumeration, a
    per-problem atom bias, the tighter counts the report lists, memo keys in
    an arena) has numbers to beat. Measure, do not fix here.
-7. **Tracking**: a `bench/RESULTS.md` (or CSV) with the current numbers per
+8. **Tracking**: a `bench/RESULTS.md` (or CSV) with the current numbers per
    family and engine, and the command that regenerates it; not a CI job
    (timings on shared runners are noise), but a `nix flake check` entry
    that runs the harness on a tiny set to keep it building.
-8. **Documentation**: README (how to run the benchmarks), CLAUDE.md
+9. **Documentation**: README (how to run the benchmarks), CLAUDE.md
    (commands, the bench crate), `.claude/rules/core.md` if formats were
    added.
 
