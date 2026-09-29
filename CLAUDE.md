@@ -20,15 +20,15 @@ data structures are designed to be compact and cache-friendly.
 
 Workspace crates:
 - `core/` is package **`linlog`**: all logic.
-  It has six optional default features, `parse` (chumsky), `serialize`
-  (serde), `interactive` (step-by-step proving), and `latex`, `typst` and
-  `svg` (the exports); the CLI enables the last four.
+  It has seven optional default features, `parse` (chumsky), `serialize`
+  (serde), `interactive` (step-by-step proving), and `latex`, `typst`,
+  `svg` and `rocq` (the exports); the CLI enables the last five.
 - `cli/` is package **`linlog-cli`**, library **`linlog_cli`** and binary
   **`linlog`** (one call into the library; `doc = false` because it shares
   the core crate's name): a clap front end with `prove`, `check`,
   `interact` (a line-based session that reads commands from standard
   input, `interact.rs`) and `seq print|json|fragment`, and the output
-  formats `text`, `json`, `net`, `latex`, `typst` (with
+  formats `text`, `json`, `net`, `latex`, `typst` and `rocq` (with
   `--standalone` for a document), `svg` and `net-svg`. The tree and its
   `--help` text are the doc comments in `argument_parsing.rs`; `prove.rs`
   runs the search on a thread sized from `--recursion-limit` and owns the
@@ -80,9 +80,14 @@ ebproof and Typst for curryst, each as a `Form::Fragment` or a
 draws `sequent(&sequent, &style)`, `two_sided(&reading, &style)`,
 `derivation(&derivation, &style)` and `net(&structure, &style)` as SVG
 documents, laid out from a committed table of Euler Math's advances, with
-`Style` for the sizes, gaps and colours; `core/tests/snapshots/` pins the
-derivations and nets (`BLESS=1 cargo test -p linlog --test export`
-rewrites them).
+`Style` for the sizes, gaps and colours; `export::rocq` (feature `rocq`)
+writes `derivation(&derivation, form, &options)` as a Rocq lemma with its
+proof script for NanoYalla (`NANOYALLA` is the version), the fragment or
+a whole file starting with `Options::prelude`, the lemma named by
+`Options::lemma`, refusing an open goal, Mix and affine weakening with
+`Unsupported`; `core/tests/snapshots/` pins the derivations, nets and
+certificates (`BLESS=1 cargo test -p linlog --test export` rewrites
+them).
 `ProofStructure` (`nets`) is a proof net of unit-free MLL over the forest:
 `from_links`, `link`/`unlink`, `is_correct()` (the Danos–Regnier criterion
 through Yeo's deletion test, independent of the search and the checker),
@@ -112,7 +117,8 @@ cargo hack check --feature-powerset --depth 2 -p linlog    # and every pair
 cargo deny check                                           # licenses, bans, sources + advisories (online)
 cargo run -p linlog-cli -- <args>
 
-nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), export (the LaTeX and Typst output compiles, the SVG renders), deadnix, actionlint, treefmt, claude-hooks
+nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), export (the LaTeX and Typst output compiles, the SVG renders), rocq (NanoYalla checks the certificates), deadnix, actionlint, treefmt, claude-hooks
+nix build .#checks.x86_64-linux.rocq   # the certificates alone: Rocq is a 1.2 GB closure from the binary cache
 nix fmt           # nixfmt, rustfmt, taplo, shfmt, shellcheck (a hook runs it on each edited file)
 nix build         # linlog-cli, whose binary is result/bin/linlog
 nix build .#doc   # the rustdoc site, as the Docs workflow publishes it
@@ -141,7 +147,12 @@ and `systems.nix` are what their names say; `export.nix` is the `export`
 check, which compiles the snapshots and a CLI proof with pdfLaTeX and with
 Typst and the curryst of nixpkgs (the version `export::typst::CURRYST`
 names), and renders the SVG snapshots and CLI drawings with resvg, both
-with only the Euler Math font of nixpkgs' TeX Live, offline.
+with only the Euler Math font of nixpkgs' TeX Live, offline; `rocq.nix`
+is the `rocq` check, which builds NanoYalla from the non-flake input
+`nanoyalla` (Click & coLLecT pinned to a commit; `export::rocq::NANOYALLA`
+names the version) with nixpkgs' Rocq and standard library and compiles
+the `.v` snapshots and two CLI certificates against it, requiring Rocq
+to print nothing.
 
 ## CI
 

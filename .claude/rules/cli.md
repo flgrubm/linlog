@@ -61,7 +61,13 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   advice names flags). `--standalone` is refused for them too: an SVG is
   always a whole document, so the flag would do nothing. An unprovable
   sequent prints the comment alone, which is not an XML document; the
-  exit status says why. `seq print --format` (`SequentFormat`, with
+  exit status says why. `--format rocq` prints the verdict and statistics
+  as `(* … *)` comments and the derivation as `linlog::export::rocq`
+  writes it with the default `Options` (lemma `certificate`), taking
+  `--standalone` for the file with the import; in intuitionistic mode the
+  two-sided derivation is passed and certified one-sided; a proof with
+  Mix or affine weakening is exit 2 with the library's `Unsupported`
+  message, after the search. `seq print --format` (`SequentFormat`, with
   `svg`) prints through `sequent_in`, which `sequent_text` wraps. There
   is no `net` subcommand: the CLI's nets are those of proofs, which
   `prove` and `check` draw.
@@ -121,9 +127,9 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
 - **An `interact` command**: an arm in `Session::command`, a line in
   `HELP`, and the session test in `cli/tests/cli.rs`, which pins the
   exact output of a scripted session.
-- **An output format** (`rocq`): a variant of `Format` and its
-  arm in `prove`'s and `check_text`'s `match format`, as `net`, `latex`
-  and `typst` have. A format that renders the derivation builds it inside
+- **An output format** (`lean`, say): a variant of `Format` and its
+  arm in `prove`'s and `check_text`'s `match format`, as `net`, `latex`,
+  `typst` and `rocq` have. A format that renders the derivation builds it inside
   the `on_large_stack` closure, as the text format does (an arm in
   `derivation`); `net` builds the net there too, though
   desequentialization does not recurse. A format with a document form

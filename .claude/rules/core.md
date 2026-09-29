@@ -883,8 +883,10 @@ memo's.
 
 `export/` writes sequents and derivations as LaTeX (ebproof trees, cmll and
 amssymb symbols) and Typst (curryst trees), pure functions to `String`,
-each in a `Form` (`Fragment` or `Standalone`), and draws them and proof
-structures as SVG documents (no `Form`: an SVG is always a document). What the code relies on:
+each in a `Form` (`Fragment` or `Standalone`), draws them and proof
+structures as SVG documents (no `Form`: an SVG is always a document), and
+writes derivations as Rocq proof scripts for NanoYalla (`rocq`, in a
+`Form`: the lemma, or a file with the import). What the code relies on:
 - **One table per target, one printer.** `notation::Notation` is the
   symbol table (connectives, units, dual mark, turnstile, the alignment
   mark, the atom escaper); `Notation::term` and `Notation::ill` are the
@@ -950,6 +952,35 @@ structures as SVG documents (no `Form`: an SVG is always a document). What the c
   `font::DEPTH` (a comma) below every baseline; the layouts reserve
   them for every line, and the structural test in `core/tests/export.rs`
   checks every element against the view box with the same bounds.
+- **Rocq** (`export/rocq.rs`): the kernel is NanoYalla `NANOYALLA`
+  (Click & coLLecT's `nanoyalla/`: `nanoll.v` is the trusted `ll`
+  inductive over list sequents, `macroll.v` the derived rules), and the
+  script relies on its `_ext` lemmas exactly as stated there: every rule
+  takes the list `l1` of formulas before its principal one and infers the
+  rest by unification, `oc_r_ext l1 (A) l2` needs both contexts without
+  their `?`, `tens_r_ext l1 A B l2 : ll (l1 ++ A :: nil) -> ll (B :: l2)
+  -> ll (l1 ++ tens A B :: l2)` needs the left premise's context before
+  the `⊗` and the right one's after it, `ax_expansion` closes `[dual A;
+  A]` and `[A; dual A]` for any formula `A` (atoms are `formula`
+  binders of the lemma, so the lemma is schematic), and `ex_perm_r p l`
+  proves the goal whose position `i` holds `l[p[i]]` from `ll l`. So the
+  exporter tracks the goal list of every inference (`Script::goals`, set
+  when the conclusion is written; the root is the sequent in id order)
+  and emits one `ex_perm_r` only before a `⊗` whose goal is not already
+  split around it; every other rule acts in place, and a contraction
+  leaves its two copies adjacent. Equal ids are equal formulas, so the
+  first matching position serves for a repeated occurrence. The
+  certificate is classical: a two-sided derivation goes through
+  `Rule::classical`, and the checked sequent is the one-sided one. Mix,
+  affine `wk` and `Rule::Open` are refused before anything is written
+  (`Unsupported`), since the kernel has no such rule; atom names are
+  escaped to identifiers and made distinct from `RESERVED` (keywords and
+  every kernel name a script mentions), the lemma's name and each other.
+  `Options` (D15: `lemma`, `prelude`) is the configuration; no other
+  choice is a constant. The snapshots' `.v` files are compiled by the
+  flake's `rocq` check against the kernel built from the `nanoyalla`
+  input; the kernel needs Rocq 9 with `rocq-stdlib` (its `From Coq
+  Require Import Lia`, deprecated but accepted) and nothing of Yalla.
 
 ## Layout
 
@@ -963,7 +994,7 @@ path in `additive`, the test-only `generate` with its classical and
 intuitionistic proof generators), `nets` (structures and the criterion's front door
 in `mod.rs`, the graph and the Yeo test in `graph`, the union-find in
 `skeleton`, `sequentialize`), and `export` (the shared `notation`, and
-`latex`, `typst` and `svg` behind the features of those names). `lib.rs`
+`latex`, `typst`, `svg` and `rocq` behind the features of those names). `lib.rs`
 re-exports the public types, so users write
 `linlog::Sequent`, `linlog::Proof`, `linlog::prove`, and so on. `hash` is
 crate-private.

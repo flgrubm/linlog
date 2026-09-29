@@ -368,6 +368,48 @@ The first two draw these:
 ![The derivation of 1, A & B, B ⊸ C ⊢ C](core/tests/snapshots/ill.svg)
 ![The proof net of ⊢ A⊥ ⅋ B⊥, B ⊗ A](core/tests/snapshots/net.svg)
 
+`--format rocq` writes the derivation as a proof script that the Rocq
+kernel [NanoYalla](https://github.com/ComputerAidedLL/click-and-collect/tree/master/nanoyalla)
+checks, the kernel of Click & coLLecT: a lemma stating the one-sided
+sequent over the atoms as `formula` variables, proved by one derived rule
+of the kernel per inference, with an exchange before a `⊗` where the
+kernel's list sequents need one, and closed by `Qed`, so Rocq accepts the
+file only if the kernel accepts the proof. The verdict becomes a comment,
+and `--standalone` adds the import line. A proof with Mix or with the
+weakening of affine mode has no certificate, since the kernel has no such
+rule; an intuitionistic proof is certified as the classical proof it is.
+
+```console
+$ linlog prove --format rocq "A * B |- B * A"
+(* provable (MLL, classical, net engine) *)
+Lemma certificate (A B : formula) : ll [parr (dual A) (dual B); tens B A].
+Proof.
+apply (parr_r_ext []); cbn_sequent.
+apply (ex_perm_r [2; 0; 1] [dual B; tens B A; dual A]).
+apply (tens_r_ext [dual B]); cbn_sequent.
+{
+  ax_expansion.
+}
+{
+  ax_expansion.
+}
+Qed.
+```
+
+To check a certificate, install NanoYalla 1.1.3 (the `nanoyalla`
+directory of the Click & coLLecT repository) with Rocq 9 and its standard
+library: `./configure && make && make install` there, or
+`rocq compile -R . NanoYalla nanoll.v` and the same for `macroll.v`, then
+compile the certificate with the kernel on the load path:
+
+```console
+$ linlog prove --format rocq --standalone --output proof.v "!A, !B |- !(A * A)"
+$ rocq compile -R path/to/nanoyalla NanoYalla proof.v
+```
+
+Rocq prints nothing for a certificate it accepts. The kernel needs no
+Yalla installation, and the certificate uses no cut and no axiom.
+
 The syntax: `*`/`⊗` tensor, `|`/`par`/`⅋` par, `&` with, `+`/`⊕` plus,
 `-o`/`⊸` linear implication, `~A` or `A^` negation, `!` and `?`, and the
 units `1`, `bot`/`⊥`, `top`/`⊤`, `0`; `|-` or `⊢` separates the sides.
@@ -423,13 +465,16 @@ Built:
   derivations and proof nets as SVG, laid out with the character widths
   of the Euler Math font, a switching cycle of an incorrect net
   highlighted.
+- Proof certificates: a finished proof as a Rocq script for the NanoYalla
+  kernel, a lemma proved rule by rule and closed by `Qed`, for every
+  classical fragment and for intuitionistic proofs as the classical
+  proofs they are, with a flake check that runs Rocq on them.
 - The `linlog` command: `prove`, `check`, `interact` and `seq`, with time
-  limits, Ctrl-C, statistics, JSON output, proof nets, and LaTeX, Typst
-  and SVG output.
+  limits, Ctrl-C, statistics, JSON output, proof nets, and LaTeX, Typst,
+  SVG and Rocq output.
 
 Planned, in roughly this order:
 
-- Proof certificates for Rocq.
 - Parallel search, a benchmark harness with the standard problem
   libraries, and performance work driven by its numbers.
 - Later: proof nets with exponential boxes, essential nets for
@@ -466,6 +511,8 @@ Interactive proving holds a derivation with open goals over the same
 forest, with the same inferences as the derivation view, and turns it back
 into a term for the checker once it is finished. The exports write
 sequents and derivations, finished or not, as LaTeX and Typst source, one
-inference at a time, and draw them and proof nets as SVG from layouts of
+inference at a time, draw them and proof nets as SVG from layouts of
 their own: a tree by subtree widths, a net by its formula trees under the
-axiom links.
+axiom links, and write a finished derivation as a Rocq proof script for
+the NanoYalla kernel, tracking the order of each goal's formulas so that
+one exchange per `⊗` suffices.

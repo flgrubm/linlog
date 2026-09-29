@@ -568,3 +568,15 @@ into an option or names it as a follow-up.
   shape, label convention, alignment, comments, the SVG font and its
   advance table, presets, the CLI's `--style` flags), and a note in
   prompt 12 applying D15 to the certificates from the start.
+- 2026-09-29: step 12 done, three commits ("Export derivations as Rocq
+  scripts for NanoYalla", "Check the Rocq certificates in nix", "Document
+  the Rocq certificates"); report `reports/12-certificates.md`. The
+  kernel is NanoYalla 1.1.3 from Click & coLLecT, as a non-flake input
+  pinned to a commit and built by the `rocq` check with nixpkgs' Rocq
+  9.1.1, whose closure (1.2 GB from the binary cache) is the cost of
+  keeping the check in `nix flake check`. Intuitionistic proofs are
+  certified as the classical proofs they are (Yalla's `ill` needs full
+  Yalla with OLlibs, which nixpkgs lacks, and has no derived-rule layer);
+  a Yalla `ill` target, `show rocq` in `interact`, a `--lemma` flag and
+  the Lean target join the follow-ups. D15 held: `rocq::Options` (lemma
+  name, prelude) is the whole configuration.
