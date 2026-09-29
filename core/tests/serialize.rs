@@ -1,14 +1,14 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-//! The JSON forms of a sequent and of a proof, through the public API. The
-//! formats are interchange formats, so the strings pinned here must not
-//! change.
+//! The JSON forms of a sequent, of a proof and of a proof net, through the
+//! public API. The formats are interchange formats, so the strings pinned
+//! here must not change.
 
 #![cfg(all(feature = "parse", feature = "serialize"))]
 
 use linlog::search::{Options, prove, prove_until};
-use linlog::{Forest, Fragment, Mode, Node, NodeId, OccId, Proof, Sequent, Side};
+use linlog::{Forest, Fragment, Mode, Node, NodeId, OccId, Proof, ProofStructure, Sequent, Side};
 
 /// Parses `input` and serializes it as compact JSON.
 fn json(input: &str) -> String {
@@ -274,4 +274,41 @@ fn outcome_json_format() {
         serde_json::to_string(&outcome).unwrap(),
         r#"{"verdict":"unknown","reason":"stopped","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":true},"engine":"focus","statistics":{"nodes":1,"memo_hits":0,"memo_entries":0,"splits":0}}"#
     );
+}
+
+/// A proof net serializes as its sequent, its Mix flag and its links as
+/// pairs of occurrence ids, and reads back with its links validated.
+#[test]
+fn net_json_format_and_round_trip() {
+    let o = OccId::new;
+    let s: Sequent = "A, A -o B |- B".parse().unwrap();
+    let net = ProofStructure::from_links(
+        Forest::new(&s).unwrap(),
+        false,
+        &[(o(0), o(2)), (o(3), o(4))],
+    )
+    .unwrap();
+    let json = serde_json::to_string(&net).unwrap();
+    let sequent = serde_json::to_string(&s).unwrap();
+    assert_eq!(
+        json,
+        format!(r#"{{"sequent":{sequent},"mix":false,"links":[[0,2],[3,4]]}}"#)
+    );
+    let back: ProofStructure = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.links(), net.links());
+    assert_eq!(back.to_string(), net.to_string());
+    assert!(!back.mix());
+
+    // A link that is not between dual literals, or outside the forest, is
+    // rejected on deserialization; a wrong net still reads.
+    for links in ["[[0,3]]", "[[1,2]]", "[[0,2],[0,2]]", "[[0,9]]"] {
+        let json = format!(r#"{{"sequent":{sequent},"mix":true,"links":{links}}}"#);
+        assert!(
+            serde_json::from_str::<ProofStructure>(&json).is_err(),
+            "{links}"
+        );
+    }
+    let json = format!(r#"{{"sequent":{sequent},"mix":true,"links":[[0,2]]}}"#);
+    let partial: ProofStructure = serde_json::from_str(&json).unwrap();
+    assert!(!partial.is_complete() && partial.mix());
 }
