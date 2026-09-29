@@ -25,6 +25,12 @@ use crate::sequents::{Atom, Kind};
 /// its row is meaningless and any sequent containing it passes. Rows are
 /// sparse, over the atoms that occur below the occurrence.
 ///
+/// An atom with a literal below a `?` or `!` anywhere in the problem gets no
+/// entry in any row: copies and discards break its balance. A `⊤` below a
+/// `?` or `!` makes the check useless altogether, since a copy of it
+/// absorbs any imbalance; [`absorbs_from_copies`](Self::absorbs_from_copies)
+/// says so.
+///
 /// **Weight.** In the multiplicative fragment with units, every cut-free
 /// proof of a sequent of `c` formulas with `t` tensors, `p` pars, `u` ones
 /// and `b` bottoms below them satisfies `c = t − p − u + b + 2`, or `≥` with
@@ -50,6 +56,10 @@ pub(crate) struct Counts {
     weight: Box<[i32]>,
     /// The number of atoms of the sequent, the width of a [`Tally`].
     num_atoms: usize,
+    /// Whether a `⊤` lies below a `?` or `!` somewhere in the problem, so
+    /// that a copy can absorb any imbalance and the intervals prune
+    /// nothing.
+    absorbs_from_copies: bool,
 }
 
 /// One entry of a row: the atom and the interval of its balance.
@@ -67,6 +77,22 @@ impl Counts {
     /// Computes the rows and weights of every occurrence of a forest.
     pub(crate) fn new(forest: &Forest) -> Self {
         let n = forest.len();
+        // An atom with a literal below a `?` or `!` anywhere in the problem
+        // can be copied or discarded any number of times, so its balance
+        // says nothing: such atoms get no row entries at all.
+        let num_atoms = forest.sequent().atom_names().len();
+        let mut exponential = vec![false; num_atoms];
+        let mut absorbs_from_copies = false;
+        for o in forest.ids() {
+            if matches!(forest.kind(o), Kind::Bang | Kind::Quest) {
+                for below in forest.subtree(o) {
+                    if let Some(atom) = forest.atom(below) {
+                        exponential[atom.index()] = true;
+                    }
+                    absorbs_from_copies |= forest.kind(below) == Kind::Top;
+                }
+            }
+        }
         // Every descendant has a larger id than its ancestor, so a pass from
         // the last id down sees the children before the parent.
         let mut rows: Vec<Vec<Entry>> = vec![Vec::new(); n];
@@ -79,24 +105,24 @@ impl Counts {
                 Var | DualVar => {
                     let sign = if kind == Var { 1 } else { -1 };
                     let atom = forest.atom(o).unwrap();
-                    (
+                    let row = if exponential[atom.index()] {
+                        Vec::new()
+                    } else {
                         vec![Entry {
                             atom,
                             lo: sign,
                             hi: sign,
-                        }],
-                        false,
-                        0,
-                    )
+                        }]
+                    };
+                    (row, false, 0)
                 }
                 One => (Vec::new(), false, -1),
                 Bot => (Vec::new(), false, 1),
                 Top => (Vec::new(), true, 0),
                 Zero => (Vec::new(), false, 0),
                 Bang | Quest => {
-                    // A copy below `?` breaks the balance; the engine that
-                    // handles exponentials skips such atoms. Here the row is
-                    // the subformula's.
+                    // The subformula's row, which is empty: its atoms are
+                    // exponential.
                     let c = forest.left(o).unwrap();
                     (
                         rows[c.index()].clone(),
@@ -149,7 +175,8 @@ impl Counts {
             hi: hi.into_boxed_slice(),
             absorbs: absorbs.into_boxed_slice(),
             weight: weight.into_boxed_slice(),
-            num_atoms: forest.sequent().atom_names().len(),
+            num_atoms,
+            absorbs_from_copies,
         }
     }
 
@@ -176,6 +203,13 @@ impl Counts {
     /// Returns `t − p − u + b` over the occurrence's subtree.
     pub(crate) fn weight(&self, o: OccId) -> i32 {
         self.weight[o.index()]
+    }
+
+    /// Returns whether a `⊤` lies below a `?` or `!` somewhere in the
+    /// problem: a copy from the unrestricted zone can then absorb any
+    /// imbalance, so the interval check is unsound.
+    pub(crate) fn absorbs_from_copies(&self) -> bool {
+        self.absorbs_from_copies
     }
 
     /// Returns an empty tally of this forest's width.

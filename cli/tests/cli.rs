@@ -100,8 +100,8 @@ fn prove_verdicts_and_exit_statuses() {
     for (args, error) in [
         (&["prove", "A * |- A"][..], "cannot parse the sequent"),
         (
-            &["prove", "!A |- A"],
-            "no engine for MELL in classical mode yet",
+            &["prove", "-i", "A |- A"],
+            "no engine for MLL in intuitionistic mode yet",
         ),
         (
             &["prove", "--fragment", "mll", "A & B |- A"],

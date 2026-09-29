@@ -59,6 +59,9 @@ pub enum Error {
     /// larger fragment.
     #[error("proof nets exist for MLL without units only, not for {0}")]
     NetFragment(Fragment),
+    /// Proof nets exist in classical mode only, and the mode is affine.
+    #[error("proof nets exist in classical mode only, with or without Mix, not in {0} mode")]
+    NetMode(Mode),
     /// No engine handles the fragment in the mode yet.
     #[error("no engine for {fragment} in {mode} mode yet")]
     NoEngine {

@@ -29,12 +29,12 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 ///
 /// # Errors
 ///
-/// No engine handles intuitionistic or affine mode or exponentials yet
-/// ([`Error::NoEngine`]); a sequent outside the fragment the options assert
-/// is refused ([`Error::FragmentMismatch`]); the net engine is refused
-/// outside unit-free MLL ([`Error::NetFragment`]); and a sequent with more
-/// subformula occurrences than a forest can index is refused
-/// ([`Error::TooManyOccurrences`]).
+/// No engine handles intuitionistic mode yet ([`Error::NoEngine`]); a
+/// sequent outside the fragment the options assert is refused
+/// ([`Error::FragmentMismatch`]); the net engine is refused outside
+/// unit-free MLL ([`Error::NetFragment`]) and in affine mode
+/// ([`Error::NetMode`]); and a sequent with more subformula occurrences
+/// than a forest can index is refused ([`Error::TooManyOccurrences`]).
 ///
 /// # Examples
 ///
@@ -106,21 +106,26 @@ pub fn prove_until(
         None => detected,
     };
     // The dispatch: unit-free MLL with mostly distinct atoms goes to the net
-    // engine, every other classical fragment up to MALL to the focused
-    // engine; intuitionistic and affine modes and the exponentials have no
-    // engine yet.
-    if mode.intuitionistic || mode.affine || fragment.has_exponentials() {
+    // engine in classical mode, every other classical fragment and every
+    // fragment in affine mode to the focused engine; intuitionistic mode
+    // has no engine yet.
+    if mode.intuitionistic {
         return Err(Error::NoEngine { fragment, mode });
     }
     let is_mll = Fragment::MLL.contains(fragment);
     let forest = Forest::new(sequent)?;
-    let engine = options.engine.unwrap_or(if is_mll && prefers_net(&forest) {
-        Engine::Net
-    } else {
-        Engine::Focus
-    });
+    let engine = options
+        .engine
+        .unwrap_or(if is_mll && !mode.affine && prefers_net(&forest) {
+            Engine::Net
+        } else {
+            Engine::Focus
+        });
     if engine == Engine::Net && !is_mll {
         return Err(Error::NetFragment(fragment));
+    }
+    if engine == Engine::Net && mode.affine {
+        return Err(Error::NetMode(mode));
     }
     let (verdict, statistics, net) = match engine {
         Engine::Focus => {
@@ -212,14 +217,17 @@ pub struct Options {
     /// tests, or `None` for the default that depends on the size of the
     /// structure.
     test_period: Option<u32>,
+    /// The most copies of `?` formulas one branch may take.
+    copies: u32,
 }
 
 impl Default for Options {
     /// A memo of at most [`DEFAULT_MEMO_LIMIT`](Self::DEFAULT_MEMO_LIMIT)
     /// stable sequents, a recursion limit of
     /// [`DEFAULT_RECURSION_LIMIT`](Self::DEFAULT_RECURSION_LIMIT), the
-    /// engine and fragment chosen by detection, and the net engine's
-    /// exact test at its default cadence.
+    /// engine and fragment chosen by detection, the net engine's exact test
+    /// at its default cadence, and a copy bound of
+    /// [`DEFAULT_COPIES`](Self::DEFAULT_COPIES).
     fn default() -> Self {
         Self {
             memo_limit: Self::DEFAULT_MEMO_LIMIT,
@@ -227,6 +235,7 @@ impl Default for Options {
             engine: None,
             fragment: None,
             test_period: None,
+            copies: Self::DEFAULT_COPIES,
         }
     }
 }
@@ -238,6 +247,20 @@ impl Options {
     /// The recursion limit of the default options, which fits the 8 MiB
     /// stack of a main thread.
     pub const DEFAULT_RECURSION_LIMIT: u32 = 2048;
+
+    /// The copy bound of the default options: three copies per branch, the
+    /// bound llprover searches with by default.
+    pub const DEFAULT_COPIES: u32 = 3;
+
+    /// Sets the most copies of `?` formulas one branch of a proof may take.
+    /// The search deepens the bound from zero up to this value; a sequent
+    /// that has no proof within it is [`Reason::CopyBound`], unless some
+    /// level finished without ever reaching its bound, which makes the
+    /// sequent [`Verdict::Unprovable`]. Without exponentials the bound has
+    /// no effect.
+    pub fn copies(self, copies: u32) -> Self {
+        Self { copies, ..self }
+    }
 
     /// Sets the engine to use, or `None` for the one the detected fragment
     /// and the mode call for.
@@ -343,6 +366,10 @@ pub enum Reason {
     /// A `⊗` or Mix had to split a context of this many formulas, more than
     /// the split enumeration handles (63).
     ContextTooWide(usize),
+    /// Every level up to [`Options::copies`], which is this value, hit its
+    /// bound on some branch, so a proof with more copies of a `?` formula
+    /// per branch may exist.
+    CopyBound(u32),
 }
 
 impl Display for Reason {
@@ -353,6 +380,9 @@ impl Display for Reason {
             Reason::RecursionLimit => f.write_str("the recursion limit was reached"),
             Reason::ContextTooWide(n) => {
                 write!(f, "a context of {n} formulas is too wide to split")
+            }
+            Reason::CopyBound(n) => {
+                write!(f, "the copy bound of {n} was reached")
             }
         }
     }
@@ -484,35 +514,48 @@ mod tests {
         );
     }
 
-    /// What no engine handles yet is refused, not searched.
+    /// Intuitionistic mode, which no engine handles yet, is refused, not
+    /// searched; affine mode and the exponentials go to the focused engine,
+    /// and the net engine is refused in affine mode.
     #[test]
-    fn no_engine_yet() {
-        for (input, mode, message) in [
-            (
-                "a |- a",
-                Mode::INTUITIONISTIC,
-                "no engine for MLL in intuitionistic mode yet",
-            ),
-            (
-                "a, b |- a",
-                Mode::CLASSICAL.affine(),
-                "no engine for MLL in classical affine mode yet",
-            ),
-            (
-                "!a |- a",
-                Mode::CLASSICAL,
-                "no engine for MELL in classical mode yet",
-            ),
+    fn dispatch_by_mode() {
+        let error = prove(
+            &sequent("a |- a"),
+            Mode::INTUITIONISTIC,
+            &Options::default(),
+        )
+        .unwrap_err();
+        assert!(matches!(error, Error::NoEngine { .. }));
+        assert_eq!(
+            error.to_string(),
+            "no engine for MLL in intuitionistic mode yet"
+        );
+        for (input, mode, fragment) in [
+            ("a, b |- a", Mode::CLASSICAL.affine(), Fragment::EMPTY),
+            ("!a |- a", Mode::CLASSICAL, Fragment::EXPONENTIALS),
             (
                 "!a |- a & a",
                 Mode::CLASSICAL.with_mix(),
-                "no engine for LL in classical with Mix mode yet",
+                Fragment::ADDITIVES | Fragment::EXPONENTIALS,
+            ),
+            (
+                "!a, b |- a",
+                Mode::CLASSICAL.affine(),
+                Fragment::EXPONENTIALS,
             ),
         ] {
-            let error = prove(&sequent(input), mode, &Options::default()).unwrap_err();
-            assert!(matches!(error, Error::NoEngine { .. }), "{input:?}");
-            assert_eq!(error.to_string(), message, "{input:?}");
+            let outcome = prove(&sequent(input), mode, &Options::default()).unwrap();
+            assert_eq!(outcome.engine, Engine::Focus, "{input:?}");
+            assert_eq!(outcome.fragment, fragment, "{input:?}");
+            assert!(outcome.verdict.proof().is_some(), "{input:?}");
         }
+        let net = Options::default().engine(Some(Engine::Net));
+        let error = prove(&sequent("a, b |- a"), Mode::CLASSICAL.affine(), &net).unwrap_err();
+        assert!(matches!(error, Error::NetMode(_)));
+        assert_eq!(
+            error.to_string(),
+            "proof nets exist in classical mode only, with or without Mix, not in classical affine mode"
+        );
     }
 
     /// The stop condition ends the search with `Unknown`.

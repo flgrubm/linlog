@@ -267,7 +267,7 @@ fn outcome_json_format() {
     assert_eq!(
         json,
         format!(
-            r#"{head}"statistics":{{"nodes":2,"memo_hits":0,"memo_entries":2,"splits":1,"links":0,"tests":0}},"sequent":{sequent},"proof":[{{"ax":[3,4]}},{{"ax":[2,0]}},{{"⊗":[1,1,0]}}]}}"#
+            r#"{head}"statistics":{{"nodes":2,"memo_hits":0,"memo_entries":2,"splits":1,"links":0,"tests":0}},"sequent":{sequent},"proof":[{{"ax":[2,0]}},{{"ax":[3,4]}},{{"⊗":[1,0,1]}}]}}"#
         )
     );
 

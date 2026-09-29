@@ -99,9 +99,6 @@ fn nets_exist(sequent: &Sequent, mode: Mode) -> Result<()> {
 /// the verdict line, the derivation or the proof net and the statistics,
 /// or the outcome as JSON.
 pub fn prove(args: &ProveArgs) -> Result<Status> {
-    if args.copies.is_some() {
-        bail!("--copies bounds the copies of ? formulas, which no engine searches yet");
-    }
     let sequent = args.input.sequent()?;
     let mode = args.mode.mode();
     if args.output.format == Format::Net {
@@ -111,7 +108,8 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         .memo_limit(args.memo_limit)
         .recursion_limit(args.recursion_limit)
         .engine(args.engine.into())
-        .fragment(args.fragment.map(Into::into));
+        .fragment(args.fragment.map(Into::into))
+        .copies(args.copies);
     let format = args.output.format;
     let quiet = args.output.quiet;
     catch_interrupt();
@@ -191,6 +189,7 @@ fn verdict_line(outcome: &Outcome, asserted: bool, stop: Option<Stop>) -> String
                 (Reason::RecursionLimit, _) => {
                     format!("{reason}; raise it with --recursion-limit")
                 }
+                (Reason::CopyBound(_), _) => format!("{reason}; raise it with --copies"),
                 _ => reason.to_string(),
             };
             format!("unknown ({context}): {why}")

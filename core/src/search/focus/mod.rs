@@ -1,36 +1,49 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-//! The focused sequent engine: backward search over occurrence bitsets with
-//! a memo of stable sequents, as the `MALL-Seq` specification states it.
+//! The focused sequent engine: backward search over dyadic sequents of
+//! occurrence ids with a memo of stable sequents, as the `MALL-Seq` and
+//! `MELL-Seq` specifications state it.
 //!
-//! A sequent inside the search is an [`OccSet`](crate::OccSet) of the
-//! forest. The
-//! *asynchronous phase* decomposes the negative formulas of a sequent
-//! without choice (`⅋` opens, `⊥` drops, `⊤` closes, `&` branches into two
-//! premises with the same context) until a *stable* sequent remains: a set
-//! of positive formulas and negative literals. `prove` decides a stable
+//! A sequent inside the search is `⊢ Θ ; Γ`: the *unrestricted zone* `Θ`, a
+//! set of the formulas that arrived under a `?` and may be copied any number
+//! of times, and the *linear zone* `Γ`, a multiset of occurrences each of
+//! which is used exactly once. The *asynchronous phase* decomposes the
+//! negative formulas of a sequent without choice (`⅋` opens, `⊥` drops, `⊤`
+//! closes, `&` branches into two premises with the same context, `?` moves
+//! its subformula into `Θ`) until a *stable* sequent remains: `Γ` holds
+//! positive formulas and negative literals only. `prove` decides a stable
 //! sequent by looking it up in the memo, by the immediate tests (a `0`, an
-//! unbalanced atom, a dual pair), and otherwise by choosing a positive
-//! formula to *focus* on. `focus` applies the positive rules along that
-//! formula: `⊕` picks a side, `⊗` splits the context, `1` needs it empty, a
-//! positive literal needs exactly its dual; and when the formula turns
+//! unbalanced atom, a dual pair, a literal whose dual lies in `Θ`), and
+//! otherwise by choosing a positive formula to *focus* on: one of `Γ`, which
+//! it consumes, or one of `Θ`, which stays there (a *copy*, the one step
+//! that can repeat, bounded per branch). `focus` applies the positive rules
+//! along that formula: `⊕` picks a side, `⊗` splits `Γ`, `1` needs it empty,
+//! `!` needs it empty and continues with its subformula, a positive literal
+//! needs exactly its dual, in `Γ` or in `Θ`; and when the formula turns
 //! negative it is *released* into the asynchronous phase. Every stable
 //! sequent proved or refuted goes into the memo, so a `&` that duplicates
 //! the context, or a split that revisits a part, never pays twice. With
 //! Mix, a stable sequent no focus proves is split into two provable parts.
+//! In affine mode a leaf weakens whatever is left over, and a sequent that
+//! contains one below it on its branch is pruned.
 //!
+//! The copies are bounded per branch and the bound deepens iteratively:
+//! `Unprovable` is answered only after a level that never hit its bound.
 //! The counts of `counts.rs` prune: a stable sequent or a side of a split
 //! whose intervals exclude zero for some atom is refuted without search,
 //! and in the multiplicative fragments the count equation as well.
 
+/// The linear zone as a multiset.
+mod context;
 /// The count invariants the engine prunes with.
 mod counts;
 /// The memo of stable sequents.
 mod memo;
 
+use self::context::Context;
 use self::counts::{Counts, Tally};
-use self::memo::{Entry, Memo};
+use self::memo::{Entry, Failure, Key, Memo};
 use super::{Options, Reason, Statistics, Verdict};
 use crate::fragment::{Fragment, Mode};
 use crate::occurrences::{Forest, OccId, OccSet, Polarity, submasks};
@@ -39,6 +52,10 @@ use crate::sequents::Kind;
 
 /// The most members a context can have for its splits to be enumerated.
 const MAX_SPLIT: usize = 63;
+
+/// The stack depth that stands for "no pruned sequent depends on an
+/// ancestor".
+const NO_DEPENDENCY: u32 = u32::MAX;
 
 /// Runs the focused engine on the forest of a sequent of `fragment` under
 /// `mode`, polling `stop` at every stable sequent, and returns the verdict
@@ -50,12 +67,11 @@ pub(crate) fn search(
     options: &Options,
     stop: &mut dyn FnMut() -> bool,
 ) -> (Verdict, Statistics) {
-    let mut engine = Engine::new(forest, fragment, mode, options, stop);
-    let result = engine.run();
-    let statistics = engine.statistics();
+    let (result, nodes, statistics) =
+        search_goal(forest, forest.roots(), fragment, mode, options, stop);
     let verdict = match result {
         Ok(Some(root)) => {
-            let proof = Proof::new(forest.clone(), engine.nodes, root)
+            let proof = Proof::new(forest.clone(), nodes, root)
                 .expect("the engine pushes premises before conclusions");
             debug_assert_eq!(proof.check(mode), Ok(()), "the engine's proof");
             Verdict::Proved(Box::new(proof))
@@ -66,23 +82,55 @@ pub(crate) fn search(
     (verdict, statistics)
 }
 
+/// Runs the focused engine from a goal: a multiset of occurrences of the
+/// forest, the sequent's roots for a search of the sequent itself, or any
+/// other with an empty unrestricted zone, as an interactive prover hands
+/// over an open goal. Returns the node proving the goal (`None` when it is
+/// unprovable, or the reason the search gave up), the arena the node lives
+/// in, and the statistics.
+pub(crate) fn search_goal(
+    forest: &Forest,
+    goal: &[OccId],
+    fragment: Fragment,
+    mode: Mode,
+    options: &Options,
+    stop: &mut dyn FnMut() -> bool,
+) -> (Search, Vec<Node>, Statistics) {
+    let mut engine = Engine::new(forest, fragment, mode, options, stop);
+    let result = engine.run(goal);
+    let statistics = engine.statistics();
+    (result, engine.nodes, statistics)
+}
+
 /// The rules in force beyond the core ones, switched by fragment and mode.
 #[derive(Clone, Copy, Debug)]
 struct Rules {
     /// The Mix rule, tried last on a stable sequent.
     mix: bool,
     /// The `MLL` count equation as a prune: only without additives and
-    /// exponentials anywhere in the problem.
+    /// exponentials anywhere in the problem, and never with weakening.
     equation: bool,
+    /// The interval check as a prune: never with weakening, which can
+    /// discard any imbalance.
+    intervals: bool,
+    /// The exponential rules: `?` into the unrestricted zone, copies from it
+    /// under the bound, `!` in focus.
+    exponentials: bool,
+    /// Weakening: a leaf discards what is left over, and a stable sequent
+    /// that contains an ancestor is pruned.
+    affine: bool,
+    /// The stack of the branch's stable sequents: for the loop check when
+    /// copies can repeat a sequent, and for the affine prune.
+    stack: bool,
 }
 
 /// The result of a search step: the node proving the sequent, `None` when
 /// it is unprovable, or the reason the whole search stops.
-type Search = Result<Option<NodeId>, Reason>;
+pub(crate) type Search = Result<Option<NodeId>, Reason>;
 
 /// The state of one run: the problem, the memo, the proof arena, the
-/// counters, and pools of scratch buffers so that no step allocates once
-/// the pools are warm.
+/// counters, the bound bookkeeping, and pools of scratch buffers so that no
+/// step allocates once the pools are warm.
 struct Engine<'a> {
     /// The problem.
     forest: &'a Forest,
@@ -100,10 +148,30 @@ struct Engine<'a> {
     depth: u32,
     /// The deepest nesting allowed.
     recursion_limit: u32,
+    /// The most copies a branch may take at the last deepening level.
+    copies: u32,
+    /// Whether, since the flag was last cleared, some branch failed because
+    /// its copy budget was spent: the level's answer is then not
+    /// `Unprovable`.
+    exhausted: bool,
+    /// The shallowest stack depth of an ancestor that a pruned sequent
+    /// below the current one contained (or repeated), or `NO_DEPENDENCY`:
+    /// a failure that rests on such a prune is a fact about the branch,
+    /// not about the sequent, and is not memoized.
+    dependency: u32,
     /// The caller's stop condition.
     stop: &'a mut dyn FnMut() -> bool,
+    /// The stable sequents of the current branch, the root end first; only
+    /// the first `stack_len` are live, the rest are spare buffers.
+    stack: Vec<Key>,
+    /// How many entries of the stack are live.
+    stack_len: usize,
     /// Spare occurrence sets of the forest's width.
     sets: Vec<OccSet>,
+    /// Spare linear zones of the forest's width.
+    contexts: Vec<Context>,
+    /// Spare memo keys of the forest's width.
+    keys: Vec<Key>,
     /// Spare lists of occurrences.
     lists: Vec<Vec<OccId>>,
     /// Spare tallies of the forest's atoms.
@@ -119,23 +187,37 @@ impl<'a> Engine<'a> {
         options: &Options,
         stop: &'a mut dyn FnMut() -> bool,
     ) -> Self {
+        let exponentials = fragment.has_exponentials();
+        let counts = Counts::new(forest);
         let rules = Rules {
             mix: mode.mix,
-            equation: !fragment.has_additives()
+            equation: !mode.affine
+                && !fragment.has_additives()
                 && !fragment.has_additive_units()
-                && !fragment.has_exponentials(),
+                && !exponentials,
+            intervals: !mode.affine && !counts.absorbs_from_copies(),
+            exponentials,
+            affine: mode.affine,
+            stack: exponentials || mode.affine,
         };
         Self {
             forest,
-            counts: Counts::new(forest),
+            counts,
             rules,
             memo: Memo::new(options.memo_limit),
             nodes: Vec::new(),
             statistics: Statistics::default(),
             depth: 0,
             recursion_limit: options.recursion_limit,
+            copies: options.copies,
+            exhausted: false,
+            dependency: NO_DEPENDENCY,
             stop,
+            stack: Vec::new(),
+            stack_len: 0,
             sets: Vec::new(),
+            contexts: Vec::new(),
+            keys: Vec::new(),
             lists: Vec::new(),
             tallies: Vec::new(),
         }
@@ -150,38 +232,71 @@ impl<'a> Engine<'a> {
         }
     }
 
-    /// Searches the sequent: the asynchronous phase on its root formulas.
-    fn run(&mut self) -> Search {
-        let mut gamma = self.take_set();
-        let mut list = self.take_list();
-        // A stack: the first root is decomposed first.
-        list.extend(self.forest.roots().iter().rev());
-        let result = self.asynchronous(&mut gamma, &mut list);
-        self.give_set(gamma);
-        self.give_list(list);
-        result
+    /// Searches the goal with an empty unrestricted zone: the asynchronous
+    /// phase on its formulas, once per copy bound from zero up to the
+    /// configured one, until a level proves it or fails without ever
+    /// spending its budget. Without exponentials there is one level.
+    fn run(&mut self, goal: &[OccId]) -> Search {
+        let levels = if self.rules.exponentials {
+            self.copies
+        } else {
+            0
+        };
+        let theta = self.take_set();
+        for budget in 0..=levels {
+            self.exhausted = false;
+            self.dependency = NO_DEPENDENCY;
+            let mut gamma = self.take_context();
+            let mut list = self.take_list();
+            // A stack: the first formula is decomposed first.
+            list.extend(goal.iter().rev());
+            let result = self.asynchronous(&theta, &mut gamma, &mut list, budget);
+            self.give_context(gamma);
+            self.give_list(list);
+            match result {
+                Ok(None) if self.exhausted => {}
+                decided => {
+                    self.give_set(theta);
+                    return decided;
+                }
+            }
+        }
+        self.give_set(theta);
+        Err(Reason::CopyBound(levels))
     }
 
     // The phases.
 
-    /// The asynchronous phase on `⊢ Γ ⇑ L`: decomposes the negative
+    /// The asynchronous phase on `⊢ Θ ; Γ ⇑ L`: decomposes the negative
     /// formulas of the list until the sequent is stable, then proves it.
     /// The list is a stack; the order does not matter for completeness.
-    fn asynchronous(&mut self, gamma: &mut OccSet, list: &mut Vec<OccId>) -> Search {
+    fn asynchronous(
+        &mut self,
+        theta: &OccSet,
+        gamma: &mut Context,
+        list: &mut Vec<OccId>,
+        budget: u32,
+    ) -> Search {
         self.enter()?;
-        let result = self.decompose(gamma, list);
+        let result = self.decompose(theta, gamma, list, budget);
         self.leave();
         result
     }
 
     /// The body of the asynchronous phase.
-    fn decompose(&mut self, gamma: &mut OccSet, list: &mut Vec<OccId>) -> Search {
+    fn decompose(
+        &mut self,
+        theta: &OccSet,
+        gamma: &mut Context,
+        list: &mut Vec<OccId>,
+        budget: u32,
+    ) -> Search {
         // The `⅋` and `⊥` rules applied, to wrap around the proof of what
         // remains; the first applied is the lowest.
         let mut applied = self.take_list();
         let result = loop {
             let Some(o) = list.pop() else {
-                break self.prove(gamma);
+                break self.prove(theta, gamma, budget);
             };
             match self.forest.kind(o) {
                 Kind::Par => {
@@ -191,8 +306,8 @@ impl<'a> Engine<'a> {
                 }
                 Kind::Bot => applied.push(o),
                 Kind::Top => break Ok(Some(self.push(Node::Top(o)))),
-                Kind::With => break self.with(gamma, list, o),
-                Kind::Quest => unreachable!("exponentials are not dispatched to this engine"),
+                Kind::With => break self.with(theta, gamma, list, o, budget),
+                Kind::Quest => break self.quest(theta, gamma, list, o, budget),
                 _ => {
                     // A positive formula or a literal: part of the stable
                     // sequent.
@@ -216,203 +331,463 @@ impl<'a> Engine<'a> {
     }
 
     /// The `&` rule: both premises with the same context, the left one on
-    /// copies of the state, the right one on the state itself.
-    fn with(&mut self, gamma: &mut OccSet, list: &mut Vec<OccId>, o: OccId) -> Search {
-        let mut left_gamma = self.take_set();
+    /// copies of the state, the right one on the state itself; each
+    /// premise keeps the whole copy budget.
+    fn with(
+        &mut self,
+        theta: &OccSet,
+        gamma: &mut Context,
+        list: &mut Vec<OccId>,
+        o: OccId,
+        budget: u32,
+    ) -> Search {
+        let mut left_gamma = self.take_context();
         left_gamma.clone_from(gamma);
         let mut left_list = self.take_list();
         left_list.clone_from(list);
         left_list.push(self.forest.left(o).unwrap());
-        let left = self.asynchronous(&mut left_gamma, &mut left_list);
-        self.give_set(left_gamma);
+        let left = self.asynchronous(theta, &mut left_gamma, &mut left_list, budget);
+        self.give_context(left_gamma);
         self.give_list(left_list);
         let Some(left) = left? else {
             return Ok(None);
         };
         list.push(self.forest.right(o).unwrap());
-        let right = self.asynchronous(gamma, list)?;
+        let right = self.asynchronous(theta, gamma, list, budget)?;
         Ok(right.map(|right| self.push(Node::With(o, left, right))))
     }
 
-    /// `prove(Γ)` for a stable `Γ`: the memo, the immediate tests, then a
-    /// focus on each positive formula in turn, then Mix.
-    fn prove(&mut self, gamma: &OccSet) -> Search {
+    /// The `?` rule: the subformula joins the unrestricted zone, which is a
+    /// set, so a formula already there changes nothing.
+    fn quest(
+        &mut self,
+        theta: &OccSet,
+        gamma: &mut Context,
+        list: &mut Vec<OccId>,
+        o: OccId,
+        budget: u32,
+    ) -> Search {
+        let a = self.forest.left(o).unwrap();
+        let result = if theta.contains(a) {
+            self.asynchronous(theta, gamma, list, budget)
+        } else {
+            let mut larger = self.take_set();
+            larger.clone_from(theta);
+            larger.insert(a);
+            let result = self.asynchronous(&larger, gamma, list, budget);
+            self.give_set(larger);
+            result
+        };
+        Ok(result?.map(|node| self.push(Node::Quest(o, node))))
+    }
+
+    /// `prove(Θ ; Γ)` for a stable `Γ`: the memo, the loop check and the
+    /// affine prune, the immediate tests, then a focus on each positive
+    /// formula in turn, first from `Γ`, then copied from `Θ`, then Mix.
+    fn prove(&mut self, theta: &OccSet, gamma: &Context, budget: u32) -> Search {
         self.enter()?;
-        let result = self.prove_stable(gamma);
+        let result = self.prove_stable(theta, gamma, budget);
         self.leave();
         result
     }
 
-    /// The body of `prove`: the memo around the decision.
-    fn prove_stable(&mut self, gamma: &OccSet) -> Search {
+    /// The body of `prove`: the memo and the branch stack around the
+    /// decision.
+    fn prove_stable(&mut self, theta: &OccSet, gamma: &Context, budget: u32) -> Search {
         self.statistics.nodes += 1;
         if (self.stop)() {
             return Err(Reason::Stopped);
         }
-        if let Some(entry) = self.memo.get(gamma) {
-            return Ok(match entry {
-                Entry::Proved(node) => Some(node),
-                Entry::Failed => None,
-            });
+        let mut key = self.take_key();
+        key.assign(theta, gamma);
+        // A proof or a complete failure from the memo settles it; a
+        // failure cut by the budget waits for the loop check, which may
+        // give the stronger answer that the branch is redundant.
+        let entry = self.memo.get(&key, budget);
+        match entry {
+            Some(Entry::Proved(node)) => {
+                self.give_key(key);
+                return Ok(Some(node));
+            }
+            Some(Entry::Failed(Failure::Complete)) => {
+                self.give_key(key);
+                return Ok(None);
+            }
+            Some(Entry::Failed(Failure::Exhausted(_))) | None => {}
         }
-        let result = self.decide(gamma)?;
-        self.memo.insert(
-            gamma,
-            match result {
-                Some(node) => Entry::Proved(node),
-                None => Entry::Failed,
-            },
-        );
-        Ok(result)
+        // A sequent that repeats an ancestor on its branch, or in affine
+        // mode contains one, is pruned: a smallest proof of the ancestor
+        // never passes through it. The failure this causes above is a fact
+        // about the branch, so it is remembered as a dependency on the
+        // ancestor's depth and keeps the sequents between them out of the
+        // memo, until the ancestor itself is decided.
+        if self.rules.stack {
+            for depth in 0..self.stack_len {
+                let ancestor = &self.stack[depth];
+                let contains = if self.rules.affine {
+                    ancestor.theta.is_subset(&key.theta) && key.gamma.includes(&ancestor.gamma)
+                } else {
+                    *ancestor == key
+                };
+                if contains {
+                    self.dependency = self.dependency.min(depth as u32);
+                    self.give_key(key);
+                    return Ok(None);
+                }
+            }
+        }
+        if entry.is_some() {
+            // Cut by the budget at this or a larger remaining budget.
+            self.exhausted = true;
+            self.give_key(key);
+            return Ok(None);
+        }
+        if self.rules.stack {
+            if self.stack_len < self.stack.len() {
+                self.stack[self.stack_len].clone_from(&key);
+            } else {
+                self.stack.push(key.clone());
+            }
+            self.stack_len += 1;
+        }
+        let saved_exhausted = self.exhausted;
+        let saved_dependency = self.dependency;
+        self.exhausted = false;
+        self.dependency = NO_DEPENDENCY;
+        let result = self.decide(theta, gamma, budget);
+        let own_depth = if self.rules.stack {
+            self.stack_len -= 1;
+            self.stack_len as u32
+        } else {
+            NO_DEPENDENCY
+        };
+        let exhausted = self.exhausted;
+        // A dependency on this very sequent is settled with it: the pruned
+        // descendants could only have proved what this sequent proves.
+        let dependency = if self.dependency >= own_depth {
+            NO_DEPENDENCY
+        } else {
+            self.dependency
+        };
+        self.exhausted = saved_exhausted || exhausted;
+        self.dependency = saved_dependency.min(dependency);
+        match result {
+            Ok(Some(node)) => self.memo.insert(&key, Entry::Proved(node)),
+            Ok(None) if dependency == NO_DEPENDENCY => {
+                let failure = if exhausted {
+                    Failure::Exhausted(budget)
+                } else {
+                    Failure::Complete
+                };
+                self.memo.insert(&key, Entry::Failed(failure));
+            }
+            _ => {}
+        }
+        self.give_key(key);
+        result
     }
 
     /// Decides a stable sequent the memo does not know.
-    fn decide(&mut self, gamma: &OccSet) -> Search {
+    fn decide(&mut self, theta: &OccSet, gamma: &Context, budget: u32) -> Search {
         let mut members = self.take_list();
-        members.extend(gamma);
+        members.extend(gamma.iter());
         let mut tally = self.take_tally();
         let mut candidates = self.take_list();
-        let result = self.decide_with(gamma, &members, &mut tally, &mut candidates);
+        let mut copies = self.take_list();
+        let result = self.decide_with(
+            theta,
+            gamma,
+            &members,
+            &mut tally,
+            &mut candidates,
+            &mut copies,
+            budget,
+        );
         self.give_list(members);
         self.give_tally(tally);
         self.give_list(candidates);
+        self.give_list(copies);
         result
     }
 
     /// The body of `decide`, with its scratch buffers.
+    #[allow(clippy::too_many_arguments)]
     fn decide_with(
         &mut self,
-        gamma: &OccSet,
+        theta: &OccSet,
+        gamma: &Context,
         members: &[OccId],
         tally: &mut Tally,
         candidates: &mut Vec<OccId>,
+        copies: &mut Vec<OccId>,
+        budget: u32,
     ) -> Search {
+        let affine = self.rules.affine;
         // One pass over the members: the counts, a `0`, and the positive
-        // formulas worth focusing on. `1` only when it is alone, since it
-        // needs an empty context; a literal never, since a focus on it
-        // succeeds only in the dual-pair case tested below.
+        // formulas worth focusing on. `1` and `!` only when alone, since
+        // they need an empty context (any context, with weakening); a
+        // literal never, since a focus on it succeeds only in the initial
+        // cases tested below.
         let mut zero = false;
         for &o in members {
             tally.add(&self.counts, o);
             match self.forest.kind(o) {
                 Kind::Zero => zero = true,
                 Kind::Tensor | Kind::Plus => candidates.push(o),
-                Kind::One if members.len() == 1 => candidates.push(o),
-                Kind::One | Kind::Var | Kind::DualVar => {}
+                Kind::One | Kind::Bang if members.len() == 1 || affine => candidates.push(o),
+                Kind::One | Kind::Bang | Kind::Var | Kind::DualVar => {}
                 kind => unreachable!("{kind:?} in a stable sequent"),
             }
         }
         // A `0` has no rule, so only a `⊤` below some member can prove the
         // sequent: ⊢ 0, ⊤ ⊕ b is provable. (The spec calls a `0` in a
-        // stable sequent fatal, which overlooks this.)
-        if zero && !tally.absorbs() {
+        // stable sequent fatal, which overlooks this.) With weakening the
+        // `0` is discarded at a leaf like anything else.
+        if zero && !affine && !tally.absorbs() {
             return Ok(None);
         }
-        if let [p, q] = *members
-            && self.forest.is_literal(p)
-            && self.forest.atom(p) == self.forest.atom(q)
-            && self.forest.sign(p) != self.forest.sign(q)
-        {
-            return Ok(Some(self.push(Node::Ax(p, q))));
+        if let Some(node) = self.initial(theta, gamma, members, budget)? {
+            return Ok(Some(node));
         }
-        if !tally.balanced() || (self.rules.equation && !tally.equation(self.rules.mix)) {
+        if self.rules.intervals && !tally.balanced() {
+            return Ok(None);
+        }
+        if self.rules.equation && !tally.equation(self.rules.mix) {
             return Ok(None);
         }
 
         // Forced splits first, then `⊕`, then the free splits; by id within
         // a class, so that the run is deterministic.
         candidates.sort_by_key(|&o| (self.focus_class(o), o));
-        let mut rest = self.take_set();
+        let mut rest = self.take_context();
         for &f in candidates.iter() {
             rest.clone_from(gamma);
             rest.remove(f);
-            if let Some(node) = self.focus(&rest, f)? {
-                self.give_set(rest);
+            if let Some(node) = self.focus(theta, &rest, f, budget)? {
+                self.give_context(rest);
                 return Ok(Some(node));
             }
         }
-        self.give_set(rest);
+        self.give_context(rest);
+
+        // Then the copies from `Θ`, a formula with an unconsumed copy in `Γ`
+        // skipped (a second copy cannot help before the first is used),
+        // those that can meet a literal of `Γ` first, then by id.
+        if self.rules.exponentials {
+            copies.extend(theta.iter().filter(|&a| !gamma.contains(a)));
+            if budget == 0 {
+                // A branch cut by the bound: the level cannot claim
+                // completeness, unless nothing was there to copy.
+                self.exhausted |= !copies.is_empty();
+            } else {
+                copies.sort_by_key(|&a| (!self.meets(a, members), a));
+                for &a in copies.iter() {
+                    if let Some(node) = self.focus(theta, gamma, a, budget - 1)? {
+                        return Ok(Some(self.push(Node::Copy(a, node))));
+                    }
+                }
+            }
+        }
 
         if self.rules.mix {
-            return self.mix(gamma, members, tally);
+            return self.mix(theta, gamma, members, tally, budget);
         }
         Ok(None)
     }
 
-    /// Orders the focus candidates: a `⊗` whose split is forced by a factor
-    /// (a positive literal, `1`; or `0`, which fails at once), then `⊕`,
-    /// then a `⊗` whose split must be enumerated.
+    /// The initial rules on a stable sequent: a dual pair in `Γ`, or a
+    /// literal of `Γ` whose dual lies in `Θ`, which is copied and counts
+    /// against the budget; exactly that in linear mode, with anything else
+    /// in `Γ` weakened away in affine mode.
+    fn initial(
+        &mut self,
+        theta: &OccSet,
+        gamma: &Context,
+        members: &[OccId],
+        budget: u32,
+    ) -> Search {
+        let f = self.forest;
+        let dual = |p: OccId, q: OccId| {
+            f.is_literal(p) && f.atom(p) == f.atom(q) && f.sign(p) != f.sign(q)
+        };
+        let affine = self.rules.affine;
+        for (i, &p) in members.iter().enumerate() {
+            if !f.is_literal(p) || (!affine && members.len() > 2) {
+                continue;
+            }
+            if let Some(&q) = members[i + 1..].iter().find(|&&q| dual(p, q))
+                && (affine || members.len() == 2)
+            {
+                let ax = self.push(Node::Ax(p, q));
+                if !affine {
+                    return Ok(Some(ax));
+                }
+                let mut rest = self.take_context();
+                rest.clone_from(gamma);
+                rest.remove(p);
+                rest.remove(q);
+                let node = self.weakened(&rest, ax);
+                self.give_context(rest);
+                return Ok(Some(node));
+            }
+            if let Some(d) = theta.iter().find(|&d| dual(p, d))
+                && (affine || members.len() == 1)
+            {
+                if budget == 0 {
+                    self.exhausted = true;
+                    return Ok(None);
+                }
+                let ax = self.push(Node::Ax(p, d));
+                let copy = self.push(Node::Copy(d, ax));
+                if !affine {
+                    return Ok(Some(copy));
+                }
+                let mut rest = self.take_context();
+                rest.clone_from(gamma);
+                rest.remove(p);
+                let node = self.weakened(&rest, copy);
+                self.give_context(rest);
+                return Ok(Some(node));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Whether a formula of `Θ` has a literal below it whose dual is a
+    /// member: the copy heuristic's notion of a copy that can meet
+    /// something.
+    fn meets(&self, a: OccId, members: &[OccId]) -> bool {
+        let f = self.forest;
+        f.subtree(a).any(|l| {
+            f.is_literal(l)
+                && members
+                    .iter()
+                    .any(|&m| f.atom(m) == f.atom(l) && f.sign(m) != f.sign(l))
+        })
+    }
+
+    /// Orders the focus candidates: `1` and `!`, then a `⊗` whose split is
+    /// forced by a factor (a positive literal, `1`, `!`; or `0`, which
+    /// fails at once), then `⊕`, then a `⊗` whose split must be enumerated.
     fn focus_class(&self, o: OccId) -> u8 {
         match self.forest.kind(o) {
+            Kind::One | Kind::Bang => 0,
             Kind::Tensor => {
                 let forced = self
                     .forest
                     .children(o)
                     .any(|c| self.forced_side(c).is_some());
-                if forced { 0 } else { 2 }
+                if forced { 1 } else { 3 }
             }
-            _ => 1,
+            _ => 2,
         }
     }
 
-    /// `focus(Γ, F)` with `F ∉ Γ`: the positive rules along `F`, and a
-    /// release into the asynchronous phase once `F` is negative.
-    fn focus(&mut self, gamma: &OccSet, f: OccId) -> Search {
+    /// `focus(Θ ; Γ ⇓ F)` with `F` taken out of `Γ` (or copied from `Θ`):
+    /// the positive rules along `F`, and a release into the asynchronous
+    /// phase once `F` is negative.
+    fn focus(&mut self, theta: &OccSet, gamma: &Context, f: OccId, budget: u32) -> Search {
         self.enter()?;
-        let result = self.focus_on(gamma, f);
+        let result = self.focus_on(theta, gamma, f, budget);
         self.leave();
         result
     }
 
     /// The body of `focus`.
-    fn focus_on(&mut self, gamma: &OccSet, f: OccId) -> Search {
+    fn focus_on(&mut self, theta: &OccSet, gamma: &Context, f: OccId, budget: u32) -> Search {
         match self.forest.kind(f) {
             Kind::Plus => {
                 for (side, sub) in [
                     (Side::Left, self.forest.left(f).unwrap()),
                     (Side::Right, self.forest.right(f).unwrap()),
                 ] {
-                    if let Some(node) = self.focus(gamma, sub)? {
+                    if let Some(node) = self.focus(theta, gamma, sub, budget)? {
                         return Ok(Some(self.push(Node::Plus(f, side, node))));
                     }
                 }
                 Ok(None)
             }
-            Kind::Tensor => self.split(gamma, f),
-            Kind::One => Ok(gamma.is_empty().then(|| self.push(Node::One(f)))),
+            Kind::Tensor => self.split(theta, gamma, f, budget),
+            Kind::One => Ok(self.leftover(gamma).then(|| {
+                let one = self.push(Node::One(f));
+                self.weakened(gamma, one)
+            })),
+            Kind::Bang => {
+                // Promotion: the subformula is released into an empty
+                // linear zone, and what was there is weakened below.
+                if !self.leftover(gamma) {
+                    return Ok(None);
+                }
+                let mut released = self.take_context();
+                let mut list = self.take_list();
+                list.push(self.forest.left(f).unwrap());
+                let result = self.asynchronous(theta, &mut released, &mut list, budget);
+                self.give_context(released);
+                self.give_list(list);
+                Ok(result?.map(|node| {
+                    let bang = self.push(Node::Bang(f, node));
+                    self.weakened(gamma, bang)
+                }))
+            }
             Kind::Zero => Ok(None),
             Kind::Var | Kind::DualVar if self.forest.polarity(f) == Polarity::Positive => {
-                // The initial rule: the context is exactly the dual literal.
-                let dual = gamma.first().filter(|&d| {
-                    gamma.len() == 1
-                        && self.forest.atom(d) == self.forest.atom(f)
-                        && self.forest.sign(d) != self.forest.sign(f)
-                });
-                Ok(dual.map(|d| self.push(Node::Ax(f, d))))
+                // The initial rules: the context is the dual literal, or
+                // nothing and the dual lies in `Θ`.
+                let mut members = self.take_list();
+                members.push(f);
+                members.extend(gamma.iter());
+                let mut whole = self.take_context();
+                whole.clone_from(gamma);
+                whole.insert(f);
+                let result = self.initial(theta, &whole, &members, budget);
+                self.give_list(members);
+                self.give_context(whole);
+                result
             }
             _ => {
                 // Negative: release.
-                let mut released = self.take_set();
+                let mut released = self.take_context();
                 released.clone_from(gamma);
                 let mut list = self.take_list();
                 list.push(f);
-                let result = self.asynchronous(&mut released, &mut list);
-                self.give_set(released);
+                let result = self.asynchronous(theta, &mut released, &mut list, budget);
+                self.give_context(released);
                 self.give_list(list);
                 result
             }
         }
     }
 
+    /// Whether a rule that needs an empty linear zone can be applied with
+    /// this one: it is empty, or weakening will discard it.
+    fn leftover(&self, gamma: &Context) -> bool {
+        gamma.is_empty() || self.rules.affine
+    }
+
+    /// Weakens every member of `gamma` below `node`, one `Weaken` per copy;
+    /// nothing when it is empty.
+    fn weakened(&mut self, gamma: &Context, mut node: NodeId) -> NodeId {
+        debug_assert!(
+            gamma.is_empty() || self.rules.affine,
+            "weakening needs affine mode"
+        );
+        for o in gamma.iter() {
+            node = self.push(Node::Weaken(o, node));
+        }
+        node
+    }
+
     // The context splits.
 
     /// What a factor of a `⊗` forces on its side of the split: nothing at
-    /// all for `0`, the empty context for `1`, and the dual literal alone
-    /// for a positive literal.
+    /// all for `0`, the empty context for `1` and `!`, and the dual literal
+    /// alone for a positive literal. With weakening nothing but `0` forces
+    /// anything, since every leaf takes any context.
     fn forced_side(&self, factor: OccId) -> Option<Forced> {
         match self.forest.kind(factor) {
             Kind::Zero => Some(Forced::Nothing),
-            Kind::One => Some(Forced::Empty),
+            _ if self.rules.affine => None,
+            Kind::One | Kind::Bang => Some(Forced::Empty),
             Kind::Var | Kind::DualVar if self.forest.polarity(factor) == Polarity::Positive => {
                 Some(Forced::Dual)
             }
@@ -424,54 +799,66 @@ impl<'a> Engine<'a> {
     /// a factor allows only one, else every submask of `Γ` for the left
     /// premise in Gray-code order, each side checked by the counts before
     /// either premise is searched.
-    fn split(&mut self, gamma: &OccSet, f: OccId) -> Search {
+    fn split(&mut self, theta: &OccSet, gamma: &Context, f: OccId, budget: u32) -> Search {
         let (a, b) = (self.forest.left(f).unwrap(), self.forest.right(f).unwrap());
         for (x, y, x_is_left) in [(a, b, true), (b, a, false)] {
             let Some(forced) = self.forced_side(x) else {
                 continue;
             };
             self.statistics.splits += 1;
-            // The premise of `x`, pushed once the premise of `y` succeeds.
-            let x_node = match forced {
-                Forced::Nothing => return Ok(None),
-                Forced::Empty => Node::One(x),
-                Forced::Dual => {
-                    let dual = gamma.iter().find(|&m| {
-                        self.forest.atom(m) == self.forest.atom(x)
-                            && self.forest.sign(m) != self.forest.sign(x)
-                    });
-                    let Some(dual) = dual else {
-                        return Ok(None);
-                    };
-                    Node::Ax(x, dual)
-                }
-            };
-            let mut rest = self.take_set();
-            rest.clone_from(gamma);
-            if let Node::Ax(_, dual) = x_node {
-                rest.remove(dual);
-            }
-            let y_node = self.focus(&rest, y);
-            self.give_set(rest);
-            let Some(y_node) = y_node? else {
+            if forced == Forced::Nothing {
                 return Ok(None);
-            };
-            let x_node = self.push(x_node);
-            let (left, right) = if x_is_left {
-                (x_node, y_node)
-            } else {
-                (y_node, x_node)
-            };
-            return Ok(Some(self.push(Node::Tensor(f, left, right))));
+            }
+            let mut side = self.take_context();
+            let mut rest = self.take_context();
+            rest.clone_from(gamma);
+            if forced == Forced::Dual {
+                // The dual in `Γ` when there is one; otherwise the side
+                // stays empty and the initial rule looks in `Θ`. Taking the
+                // copy from `Γ` first loses nothing: the copies are the same
+                // formula, so a proof that leaves this one for elsewhere
+                // and copies from `Θ` here is a proof with the roles
+                // swapped.
+                let dual = gamma.iter().find(|&m| {
+                    self.forest.atom(m) == self.forest.atom(x)
+                        && self.forest.sign(m) != self.forest.sign(x)
+                });
+                if let Some(dual) = dual {
+                    side.insert(dual);
+                    rest.remove(dual);
+                }
+            }
+            let mut nodes: Result<Option<(NodeId, NodeId)>, Reason> = Ok(None);
+            {
+                match self.focus(theta, &side, x, budget) {
+                    Ok(Some(x_node)) => {
+                        nodes = self
+                            .focus(theta, &rest, y, budget)
+                            .map(|y_node| y_node.map(|y_node| (x_node, y_node)));
+                    }
+                    Ok(None) => {}
+                    Err(reason) => nodes = Err(reason),
+                }
+            }
+            self.give_context(side);
+            self.give_context(rest);
+            return Ok(nodes?.map(|(x_node, y_node)| {
+                let (left, right) = if x_is_left {
+                    (x_node, y_node)
+                } else {
+                    (y_node, x_node)
+                };
+                self.push(Node::Tensor(f, left, right))
+            }));
         }
 
         let mut members = self.take_list();
-        members.extend(gamma);
+        members.extend(gamma.iter());
         if members.len() > MAX_SPLIT {
             return Err(Reason::ContextTooWide(members.len()));
         }
-        let mut left = self.take_set();
-        let mut right = self.take_set();
+        let mut left = self.take_context();
+        let mut right = self.take_context();
         right.clone_from(gamma);
         let mut left_tally = self.take_tally();
         left_tally.add(&self.counts, a);
@@ -484,7 +871,7 @@ impl<'a> Engine<'a> {
         // The empty submask is the starting state of the enumeration.
         self.statistics.splits += 1;
         let mut result = if self.sides_pass(&left_tally, &right_tally) {
-            self.premises(&left, &right, f, a, b)?
+            self.premises(theta, &left, &right, f, a, b, budget)?
         } else {
             None
         };
@@ -492,29 +879,29 @@ impl<'a> Engine<'a> {
             for flip in submasks(members.len()) {
                 let m = members[flip.position as usize];
                 self.statistics.splits += 1;
-                if left.contains(m) {
-                    left.remove(m);
-                    right.insert(m);
-                    left_tally.remove(&self.counts, m);
-                    right_tally.add(&self.counts, m);
-                } else {
+                if flip.mask >> flip.position & 1 == 1 {
                     right.remove(m);
                     left.insert(m);
                     right_tally.remove(&self.counts, m);
                     left_tally.add(&self.counts, m);
+                } else {
+                    left.remove(m);
+                    right.insert(m);
+                    left_tally.remove(&self.counts, m);
+                    right_tally.add(&self.counts, m);
                 }
                 if !self.sides_pass(&left_tally, &right_tally) {
                     continue;
                 }
-                if let Some(node) = self.premises(&left, &right, f, a, b)? {
+                if let Some(node) = self.premises(theta, &left, &right, f, a, b, budget)? {
                     result = Some(node);
                     break;
                 }
             }
         }
         self.give_list(members);
-        self.give_set(left);
-        self.give_set(right);
+        self.give_context(left);
+        self.give_context(right);
         self.give_tally(left_tally);
         self.give_tally(right_tally);
         Ok(result)
@@ -522,19 +909,28 @@ impl<'a> Engine<'a> {
 
     /// Whether both sides of a split pass the counts.
     fn sides_pass(&self, left: &Tally, right: &Tally) -> bool {
-        left.balanced()
-            && right.balanced()
+        (!self.rules.intervals || (left.balanced() && right.balanced()))
             && (!self.rules.equation
                 || (left.equation(self.rules.mix) && right.equation(self.rules.mix)))
     }
 
     /// Both premises of `F = A ⊗ B` for one split of the context, and the
     /// `⊗` node if both succeed.
-    fn premises(&mut self, left: &OccSet, right: &OccSet, f: OccId, a: OccId, b: OccId) -> Search {
-        let Some(l) = self.focus(left, a)? else {
+    #[allow(clippy::too_many_arguments)]
+    fn premises(
+        &mut self,
+        theta: &OccSet,
+        left: &Context,
+        right: &Context,
+        f: OccId,
+        a: OccId,
+        b: OccId,
+        budget: u32,
+    ) -> Search {
+        let Some(l) = self.focus(theta, left, a, budget)? else {
             return Ok(None);
         };
-        let Some(r) = self.focus(right, b)? else {
+        let Some(r) = self.focus(theta, right, b, budget)? else {
             return Ok(None);
         };
         Ok(Some(self.push(Node::Tensor(f, l, r))))
@@ -545,7 +941,14 @@ impl<'a> Engine<'a> {
     /// first, which stays on the left, so that each unordered partition
     /// comes up once. In the multiplicative fragments only when the count
     /// equation admits a Mix.
-    fn mix(&mut self, gamma: &OccSet, members: &[OccId], tally: &Tally) -> Search {
+    fn mix(
+        &mut self,
+        theta: &OccSet,
+        gamma: &Context,
+        members: &[OccId],
+        tally: &Tally,
+        budget: u32,
+    ) -> Search {
         if members.len() < 2 || (self.rules.equation && !tally.admits_mix()) {
             return Ok(None);
         }
@@ -553,9 +956,9 @@ impl<'a> Engine<'a> {
         if rest.len() > MAX_SPLIT {
             return Err(Reason::ContextTooWide(members.len()));
         }
-        let mut left = self.take_set();
+        let mut left = self.take_context();
         left.insert(members[0]);
-        let mut right = self.take_set();
+        let mut right = self.take_context();
         right.clone_from(gamma);
         right.remove(members[0]);
         let mut left_tally = self.take_tally();
@@ -568,7 +971,7 @@ impl<'a> Engine<'a> {
         // The first member alone is the starting state of the enumeration.
         self.statistics.splits += 1;
         let mut result = if self.sides_pass(&left_tally, &right_tally) {
-            self.parts(&left, &right)?
+            self.parts(theta, &left, &right, budget)?
         } else {
             None
         };
@@ -578,35 +981,35 @@ impl<'a> Engine<'a> {
             }
             let m = rest[flip.position as usize];
             self.statistics.splits += 1;
-            if left.contains(m) {
-                left.remove(m);
-                right.insert(m);
-                left_tally.remove(&self.counts, m);
-                right_tally.add(&self.counts, m);
-            } else {
+            if flip.mask >> flip.position & 1 == 1 {
                 right.remove(m);
                 left.insert(m);
                 right_tally.remove(&self.counts, m);
                 left_tally.add(&self.counts, m);
+            } else {
+                left.remove(m);
+                right.insert(m);
+                left_tally.remove(&self.counts, m);
+                right_tally.add(&self.counts, m);
             }
             if flip.mask == everything || !self.sides_pass(&left_tally, &right_tally) {
                 continue;
             }
-            result = self.parts(&left, &right)?;
+            result = self.parts(theta, &left, &right, budget)?;
         }
-        self.give_set(left);
-        self.give_set(right);
+        self.give_context(left);
+        self.give_context(right);
         self.give_tally(left_tally);
         self.give_tally(right_tally);
         Ok(result)
     }
 
     /// Both parts of a Mix, and the Mix node if both are provable.
-    fn parts(&mut self, left: &OccSet, right: &OccSet) -> Search {
-        let Some(l) = self.prove(left)? else {
+    fn parts(&mut self, theta: &OccSet, left: &Context, right: &Context, budget: u32) -> Search {
+        let Some(l) = self.prove(theta, left, budget)? else {
             return Ok(None);
         };
-        let Some(r) = self.prove(right)? else {
+        let Some(r) = self.prove(theta, right, budget)? else {
             return Ok(None);
         };
         Ok(Some(self.push(Node::Mix(l, r))))
@@ -651,6 +1054,35 @@ impl<'a> Engine<'a> {
         self.sets.push(set);
     }
 
+    /// Takes an empty linear zone from the pool.
+    fn take_context(&mut self) -> Context {
+        match self.contexts.pop() {
+            Some(mut context) => {
+                context.clear();
+                context
+            }
+            None => Context::empty(self.forest.len()),
+        }
+    }
+
+    /// Returns a linear zone to the pool.
+    fn give_context(&mut self, context: Context) {
+        self.contexts.push(context);
+    }
+
+    /// Takes a memo key from the pool, with any contents.
+    fn take_key(&mut self) -> Key {
+        self.keys.pop().unwrap_or_else(|| Key {
+            theta: self.forest.empty_set(),
+            gamma: Context::empty(self.forest.len()),
+        })
+    }
+
+    /// Returns a memo key to the pool.
+    fn give_key(&mut self, key: Key) {
+        self.keys.push(key);
+    }
+
     /// Takes an empty list from the pool.
     fn take_list(&mut self) -> Vec<OccId> {
         let mut list = self.lists.pop().unwrap_or_default();
@@ -685,7 +1117,7 @@ impl<'a> Engine<'a> {
 enum Forced {
     /// No split works: the factor is `0`.
     Nothing,
-    /// The empty context: the factor is `1`.
+    /// The empty context: the factor is `1` or `!`.
     Empty,
     /// The dual literal alone: the factor is a positive literal.
     Dual,

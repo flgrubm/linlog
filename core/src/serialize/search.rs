@@ -74,6 +74,8 @@ enum Why {
     RecursionLimit,
     /// A context of this many formulas was too wide to split.
     ContextTooWide(usize),
+    /// Every level up to this copy bound hit it.
+    CopyBound(u32),
 }
 
 impl From<Reason> for Why {
@@ -83,6 +85,7 @@ impl From<Reason> for Why {
             Reason::Stopped => Why::Stopped,
             Reason::RecursionLimit => Why::RecursionLimit,
             Reason::ContextTooWide(n) => Why::ContextTooWide(n),
+            Reason::CopyBound(n) => Why::CopyBound(n),
         }
     }
 }

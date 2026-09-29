@@ -72,9 +72,15 @@ pub struct ProveArgs {
     /// The engine to search with
     #[arg(long, value_enum, value_name = "ENGINE", default_value_t = EngineArg::Auto)]
     pub engine: EngineArg,
-    /// How often a `?` formula may be copied on one branch
-    #[arg(long, value_name = "N", hide = true)]
-    pub copies: Option<u32>,
+    /// How often `?` formulas may be copied on one branch of the proof
+    ///
+    /// The search tries the bounds 0, 1, … up to this one. A sequent with
+    /// exponentials that has no proof within the bound is unknown (exit
+    /// status 3) unless a smaller bound already exhausted the search space,
+    /// in which case it is unprovable. Sequents without exponentials are
+    /// not affected.
+    #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_COPIES)]
+    pub copies: u32,
     /// Give up after this long, such as 500ms, 10s, 2m or 1h
     ///
     /// The verdict is then unknown (exit status 3). Without it, the search
