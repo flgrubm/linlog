@@ -1,18 +1,20 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-//! The LaTeX and Typst exports through the public API. Derivations are
-//! pinned as standalone documents in `tests/snapshots/`, which the flake's
-//! `export` check compiles; run with `BLESS=1` to rewrite them after an
+//! The LaTeX, Typst and SVG exports through the public API. Derivations
+//! are pinned as standalone documents in `tests/snapshots/`, which the
+//! flake's `export` check compiles and renders; run with `BLESS=1` to rewrite them after an
 //! intended change, and review the diff.
 
 #![cfg(all(
     feature = "parse",
     feature = "interactive",
     feature = "latex",
+    feature = "svg",
     feature = "typst"
 ))]
 
+use linlog::export::svg::{self, Style};
 use linlog::export::{Form, latex, typst};
 use linlog::{Derivation, Forest, InfId, Interactive, Mode, Options, Reading, Rule, Sequent};
 use linlog::{Verdict, prove};
@@ -33,8 +35,8 @@ fn snapshot(name: &str, actual: &str) {
     assert_eq!(actual, expected.trim_end_matches('\n'), "{name}");
 }
 
-/// Pins a derivation in both targets as the snapshots `name.tex` and
-/// `name.typ`.
+/// Pins a derivation in every target as the snapshots `name.tex`,
+/// `name.typ` and `name.svg`.
 fn pin(name: &str, derivation: &Derivation) {
     snapshot(
         &format!("{name}.tex"),
@@ -43,6 +45,10 @@ fn pin(name: &str, derivation: &Derivation) {
     snapshot(
         &format!("{name}.typ"),
         &typst::derivation(derivation, Form::Standalone),
+    );
+    snapshot(
+        &format!("{name}.svg"),
+        &svg::derivation(derivation, &Style::default()),
     );
 }
 
@@ -62,8 +68,8 @@ fn pin_proof(name: &str, input: &str, mode: Mode) {
     pin(name, &derivation.unwrap());
 }
 
-/// Derivations of each fragment, one-sided and two-sided, as ebproof and
-/// curryst trees.
+/// Derivations of each fragment, one-sided and two-sided, as ebproof,
+/// curryst and SVG trees.
 #[test]
 fn derivations() {
     pin_proof("mll", "A * B |- B * A", Mode::CLASSICAL);
@@ -73,7 +79,7 @@ fn derivations() {
 }
 
 /// An open goal of a proof in progress is its sequent under vertical dots,
-/// with no inference line, in both targets.
+/// with no inference line, in every target.
 #[test]
 fn open_goal() {
     let sequent: Sequent = "A, A -o B |- B".parse().unwrap();

@@ -33,9 +33,12 @@
 
 /// The metrics of the Euler Math font.
 mod font;
+/// Derivations as proof trees.
+mod tree;
 
 use super::notation::Notation;
 use crate::occurrences::Reading;
+use crate::proofs::Derivation;
 use crate::sequents::Sequent;
 use font::{DEPTH, HEIGHT, LOWER, RAISE, SCRIPT, advance};
 use std::fmt::Write;
@@ -186,81 +189,119 @@ fn escaped(text: &str) -> String {
     out
 }
 
-/// A line of text laid out: the content of its `<text>` element and its
-/// width.
+/// A piece of a line of text on one baseline and at one size, which is
+/// one `<text>` element: renderers disagree on how `textLength` spreads
+/// over a `<tspan>` that shifts the baseline, and agree on a text of its
+/// own.
+#[derive(Clone, Debug, Default)]
+struct Piece {
+    /// The escaped text, without spaces at either end.
+    text: String,
+    /// Where the piece starts, from the start of the line.
+    offset: i64,
+    /// How far its baseline is above the line's.
+    raise: i64,
+    /// Its font size, or none for the line's.
+    size: Option<i64>,
+    /// Its width.
+    width: i64,
+}
+
+/// A line of text laid out, in thousandths of an em of formula text.
 #[derive(Clone, Debug, Default)]
 struct Run {
-    /// The escaped text, with a `<tspan>` for every superscript or
-    /// subscript and for the text that returns to the baseline after one.
-    markup: String,
-    /// The width, in thousandths of an em of formula text.
+    /// The pieces, left to right.
+    pieces: Vec<Piece>,
+    /// The width.
     width: i64,
 }
 
 /// Lays out a line the notation or a rule name wrote, at `size`
 /// thousandths of an em: [`RAISED_BOT`] becomes a superscript `⊥`, and
 /// `₁` and `₂` subscript digits, since the font has no subscript
-/// characters.
+/// characters. Spaces separate pieces rather than start or end one.
 fn run(text: &str, size: i64) -> Run {
-    let mut markup = String::with_capacity(text.len());
-    // The width in millionths of an em of `size`, and how far the current
-    // character sits above the baseline.
-    let (mut width, mut raised) = (0, 0);
-    let mut open = false;
+    // Widths in millionths of an em of `size`, which `scale` turns into
+    // thousandths of an em of formula text.
+    let scale = |millionths: i64| millionths * size / 1_000_000;
+    let mut pieces: Vec<Piece> = Vec::new();
+    let (mut position, mut start, mut end) = (0, 0, 0);
+    let mut current = (0, 1000);
+    let mut piece = String::new();
+    let close = |pieces: &mut Vec<Piece>, piece: &mut String, raise, script, start, end| {
+        piece.truncate(piece.trim_end_matches(' ').len());
+        if !piece.is_empty() {
+            pieces.push(Piece {
+                text: std::mem::take(piece),
+                offset: scale(start),
+                raise,
+                size: (script != 1000).then_some(size * script / 1000),
+                width: scale(end) - scale(start),
+            });
+        }
+    };
     for c in text.chars() {
-        let (c, script) = match c {
-            RAISED_BOT => ('⊥', Some(RAISE)),
-            '₁' => ('1', Some(-LOWER)),
-            '₂' => ('2', Some(-LOWER)),
-            c => (c, None),
+        let (c, shape) = match c {
+            RAISED_BOT => ('⊥', (RAISE * size / 1000, SCRIPT)),
+            '₁' => ('1', (-LOWER * size / 1000, SCRIPT)),
+            '₂' => ('2', (-LOWER * size / 1000, SCRIPT)),
+            c => (c, (0, 1000)),
         };
-        if open && script.is_some() {
-            markup.push_str("</tspan>");
-            open = false;
+        if shape != current {
+            close(&mut pieces, &mut piece, current.0, current.1, start, end);
+            current = shape;
         }
-        match script {
-            Some(shift) => {
-                let target = shift * size / 1000;
-                markup.push_str("<tspan");
-                if raised != target {
-                    write!(markup, r#" dy="{}""#, raised - target).unwrap();
-                }
-                write!(markup, r#" font-size="{}">"#, size * SCRIPT / 1000).unwrap();
-                escape(&mut markup, c);
-                markup.push_str("</tspan>");
-                width += i64::from(advance(c)) * SCRIPT;
-                raised = target;
+        let advance = i64::from(advance(c)) * shape.1;
+        if c == ' ' {
+            if !piece.is_empty() {
+                piece.push(' ');
             }
-            None => {
-                if raised != 0 {
-                    write!(markup, r#"<tspan dy="{raised}">"#).unwrap();
-                    open = true;
-                    raised = 0;
-                }
-                escape(&mut markup, c);
-                width += i64::from(advance(c)) * 1000;
-            }
+            position += advance;
+            continue;
         }
+        if piece.is_empty() {
+            start = position;
+        }
+        position += advance;
+        end = position;
+        escape(&mut piece, c);
     }
-    if open {
-        markup.push_str("</tspan>");
-    }
+    close(&mut pieces, &mut piece, current.0, current.1, start, end);
     Run {
-        markup,
-        width: width * size / 1_000_000,
+        pieces,
+        width: scale(position),
     }
 }
 
-/// Writes a `<text>` element with its left end at `x` and its baseline at
-/// `y`, stretched or squeezed to the width the layout gave it; `attributes`
-/// go into the start tag as they are.
+/// Writes a line of text with its left end at `x` and its baseline at
+/// `y`, every piece a `<text>` stretched or squeezed to the width the
+/// layout gave it; `attributes` go into the start tag of the one `<text>`
+/// or of the group of several, as they are.
 fn text(out: &mut String, x: i64, y: i64, run: &Run, attributes: &str) {
-    writeln!(
-        out,
-        r#"<text x="{x}" y="{y}" textLength="{}" lengthAdjust="spacing"{attributes}>{}</text>"#,
-        run.width, run.markup
-    )
-    .unwrap();
+    let group = run.pieces.len() > 1;
+    if group {
+        writeln!(out, "<g{attributes}>").unwrap();
+    }
+    for piece in &run.pieces {
+        write!(
+            out,
+            r#"<text x="{}" y="{}" textLength="{}" lengthAdjust="spacing""#,
+            x + piece.offset,
+            y - piece.raise,
+            piece.width
+        )
+        .unwrap();
+        if let Some(size) = piece.size {
+            write!(out, r#" font-size="{size}""#).unwrap();
+        }
+        if !group {
+            out.push_str(attributes);
+        }
+        writeln!(out, ">{}</text>", piece.text).unwrap();
+    }
+    if group {
+        out.push_str("</g>\n");
+    }
 }
 
 /// Returns thousandths as a decimal number, without trailing zeros.
@@ -274,7 +315,7 @@ fn decimal(thousandths: i64) -> String {
 fn document(style: &Style, title: &str, width: i64, height: i64, body: &str) -> String {
     let px = |length: i64| decimal(length * i64::from(style.font_size));
     let mut out = format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" viewBox="0 0 {width} {height}" font-family="'Euler Math', 'Neo Euler', serif" font-size="1000" fill="{}" xml:space="preserve">"#,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" viewBox="0 0 {width} {height}" font-family="'Euler Math', 'Neo Euler', serif" font-size="1000" fill="{}">"#,
         px(width),
         px(height),
         escaped(&style.text),
@@ -329,26 +370,57 @@ pub fn two_sided(reading: &Reading, style: &Style) -> String {
     line(style, &title, &drawn)
 }
 
+/// Returns a derivation as an SVG document of its proof tree, two-sided if
+/// the derivation is, titled with its conclusion in plain text.
+///
+/// The tree grows upwards from its conclusion: the premises of an
+/// inference stand side by side, their conclusions centred over its own,
+/// under an inference line that spans both with the rule's name to its
+/// right. An open goal of a proof in progress is its sequent under
+/// vertical dots, with no inference line. The conclusion of inference `n`
+/// is the `<text>` with the id `i<n>`. The layout is one pass up and one
+/// down the tree, each with a stack of its own, so a derivation of any
+/// height fits and drawing it again after every step of an interactive
+/// proof stays cheap.
+pub fn derivation(derivation: &Derivation, style: &Style) -> String {
+    tree::draw(derivation, style)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// A raised `⊥` and a subscript are smaller, shifted, and shifted back
-    /// for what follows; the width counts them at their size.
+    /// A raised `⊥` and a subscript are pieces of their own, smaller and
+    /// shifted, and spaces separate pieces; the widths count every piece at
+    /// its size.
     #[test]
-    fn scripts_shift_and_return() {
-        let r = run("A\u{1}, A", 1000);
+    fn scripts_are_pieces() {
+        let pieces = |r: &Run| {
+            r.pieces
+                .iter()
+                .map(|p| (p.text.clone(), p.offset, p.raise, p.size, p.width))
+                .collect::<Vec<_>>()
+        };
+        let (a, bot, comma, space) = (770, 611, 277, 333);
+        let r = run("A\u{1} ⊗ A", 1000);
         assert_eq!(
-            r.markup,
-            r#"A<tspan dy="-400" font-size="700">⊥</tspan><tspan dy="400">, A</tspan>"#
+            pieces(&r),
+            [
+                ("A".into(), 0, 0, None, a),
+                ("⊥".into(), a, 400, Some(700), bot),
+                ("⊗ A".into(), a + bot + space, 0, None, 668 + space + a),
+            ]
         );
-        let (a, bot, comma, space) = (770, 874, 277, 333);
-        assert_eq!(r.width, a + bot * 7 / 10 + comma + space + a);
+        assert_eq!(r.width, a + bot + space + 668 + space + a);
 
-        let r = run("&L₁", 800);
+        let r = run("&L₁, ", 800);
         assert_eq!(
-            r.markup,
-            r#"&amp;L<tspan dy="120" font-size="560">1</tspan>"#
+            pieces(&r),
+            [
+                ("&amp;L".into(), 0, 0, None, 1036),
+                ("1".into(), 1036, -120, Some(560), 280),
+                (",".into(), 1316, 0, None, comma * 8 / 10),
+            ]
         );
     }
 

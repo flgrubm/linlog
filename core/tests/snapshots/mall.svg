@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="293.008" height="110.592" viewBox="0 0 18313 6912" font-family="'Euler Math', 'Neo Euler', serif" font-size="1000" fill="black">
+<title>⊢ A⊥ &amp; B⊥, ⊥, B ⊕ A</title>
+<g fill="none" stroke="black" stroke-width="40">
+<path d="M300 5312H17114"/>
+<path d="M300 3812H7565"/>
+<path d="M1042 2312H6823"/>
+<path d="M2036 812H5828"/>
+<path d="M9964 3812H17114"/>
+<path d="M10706 2312H16372"/>
+<path d="M11758 812H15320"/>
+</g>
+<g id="i6">
+<text x="3740" y="6402" textLength="1801" lengthAdjust="spacing">⊢ 𝐴</text>
+<text x="5541" y="6002" textLength="611" lengthAdjust="spacing" font-size="700">⊥</text>
+<text x="6485" y="6402" textLength="1725" lengthAdjust="spacing">&amp; 𝐵</text>
+<text x="8210" y="6002" textLength="612" lengthAdjust="spacing" font-size="700">⊥</text>
+<text x="8822" y="6402" textLength="4853" lengthAdjust="spacing">, ⊥, 𝐵 ⊕ 𝐴</text>
+</g>
+<text x="17314" y="5512" textLength="589" lengthAdjust="spacing" font-size="800">&amp;</text>
+<g id="i2">
+<text x="300" y="4902" textLength="1801" lengthAdjust="spacing">⊢ 𝐴</text>
+<text x="2101" y="4502" textLength="611" lengthAdjust="spacing" font-size="700">⊥</text>
+<text x="2712" y="4902" textLength="4853" lengthAdjust="spacing">, ⊥, 𝐵 ⊕ 𝐴</text>
+</g>
+<text x="7765" y="4012" textLength="699" lengthAdjust="spacing" font-size="800">⊥</text>
+<g id="i1">
+<text x="1042" y="3402" textLength="1801" lengthAdjust="spacing">⊢ 𝐴</text>
+<text x="2843" y="3002" textLength="611" lengthAdjust="spacing" font-size="700">⊥</text>
+<text x="3454" y="3402" textLength="3369" lengthAdjust="spacing">, 𝐵 ⊕ 𝐴</text>
+</g>
+<g font-size="800">
+<text x="7023" y="2512" textLength="534" lengthAdjust="spacing">⊕</text>
+<text x="7557" y="2632" textLength="279" lengthAdjust="spacing" font-size="560">2</text>
+</g>
+<g id="i0">
+<text x="2036" y="1902" textLength="1801" lengthAdjust="spacing">⊢ 𝐴</text>
+<text x="3837" y="1502" textLength="611" lengthAdjust="spacing" font-size="700">⊥</text>
+<text x="4448" y="1902" textLength="1380" lengthAdjust="spacing">, 𝐴</text>
+</g>
+<text x="6028" y="1012" textLength="908" lengthAdjust="spacing" font-size="800">ax</text>
+<g id="i5">
+<text x="9964" y="4902" textLength="1686" lengthAdjust="spacing">⊢ 𝐵</text>
+<text x="11650" y="4502" textLength="611" lengthAdjust="spacing" font-size="700">⊥</text>
+<text x="12261" y="4902" textLength="4853" lengthAdjust="spacing">, ⊥, 𝐵 ⊕ 𝐴</text>
+</g>
+<text x="17314" y="4012" textLength="699" lengthAdjust="spacing" font-size="800">⊥</text>
+<g id="i4">
+<text x="10706" y="3402" textLength="1686" lengthAdjust="spacing">⊢ 𝐵</text>
+<text x="12392" y="3002" textLength="611" lengthAdjust="spacing" font-size="700">⊥</text>
+<text x="13003" y="3402" textLength="3369" lengthAdjust="spacing">, 𝐵 ⊕ 𝐴</text>
+</g>
+<g font-size="800">
+<text x="16572" y="2512" textLength="534" lengthAdjust="spacing">⊕</text>
+<text x="17106" y="2632" textLength="279" lengthAdjust="spacing" font-size="560">1</text>
+</g>
+<g id="i3">
+<text x="11758" y="1902" textLength="1686" lengthAdjust="spacing">⊢ 𝐵</text>
+<text x="13444" y="1502" textLength="611" lengthAdjust="spacing" font-size="700">⊥</text>
+<text x="14055" y="1902" textLength="1265" lengthAdjust="spacing">, 𝐵</text>
+</g>
+<text x="15520" y="1012" textLength="908" lengthAdjust="spacing" font-size="800">ax</text>
+</svg>
