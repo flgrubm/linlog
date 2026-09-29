@@ -2,7 +2,7 @@
 // Licensed under the EUPL
 
 use super::derivation::{Derivation, InfId, Inference};
-use crate::occurrences::{Forest, OccId};
+use crate::occurrences::{Forest, OccId, Position, Reading};
 use std::fmt::{Display, Formatter, Result as FmtResult, Write};
 
 /// A rendered subtree: lines of one width, the last of which is the
@@ -21,17 +21,44 @@ struct Block {
 /// The columns between two premises.
 const GAP: usize = 3;
 
-/// Returns the text of a sequent: `⊢` and its formulas, comma-separated.
-fn sequent_text(forest: &Forest, sequent: &[OccId]) -> String {
-    let mut text = String::from("⊢");
-    for (i, &o) in sequent.iter().enumerate() {
+/// Returns the text of a sequent: `⊢` and its formulas, comma-separated;
+/// two-sided under a reading, the hypotheses before `⊢` and the goal after
+/// it.
+fn sequent_text(forest: &Forest, reading: Option<&Reading>, sequent: &[OccId]) -> String {
+    let mut text = String::new();
+    let Some(reading) = reading else {
+        text.push('⊢');
+        for (i, &o) in sequent.iter().enumerate() {
+            write!(
+                text,
+                "{}{}",
+                if i == 0 { " " } else { ", " },
+                forest.formula(o)
+            )
+            .unwrap();
+        }
+        return text;
+    };
+    let mut goal = None;
+    for &o in sequent {
+        if reading.position(o) == Position::Output {
+            goal = Some(o);
+            continue;
+        }
         write!(
             text,
             "{}{}",
-            if i == 0 { " " } else { ", " },
-            forest.formula(o)
+            if text.is_empty() { "" } else { ", " },
+            reading.formula(o)
         )
         .unwrap();
+    }
+    if !text.is_empty() {
+        text.push(' ');
+    }
+    text.push('⊢');
+    if let Some(goal) = goal {
+        write!(text, " {}", reading.formula(goal)).unwrap();
     }
     text
 }
@@ -52,7 +79,7 @@ impl Derivation<'_> {
             premises,
             ..
         } = self.inference(id);
-        let conclusion = sequent_text(self.forest(), sequent);
+        let conclusion = sequent_text(self.forest(), self.reading(), sequent);
         let width_of = |s: &str| s.chars().count();
 
         // The premises in a row.

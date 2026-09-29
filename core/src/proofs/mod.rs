@@ -340,6 +340,13 @@ impl Proof {
     pub fn derivation(&self) -> Result<Derivation<'_>, CheckError> {
         Derivation::new(self)
     }
+
+    /// Returns the two-sided derivation of intuitionistic linear logic the
+    /// proof stands for, or the checker's complaint in intuitionistic mode.
+    /// See [`Derivation::two_sided`].
+    pub fn two_sided_derivation(&self) -> Result<Derivation<'_>, CheckError> {
+        Derivation::two_sided(self)
+    }
 }
 
 impl Node {

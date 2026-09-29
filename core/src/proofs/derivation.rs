@@ -15,12 +15,18 @@
 //! premises use, below the rule; and a `&` weakens, above each premise, the
 //! `?` formulas only the other premise uses. A `⊤` absorbs whatever context
 //! reaches it, so nothing is weakened above it.
+//!
+//! An intuitionistic derivation is the same tree over the same term, read
+//! two-sided: every sequent has one goal, the inferences carry the
+//! intuitionistic rule names (`⊸L` for a `⊗` on a hypothesis, `⊗L` for a
+//! `⅋` on one, `!L` for a dereliction, and so on), and what a `⊤` absorbs
+//! is distributed so that each premise keeps exactly one goal.
 
 use super::check::{self, CheckError, Derived};
 use super::multiset::Multiset;
 use super::{Node, NodeId, Proof, Side};
 use crate::fragment::Mode;
-use crate::occurrences::{Forest, OccId};
+use crate::occurrences::{Forest, OccId, Position, Reading};
 use crate::sequents::Kind;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
@@ -45,8 +51,11 @@ impl InfId {
     }
 }
 
-/// A rule of the standard one-sided sequent calculus, as a derivation names
-/// it.
+/// A rule of the standard sequent calculus, as a derivation names it: the
+/// one-sided rules of classical linear logic, and the two-sided rules of
+/// intuitionistic linear logic that an intuitionistic derivation shows
+/// instead, each the classical rule on the hypothesis or the goal it acts
+/// on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Rule {
     /// `ax`
@@ -79,6 +88,42 @@ pub enum Rule {
     Mix,
     /// `wk`, weakening of a formula that is not a `?`, in affine mode.
     AffineWeakening,
+    /// `⊸L`: a `⊗` on a hypothesis `A ⊸ B`.
+    ImpLeft,
+    /// `⊸R`: a `⅋` on the goal `A ⊸ B`.
+    ImpRight,
+    /// `⊗L`: a `⅋` on a hypothesis `A ⊗ B`.
+    TensorLeft,
+    /// `⊗R`: a `⊗` on the goal.
+    TensorRight,
+    /// `&L₁`: a `⊕₁` on a hypothesis `A & B`.
+    WithLeft1,
+    /// `&L₂`: a `⊕₂` on a hypothesis `A & B`.
+    WithLeft2,
+    /// `&R`: a `&` on the goal.
+    WithRight,
+    /// `⊕L`: a `&` on a hypothesis `A ⊕ B`.
+    PlusLeftRule,
+    /// `⊕R₁`: a `⊕₁` on the goal.
+    PlusRight1,
+    /// `⊕R₂`: a `⊕₂` on the goal.
+    PlusRight2,
+    /// `1L`: a `⊥` on a hypothesis `1`.
+    OneLeft,
+    /// `1R`: the goal `1`.
+    OneRight,
+    /// `0L`: a `⊤` on a hypothesis `0`.
+    ZeroLeft,
+    /// `⊤R`: the goal `⊤`.
+    TopRight,
+    /// `!L`: a dereliction of a hypothesis `!A`.
+    BangLeft,
+    /// `!R`: a promotion of the goal `!A`.
+    BangRight,
+    /// `!c`: a contraction of a hypothesis `!A`.
+    BangContraction,
+    /// `!w`: a weakening of a hypothesis `!A`.
+    BangWeakening,
 }
 
 impl Rule {
@@ -101,6 +146,54 @@ impl Rule {
             Weakening => "?w",
             Mix => "mix",
             AffineWeakening => "wk",
+            ImpLeft => "⊸L",
+            ImpRight => "⊸R",
+            TensorLeft => "⊗L",
+            TensorRight => "⊗R",
+            WithLeft1 => "&L₁",
+            WithLeft2 => "&L₂",
+            WithRight => "&R",
+            PlusLeftRule => "⊕L",
+            PlusRight1 => "⊕R₁",
+            PlusRight2 => "⊕R₂",
+            OneLeft => "1L",
+            OneRight => "1R",
+            ZeroLeft => "0L",
+            TopRight => "⊤R",
+            BangLeft => "!L",
+            BangRight => "!R",
+            BangContraction => "!c",
+            BangWeakening => "!w",
+        }
+    }
+
+    /// Returns the intuitionistic name of a classical rule applied to a
+    /// formula in `position`: `⊗` on a hypothesis is `⊸L`, on the goal
+    /// `⊗R`, and so on. The axiom, Mix and affine weakening keep their
+    /// names.
+    pub const fn intuitionistic(self, position: Position) -> Self {
+        use Position::{Input, Output};
+        use Rule::*;
+        match (self, position) {
+            (Tensor, Input) => ImpLeft,
+            (Tensor, Output) => TensorRight,
+            (Par, Input) => TensorLeft,
+            (Par, Output) => ImpRight,
+            (With, Input) => PlusLeftRule,
+            (With, Output) => WithRight,
+            (PlusLeft, Input) => WithLeft1,
+            (PlusLeft, Output) => PlusRight1,
+            (PlusRight, Input) => WithLeft2,
+            (PlusRight, Output) => PlusRight2,
+            (Bot, _) => OneLeft,
+            (One, _) => OneRight,
+            (Top, Input) => ZeroLeft,
+            (Top, Output) => TopRight,
+            (Dereliction, _) => BangLeft,
+            (Promotion, _) => BangRight,
+            (Contraction, _) => BangContraction,
+            (Weakening, _) => BangWeakening,
+            (rule, _) => rule,
         }
     }
 }
@@ -129,8 +222,9 @@ pub struct Inference {
     pub premises: Vec<InfId>,
 }
 
-/// A derivation in the standard one-sided sequent calculus: the tree of
-/// inferences a proof term stands for, over the proof's forest. Premises
+/// A derivation in the standard sequent calculus: the tree of inferences a
+/// proof term stands for, over the proof's forest, one-sided for classical
+/// linear logic or two-sided for intuitionistic linear logic. Premises
 /// precede their conclusion and the root is the last inference.
 ///
 /// [`Display`] draws the tree, see [`Proof`] for an example.
@@ -138,34 +232,97 @@ pub struct Inference {
 pub struct Derivation<'a> {
     /// The forest the sequents' occurrences index.
     forest: &'a Forest,
+    /// The intuitionistic reading, for a two-sided derivation.
+    reading: Option<Reading<'a>>,
     /// The inferences, premises before conclusions, the root last.
     inferences: Vec<Inference>,
 }
 
 impl<'a> Derivation<'a> {
-    /// Unfolds a proof, which must be correct, and fails as
-    /// [`check`](Proof::check) would if it is not. Mode is not a
-    /// question: a derivation shows every rule the proof uses.
+    /// Unfolds a proof into the one-sided derivation of classical linear
+    /// logic. The proof must be correct, and the unfolding fails as
+    /// [`check`](Proof::check) would if it is not. Mode is not a question
+    /// here: a derivation shows every rule the proof uses.
     pub fn new(proof: &'a Proof) -> Result<Self, CheckError> {
-        let permissive = Mode::CLASSICAL.affine().with_mix();
-        let derived = check::derive(proof, permissive, None)?;
-        check::conclude(proof, permissive, &derived)?;
-        let mut build = Build {
-            proof,
-            derived: &derived,
-            inferences: Vec::with_capacity(derived.len()),
+        Self::build(proof, Mode::CLASSICAL.affine().with_mix(), None)
+    }
+
+    /// Unfolds a proof into the two-sided derivation of intuitionistic
+    /// linear logic, `Γ ⊢ A` at every inference with the intuitionistic
+    /// rule names. The proof must pass the checker in intuitionistic mode
+    /// (affine or not), and the unfolding fails as it would otherwise.
+    ///
+    /// # Examples
+    ///
+    #[cfg_attr(feature = "parse", doc = "```")]
+    #[cfg_attr(not(feature = "parse"), doc = "```ignore")]
+    /// use linlog::{Mode, Options, Sequent, Verdict, prove};
+    ///
+    /// let sequent: Sequent = "A, A -o B |- B".parse()?;
+    /// let outcome = prove(&sequent, Mode::INTUITIONISTIC, &Options::default())?;
+    /// let Verdict::Proved(proof) = &outcome.verdict else {
+    ///     panic!("provable");
+    /// };
+    /// assert_eq!(
+    ///     proof.two_sided_derivation()?.to_string(),
+    ///     "───── ax   ───── ax\n\
+    ///      A ⊢ A      B ⊢ B\n\
+    ///      ──────────────── ⊸L\n\
+    ///     \x20 A, A ⊸ B ⊢ B"
+    /// );
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn two_sided(proof: &'a Proof) -> Result<Self, CheckError> {
+        let reading = match Reading::new(proof.forest()) {
+            Ok(reading) => reading,
+            Err(e) => {
+                return Err(CheckError {
+                    node: proof.root(),
+                    rule: proof.node(proof.root()),
+                    premises: vec![],
+                    problem: check::Problem::Shape(e),
+                });
+            }
         };
-        let roots = Multiset::of(proof.forest().roots().iter().copied());
-        build.build(proof.root(), roots);
+        Self::build(proof, Mode::INTUITIONISTIC.affine(), Some(reading))
+    }
+
+    /// Checks the proof in `mode` and unfolds it, two-sided when a reading
+    /// is given.
+    fn build(
+        proof: &'a Proof,
+        mode: Mode,
+        reading: Option<Reading<'a>>,
+    ) -> Result<Self, CheckError> {
+        let derived = check::derive(proof, mode, reading.as_ref())?;
+        check::conclude(proof, mode, &derived)?;
+        let inferences = {
+            let mut build = Build {
+                proof,
+                derived: &derived,
+                reading: reading.as_ref(),
+                inferences: Vec::with_capacity(derived.len()),
+            };
+            let roots = Multiset::of(proof.forest().roots().iter().copied());
+            build.build(proof.root(), roots);
+            build.inferences
+        };
         Ok(Self {
             forest: proof.forest(),
-            inferences: build.inferences,
+            reading,
+            inferences,
         })
     }
 
     /// Returns the forest the sequents' occurrences index.
     pub fn forest(&self) -> &'a Forest {
         self.forest
+    }
+
+    /// Returns the intuitionistic reading of a two-sided derivation, or
+    /// `None` for a one-sided one.
+    pub fn reading(&self) -> Option<&Reading<'a>> {
+        self.reading.as_ref()
     }
 
     /// Returns every inference, premises before conclusions, the root last.
@@ -190,6 +347,8 @@ struct Build<'a> {
     proof: &'a Proof,
     /// What the checker derived for each node.
     derived: &'a [Derived],
+    /// The intuitionistic reading, for a two-sided derivation.
+    reading: Option<&'a Reading<'a>>,
     /// The inferences made so far.
     inferences: Vec<Inference>,
 }
@@ -222,7 +381,8 @@ impl Build<'_> {
         self.derived[id.index()].any
     }
 
-    /// Adds an inference and returns its id.
+    /// Adds an inference and returns its id; in a two-sided derivation the
+    /// rule gets its intuitionistic name.
     fn infer(
         &mut self,
         sequent: Multiset,
@@ -230,6 +390,10 @@ impl Build<'_> {
         principal: Option<OccId>,
         premises: Vec<InfId>,
     ) -> InfId {
+        let rule = match (self.reading, principal) {
+            (Some(reading), Some(o)) => rule.intuitionistic(reading.position(o)),
+            _ => rule,
+        };
         let principal = principal.map(|o| sequent.position(o).unwrap());
         self.inferences.push(Inference {
             sequent: sequent.into_vec(),
@@ -357,7 +521,21 @@ impl Build<'_> {
             up_l.ensure(a);
             up_r.ensure(b);
         }
-        if self.absorbs(l) {
+        if let Some(reading) = self.reading
+            && self.absorbs(l)
+            && self.absorbs(r)
+        {
+            // Two-sided: the goal among the absorbed formulas goes to the
+            // premise that has none, the hypotheses to the left one.
+            let left_has_goal = reading.outputs(up_l.as_slice().iter().copied()) > 0;
+            for &o in extra.as_slice() {
+                if reading.position(o) == Position::Output && left_has_goal {
+                    up_r.insert(o);
+                } else {
+                    up_l.insert(o);
+                }
+            }
+        } else if self.absorbs(l) {
             up_l = up_l.sum(&extra);
         } else {
             debug_assert!(extra.is_empty() || self.absorbs(r));
@@ -632,6 +810,128 @@ mod tests {
             ]
             .join("\n")
         );
+    }
+
+    /// A two-sided derivation shows `Γ ⊢ A` at every inference with the
+    /// intuitionistic rule names, gives the `0` premise of a `⊸L` the goal
+    /// its `⊤` absorbs, and refuses a proof that is not intuitionistic.
+    #[test]
+    fn two_sided() {
+        use Node::*;
+        let render = |input: &str, nodes| {
+            proof(input, nodes)
+                .two_sided_derivation()
+                .unwrap()
+                .to_string()
+        };
+        // A, A ⊸ B ⊢ B: 0 ~A, 1 ⊗, 2 A, 3 ~B, 4 B
+        assert_eq!(
+            render(
+                "A, A -o B |- B",
+                vec![Ax(o(0), o(2)), Ax(o(3), o(4)), Tensor(o(1), n(0), n(1))]
+            ),
+            [
+                "───── ax   ───── ax",
+                "A ⊢ A      B ⊢ B",
+                "──────────────── ⊸L",
+                "  A, A ⊸ B ⊢ B",
+            ]
+            .join("\n")
+        );
+        // A & B ⊢ (A ⊕ 1) & B: 0 ⊕, 1 ~A, 2 ~B, 3 &, 4 ⊕, 5 A, 6 1, 7 B
+        assert_eq!(
+            render(
+                "A & B |- (A + 1) & B",
+                vec![
+                    Ax(o(1), o(5)),
+                    Plus(o(4), Side::Left, n(0)),
+                    Plus(o(0), Side::Left, n(1)),
+                    Ax(o(2), o(7)),
+                    Plus(o(0), Side::Right, n(3)),
+                    With(o(3), n(2), n(4)),
+                ]
+            ),
+            [
+                "    ───── ax",
+                "    A ⊢ A",
+                "  ───────── ⊕R₁       ───── ax",
+                "  A ⊢ A ⊕ 1           B ⊢ B",
+                "───────────── &L₁   ───────── &L₂",
+                "A & B ⊢ A ⊕ 1       A & B ⊢ B",
+                "───────────────────────────── &R",
+                "     A & B ⊢ (A ⊕ 1) & B",
+            ]
+            .join("\n")
+        );
+        // A ⊸ 0, A ⊢ B ⊗ ⊤: 0 ⊗, 1 A, 2 ⊤, 3 ~A, 4 ⊗, 5 B, 6 ⊤: the goal
+        // `B ⊗ ⊤` is split first, then the `0` absorbs `B`.
+        assert_eq!(
+            render(
+                "A -o 0, A |- B * top",
+                vec![
+                    Ax(o(1), o(3)),
+                    Top(o(2)),
+                    Tensor(o(0), n(0), n(1)),
+                    Top(o(6)),
+                    Tensor(o(4), n(2), n(3)),
+                ]
+            ),
+            [
+                "───── ax   ───── 0L",
+                "A ⊢ A      0 ⊢ B",
+                "──────────────── ⊸L   ─── ⊤R",
+                "  A ⊸ 0, A ⊢ B        ⊢ ⊤",
+                "  ─────────────────────── ⊗R",
+                "     A ⊸ 0, A ⊢ B ⊗ ⊤",
+            ]
+            .join("\n")
+        );
+        // !A, !(A ⊸ B) ⊢ !B & 1: 0 ?, 1 ~A, 2 ?, 3 ⊗, 4 A, 5 ~B, 6 &, 7 !,
+        // 8 B, 9 1
+        assert_eq!(
+            render(
+                "!A, !(A -o B) |- !B & 1",
+                vec![
+                    Ax(o(1), o(4)),
+                    Copy(o(1), n(0)),
+                    Ax(o(5), o(8)),
+                    Tensor(o(3), n(1), n(2)),
+                    Copy(o(3), n(3)),
+                    Bang(o(7), n(4)),
+                    One(o(9)),
+                    With(o(6), n(5), n(6)),
+                    Quest(o(2), n(7)),
+                    Quest(o(0), n(8)),
+                ]
+            ),
+            [
+                "───── ax",
+                "A ⊢ A",
+                "────── !L   ───── ax",
+                "!A ⊢ A      B ⊢ B",
+                "───────────────── ⊸L          ─── 1R",
+                "  !A, A ⊸ B ⊢ B               ⊢ 1",
+                " ──────────────── !L         ────── !w",
+                " !A, !(A ⊸ B) ⊢ B            !A ⊢ 1",
+                " ───────────────── !R   ──────────────── !w",
+                " !A, !(A ⊸ B) ⊢ !B      !A, !(A ⊸ B) ⊢ 1",
+                " ─────────────────────────────────────── &R",
+                "          !A, !(A ⊸ B) ⊢ !B & 1",
+            ]
+            .join("\n")
+        );
+        // Affine weakening keeps its name. A classical proof that is not
+        // intuitionistic has no two-sided derivation, and a classical
+        // sequent none at all.
+        let p = proof("A, B |- A", vec![Ax(o(0), o(2)), Weaken(o(1), n(0))]);
+        assert_eq!(
+            p.two_sided_derivation().unwrap().to_string(),
+            [" ───── ax", " A ⊢ A", "──────── wk", "A, B ⊢ A"].join("\n")
+        );
+        let p = proof("|- A par B", vec![Ax(o(1), o(2))]);
+        assert!(p.two_sided_derivation().is_err());
+        let p = proof("A, B |- A", vec![Ax(o(0), o(2)), Weaken(o(2), n(0))]);
+        assert!(p.two_sided_derivation().is_err());
     }
 
     /// The inferences carry the sequents as ids with repeats, the rule, the
