@@ -1,22 +1,20 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use crate::logics::LL;
-use crate::sequents::Sequent as Seq;
-use crate::sequents::expressions::LLExpression;
+use crate::sequents::{Atom, Sequent as Seq, Term, TermId};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// The serialized form of an arena expression. Its tags are part of the
-/// interchange format, so renaming one breaks it.
+/// The serialized form of an arena term. Its tags are part of the interchange
+/// format, so renaming one breaks it.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 #[serde(rename = "E")]
 enum Expression {
     /// A variable, by dictionary index.
     #[serde(rename = "V")]
-    Var(usize),
+    Var(u32),
     /// A negated variable, by dictionary index.
     #[serde(rename = "D")]
-    DualVar(usize),
+    DualVar(u32),
     /// `1`
     #[serde(rename = "1")]
     One,
@@ -31,22 +29,22 @@ enum Expression {
     Zero,
     /// `A ⊗ B`
     #[serde(rename = "⊗")]
-    Tensor(usize, usize),
+    Tensor(u32, u32),
     /// `A ⅋ B`
     #[serde(rename = "⅋")]
-    Par(usize, usize),
+    Par(u32, u32),
     /// `A & B`
     #[serde(rename = "&")]
-    With(usize, usize),
+    With(u32, u32),
     /// `A ⊕ B`
     #[serde(rename = "⊕")]
-    Plus(usize, usize),
+    Plus(u32, u32),
     /// `!A`
     #[serde(rename = "!")]
-    Bang(usize),
+    Bang(u32),
     /// `?A`
     #[serde(rename = "?")]
-    Quest(usize),
+    Quest(u32),
 }
 
 /// The serialized form of a sequent.
@@ -55,91 +53,91 @@ struct Sequent {
     /// The arena.
     terms: Vec<Expression>,
     /// The root formulas, as arena indices.
-    ids: Vec<usize>,
-    /// The variable names.
+    ids: Vec<u32>,
+    /// The atom names.
     var_dict: Vec<String>,
 }
 
-impl From<LLExpression<usize>> for Expression {
-    /// Converts an arena expression into its serialized form.
-    fn from(e: LLExpression<usize>) -> Self {
+impl From<Term> for Expression {
+    /// Converts an arena term into its serialized form.
+    fn from(e: Term) -> Self {
         use Expression as E;
-        use LLExpression::*;
+        use Term::*;
         match e {
-            Var(n) => E::Var(n),
-            DualVar(n) => E::DualVar(n),
+            Var(a) => E::Var(a.get()),
+            DualVar(a) => E::DualVar(a.get()),
             One => E::One,
             Bot => E::Bot,
             Top => E::Top,
             Zero => E::Zero,
-            Tensor(m, n) => E::Tensor(m, n),
-            Par(m, n) => E::Par(m, n),
-            With(m, n) => E::With(m, n),
-            Plus(m, n) => E::Plus(m, n),
-            Bang(m) => E::Bang(m),
-            Quest(m) => E::Quest(m),
+            Tensor(k, l) => E::Tensor(k.get(), l.get()),
+            Par(k, l) => E::Par(k.get(), l.get()),
+            With(k, l) => E::With(k.get(), l.get()),
+            Plus(k, l) => E::Plus(k.get(), l.get()),
+            Bang(k) => E::Bang(k.get()),
+            Quest(k) => E::Quest(k.get()),
         }
     }
 }
 
-impl From<Expression> for LLExpression<usize> {
-    /// Converts a serialized expression back into an arena expression.
+impl From<Expression> for Term {
+    /// Converts a serialized expression back into an arena term.
     fn from(e: Expression) -> Self {
         use Expression::*;
-        use LLExpression as E;
+        use Term as E;
+        let t = TermId::new;
         match e {
-            Var(n) => E::Var(n),
-            DualVar(n) => E::DualVar(n),
+            Var(a) => E::Var(Atom::new(a)),
+            DualVar(a) => E::DualVar(Atom::new(a)),
             One => E::One,
             Bot => E::Bot,
             Top => E::Top,
             Zero => E::Zero,
-            Tensor(m, n) => E::Tensor(m, n),
-            Par(m, n) => E::Par(m, n),
-            With(m, n) => E::With(m, n),
-            Plus(m, n) => E::Plus(m, n),
-            Bang(m) => E::Bang(m),
-            Quest(m) => E::Quest(m),
+            Tensor(k, l) => E::Tensor(t(k), t(l)),
+            Par(k, l) => E::Par(t(k), t(l)),
+            With(k, l) => E::With(t(k), t(l)),
+            Plus(k, l) => E::Plus(t(k), t(l)),
+            Bang(k) => E::Bang(t(k)),
+            Quest(k) => E::Quest(t(k)),
         }
     }
 }
 
-impl From<Seq<usize, LL>> for Sequent {
+impl From<&Seq> for Sequent {
     /// Converts a sequent into its serialized form.
-    fn from(s: Seq<usize, LL>) -> Sequent {
+    fn from(s: &Seq) -> Sequent {
         Sequent {
-            terms: s.term_arena.into_iter().map(Expression::from).collect(),
-            ids: s.term_ids,
-            var_dict: s.variable_dict,
+            terms: s.terms.iter().copied().map(Expression::from).collect(),
+            ids: s.roots.iter().map(|k| k.get()).collect(),
+            var_dict: s.atoms.clone(),
         }
     }
 }
 
-impl TryFrom<Sequent> for Seq<usize, LL> {
+impl TryFrom<Sequent> for Seq {
     type Error = crate::Error;
 
     /// Converts a deserialized sequent back, failing if its arena breaks the
     /// invariants.
-    fn try_from(s: Sequent) -> Result<Seq<usize, LL>, Self::Error> {
-        let s = Seq::<usize, LL> {
-            term_arena: s.terms.into_iter().map(LLExpression::from).collect(),
-            term_ids: s.ids,
-            variable_dict: s.var_dict,
+    fn try_from(s: Sequent) -> Result<Seq, Self::Error> {
+        let s = Seq {
+            terms: s.terms.into_iter().map(Term::from).collect(),
+            roots: s.ids.into_iter().map(TermId::new).collect(),
+            atoms: s.var_dict,
         };
         s.verify_integrity()?;
         Ok(s)
     }
 }
 
-impl serde::Serialize for Seq<usize, LL> {
-    /// Serializes the sequent as its arena, root term indices and variable names.
+impl serde::Serialize for Seq {
+    /// Serializes the sequent as its arena, root term indices and atom names.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let proxy = Sequent::from(self.clone());
-        proxy.serialize(serializer)
+        Sequent::from(self).serialize(serializer)
     }
 }
 
-impl<'a> serde::Deserialize<'a> for Seq<usize, LL> {
+impl<'a> serde::Deserialize<'a> for Seq {
     /// Deserializes a sequent and checks that its arena keeps the invariants.
     fn deserialize<D: Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
         let proxy = Sequent::deserialize(deserializer)?;

@@ -205,9 +205,6 @@ deny = [
 
 # Certain crates/versions that will be skipped when doing duplicate detection.
 skip = [
-  # Proc-macro only, so the duplicate costs compile time, not binary size. Once
-  # subenum moves to syn 3, cargo-deny reports this as unmatched-skip: drop it.
-  { crate = "syn@2", reason = "subenum, the only crate still on syn 2" },
   #"ansi_term@0.11.0",
   #{ crate = "ansi_term@0.11.0", reason = "you can specify a reason why it can't be updated/removed" },
 ]

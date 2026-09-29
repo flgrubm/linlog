@@ -5,12 +5,11 @@
 
 #![cfg(feature = "parse")]
 
-use linlog::logics::LL;
-use linlog::sequents::Sequent;
+use linlog::Sequent;
 
 /// Parses `input` as a sequent of classical linear logic and prints it back.
 fn pretty(input: &str) -> String {
-    match input.parse::<Sequent<usize, LL>>() {
+    match input.parse::<Sequent>() {
         Ok(s) => s.to_string(),
         Err(e) => panic!("{input:?} does not parse: {e}"),
     }
@@ -18,7 +17,7 @@ fn pretty(input: &str) -> String {
 
 /// Returns whether `input` is rejected by the parser.
 fn rejected(input: &str) -> bool {
-    input.parse::<Sequent<usize, LL>>().is_err()
+    input.parse::<Sequent>().is_err()
 }
 
 /// Every constant parses in each of its spellings, dualised on the left.

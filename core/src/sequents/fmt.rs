@@ -1,121 +1,93 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use super::Sequent;
-use super::expressions::LLExpression;
-use crate::index::Index;
-use crate::logics::Logic;
+use super::{Sequent, Term, TermId};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-impl<I: Index, L: Logic<I>> Sequent<I, L> {
-    /// Writes the term at `index`, in brackets if it is binary and
-    /// `NEEDS_BRACKETS` is set.
-    fn display_term<const NEEDS_BRACKETS: bool>(
-        &self,
-        index: I,
-        f: &mut Formatter<'_>,
-    ) -> FmtResult {
-        use LLExpression::*;
-        debug_assert!(index < Index::from_usize(self.term_arena.len()));
-        match (self.term_arena[index.as_usize()]).into() {
-            Var(var_index) => {
-                debug_assert!(var_index < Index::from_usize(self.variable_dict.len()));
-                write!(f, "{}", self.variable_dict[var_index.as_usize()])
+/// A formula of a sequent, as a value that prints it in one-sided notation.
+#[derive(Clone, Copy, Debug)]
+pub struct Formula<'a> {
+    /// The sequent whose arena and atom names the formula lives in.
+    sequent: &'a Sequent,
+    /// The formula's root term.
+    id: TermId,
+}
+
+impl Sequent {
+    /// Returns the formula rooted at `id`, which must belong to this sequent,
+    /// as a value that prints it.
+    pub fn formula(&self, id: TermId) -> Formula<'_> {
+        debug_assert!(id.index() < self.terms.len());
+        Formula { sequent: self, id }
+    }
+
+    /// Writes the term at `id`, in brackets if it is binary and `brackets` is
+    /// set.
+    fn fmt_term(&self, id: TermId, f: &mut Formatter<'_>, brackets: bool) -> FmtResult {
+        use Term::*;
+        debug_assert!(id.index() < self.terms.len());
+        let term = self.terms[id.index()];
+        for k in term.subterms() {
+            debug_assert!(k < id);
+        }
+        let binary = |f: &mut Formatter<'_>, k: TermId, symbol: &str, l: TermId| {
+            if brackets {
+                write!(f, "(")?;
             }
-            DualVar(var_index) => {
-                debug_assert!(var_index < Index::from_usize(self.variable_dict.len()));
-                write!(f, "~{}", self.variable_dict[var_index.as_usize()])
+            self.fmt_term(k, f, true)?;
+            write!(f, " {symbol} ")?;
+            self.fmt_term(l, f, true)?;
+            if brackets {
+                write!(f, ")")?;
             }
+            Ok(())
+        };
+        match term {
+            Var(a) => write!(f, "{}", self.atom_name(a)),
+            DualVar(a) => write!(f, "~{}", self.atom_name(a)),
             One => write!(f, "1"),
             Bot => write!(f, "⊥"),
             Top => write!(f, "⊤"),
             Zero => write!(f, "0"),
-            Tensor(m, n) => {
-                debug_assert!(m < index);
-                debug_assert!(n < index);
-                if NEEDS_BRACKETS {
-                    write!(f, "(")?
-                }
-                self.display_term::<true>(m, f)?;
-                write!(f, " ⊗ ")?;
-                self.display_term::<true>(n, f)?;
-                if NEEDS_BRACKETS {
-                    write!(f, ")")?
-                }
-                Ok(())
-            }
-            Par(m, n) => {
-                debug_assert!(m < index);
-                debug_assert!(n < index);
-                if NEEDS_BRACKETS {
-                    write!(f, "(")?
-                }
-                self.display_term::<true>(m, f)?;
-                write!(f, " ⅋ ")?;
-                self.display_term::<true>(n, f)?;
-                if NEEDS_BRACKETS {
-                    write!(f, ")")?
-                }
-                Ok(())
-            }
-            With(m, n) => {
-                debug_assert!(m < index);
-                debug_assert!(n < index);
-                if NEEDS_BRACKETS {
-                    write!(f, "(")?
-                }
-                self.display_term::<true>(m, f)?;
-                write!(f, " & ")?;
-                self.display_term::<true>(n, f)?;
-                if NEEDS_BRACKETS {
-                    write!(f, ")")?
-                }
-                Ok(())
-            }
-            Plus(m, n) => {
-                debug_assert!(m < index);
-                debug_assert!(n < index);
-                if NEEDS_BRACKETS {
-                    write!(f, "(")?
-                }
-                self.display_term::<true>(m, f)?;
-                write!(f, " ⊕ ")?;
-                self.display_term::<true>(n, f)?;
-                if NEEDS_BRACKETS {
-                    write!(f, ")")?
-                }
-                Ok(())
-            }
-            Bang(m) => {
-                debug_assert!(m < index);
+            Tensor(k, l) => binary(f, k, "⊗", l),
+            Par(k, l) => binary(f, k, "⅋", l),
+            With(k, l) => binary(f, k, "&", l),
+            Plus(k, l) => binary(f, k, "⊕", l),
+            Bang(k) => {
                 write!(f, "!")?;
-                self.display_term::<true>(m, f)
+                self.fmt_term(k, f, true)
             }
-            Quest(m) => {
-                debug_assert!(m < index);
+            Quest(k) => {
                 write!(f, "?")?;
-                self.display_term::<true>(m, f)
+                self.fmt_term(k, f, true)
             }
         }
     }
 }
 
-impl<I: Index, L: Logic<I>> Display for Sequent<I, L> {
+impl Display for Formula<'_> {
+    /// Writes the formula with brackets around every binary subformula.
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        self.sequent.fmt_term(self.id, f, false)
+    }
+}
+
+impl Display for Sequent {
     /// Writes the sequent one-sided: `⊢` followed by its formulas, separated by
     /// commas.
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "⊢")?;
 
-        let mut it = self.term_ids.iter();
+        let mut it = self.roots.iter();
 
         if let Some(n) = it.next() {
             write!(f, " ")?;
-            self.display_term::<false>(*n, f)?;
+            self.fmt_term(*n, f, false)?;
         }
 
         for n in it {
             write!(f, ", ")?;
-            self.display_term::<false>(*n, f)?;
+            self.fmt_term(*n, f, false)?;
         }
         Ok(())
     }
