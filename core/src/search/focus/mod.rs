@@ -541,11 +541,12 @@ impl<'a> Engine<'a> {
                 kind => unreachable!("{kind:?} in a stable sequent"),
             }
         }
-        // A `0` has no rule, so only a `⊤` below some member can prove the
+        // A `0` has no rule, so only a `⊤` below some member of `Γ`, or
+        // below a member of `Θ` that a copy can bring in, can prove the
         // sequent: ⊢ 0, ⊤ ⊕ b is provable. (The spec calls a `0` in a
         // stable sequent fatal, which overlooks this.) With weakening the
         // `0` is discarded at a leaf like anything else.
-        if zero && !affine && !tally.absorbs() {
+        if zero && !affine && !tally.absorbs() && !theta.iter().any(|a| self.counts.absorbs(a)) {
             return Ok(None);
         }
         if let Some(node) = self.initial(theta, gamma, members, budget)? {
