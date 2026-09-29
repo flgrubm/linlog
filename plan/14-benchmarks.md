@@ -1,4 +1,4 @@
-# Step 13: benchmarks, LLTP input and the hard families
+# Step 14: benchmarks, LLTP input and the hard families
 
 You are working in the linlog repository. CLAUDE.md applies throughout: jj
 only (never git), thematic commits as soon as a unit is done, doc comments on
@@ -77,6 +77,6 @@ release mode with the table pasted into the report.
 
 - Thematic jj commits ("Read LLTP problems", "Generate the hard families",
   "Add the benchmark harness", "Record baseline results", …).
-- `plan/reports/13-benchmarks.md`: how to run, the baseline table, what the
+- `plan/reports/14-benchmarks.md`: how to run, the baseline table, what the
   numbers say about each engine, decisions, deviations, open questions, and
-  what step 14's candidates would have to beat.
+  what step 15's candidates would have to beat.

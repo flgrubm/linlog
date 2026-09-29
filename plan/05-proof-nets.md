@@ -22,7 +22,7 @@ every item, the verification table, no pushing. Read before you start:
 forest, a correctness checker independent of any search, sequentialization
 into a proof term that the step 2 checker accepts, and desequentialization
 of an MLL derivation into a net. Plus a textual representation of a net
-(for the CLI's `--format net` and for tests); its graphical form is step 10.
+(for the CLI's `--format net` and for tests); its graphical form is step 11.
 
 ## What to build
 

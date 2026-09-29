@@ -1,4 +1,4 @@
-# Step 10: SVG export of sequents, derivations and proof nets
+# Step 11: SVG export of sequents, derivations and proof nets
 
 You are working in the linlog repository. CLAUDE.md applies throughout: jj
 only (never git), thematic commits as soon as a unit is done, doc comments on
@@ -7,13 +7,15 @@ every item, the verification table, no pushing. Read before you start:
 - `plan/README.md` (D6a, D12) and every report in `plan/reports/`,
   especially `05-proof-nets.md` (the net structures and what they expose
   for drawing), `02-proofs.md` (the derivation view) and
-  `09-latex-typst.md` (symbol tables, bracketing; reuse them).
+  `10-latex-typst.md` (symbol tables, bracketing; reuse them).
 - `plan/notes/export-targets.md` § Crates for the `svg` crate.
 - `core/src/export/**`, `core/src/nets/**`, `core/src/proofs/**`.
 
 ## Goal
 
-`export::svg`: deterministic, dependency-light SVG for a sequent (one line of
+`export::svg`, behind the cargo feature `svg` (decision D14; on by default,
+enabled by the CLI), partial derivations with open goals included:
+deterministic, dependency-light SVG for a sequent (one line of
 text), a derivation (a proof tree) and a proof net (formula trees with axiom
 links), usable from the CLI (`--format svg` on `prove` and `seq print`, and
 for nets) and later from the web front end (a pure function from data to a
@@ -81,6 +83,6 @@ string). Readable at the default size, scalable, with the text selectable.
 - Thematic jj commits ("Add an SVG writer with a fixed-advance layout",
   "Draw derivations as SVG", "Draw proof nets as SVG", "Add net commands
   to the CLI", …).
-- `plan/reports/10-svg.md`: API, the layout rules, the visual check's
+- `plan/reports/11-svg.md`: API, the layout rules, the visual check's
   findings, decisions, deviations, open questions, and what the web front
   end will need (a pure function signature, the `Style` knobs).

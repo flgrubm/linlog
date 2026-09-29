@@ -24,16 +24,17 @@ amended (see "Review protocol"). `notes/` holds research the prompts rely on.
 | 6 | Proof-net search for MLL | `06-net-search.md` | Fable 5.1 | xhigh | 5 |
 | 7 | Exponentials: MELL and LL, affine mode | `07-exponentials.md` | Fable 5.1 | xhigh | 4 |
 | 8 | Intuitionistic mode: ILL fragments, additive fast path | `08-intuitionistic.md` | Fable 5.1 | xhigh | 6, 7 |
-| 9 | LaTeX and Typst export of sequents and derivations | `09-latex-typst.md` | Opus 5.5 | high | 8 |
-| 10 | SVG export of sequents, derivations and proof nets | `10-svg.md` | Opus 5.5 | high | 8 |
-| 11 | Rocq certificates | `11-certificates.md` | Fable 5.1 | high | 9 |
-| 12 | Parallel search | `12-parallel.md` | Fable 5.1 | xhigh | 8 |
-| 13 | Benchmarks, LLTP input, hard families | `13-benchmarks.md` | Opus 5.5 | high | 12 |
-| 13b | Performance pass on the focused engine, driven by 13's numbers | written after 13's review | Fable 5.1 | xhigh | 13 |
-| 14 | Later: MELL nets with boxes, essential nets, inverse method, Petri nets, Lambek, MALL nets | `14-later.md` | – | – | 13b |
+| 9 | Interactive proving: partial derivations, rule application, search from a goal | `09-interactive.md` | Fable 5.1 | xhigh | 8 |
+| 10 | LaTeX and Typst export of sequents and derivations | `10-latex-typst.md` | Opus 5.5 | high | 9 |
+| 11 | SVG export of sequents, derivations and proof nets | `11-svg.md` | Opus 5.5 | high | 9 |
+| 12 | Rocq certificates | `12-certificates.md` | Fable 5.1 | high | 10 |
+| 13 | Parallel search | `13-parallel.md` | Fable 5.1 | xhigh | 9 |
+| 14 | Benchmarks, LLTP input, hard families | `14-benchmarks.md` | Opus 5.5 | high | 13 |
+| 14b | Performance pass on the focused engine, driven by 14's numbers | written after 14's review | Fable 5.1 | xhigh | 14 |
+| 15 | Later: MELL nets with boxes, essential nets, inverse method, Petri nets, Lambek, MALL nets, the web front end | `15-later.md` | – | – | 14b |
 
-Steps 5–6 and 7 are independent of each other; 9, 10 and 12 are independent
-of each other. Everything else is in order.
+Steps 5–6 and 7 are independent of each other; 10, 11 and 13 are
+independent of each other. Everything else is in order.
 
 ### Why these models and efforts
 
@@ -52,16 +53,17 @@ what Opus at `xhigh`/`max` delivers.
 - **Fable 5.1 at `xhigh`** for every step whose correctness is subtle and
   whose mistakes propagate: the data model (1), the checker that anchors
   soundness (2), proof nets and their criterion (5), each search engine
-  (3, 6, 7, 8) and the parallel runtime (12). `max` is the knob to turn if a
+  (3, 6, 7, 8), the interactive state with its translation back to terms
+  (9) and the parallel runtime (13). `max` is the knob to turn if a
   step's review finds reasoning gaps; it was not chosen up front because it
   costs more on every turn.
-- **Fable 5.1 at `high`** for the certificate step (11): a long,
+- **Fable 5.1 at `high`** for the certificate step (12): a long,
   research-heavy session (Rocq, NanoYalla, nix) rather than a deep
   algorithmic one.
-- **Opus 5.5 at `high`** for plumbing and user-facing work (4, 9, 10, 13):
+- **Opus 5.5 at `high`** for plumbing and user-facing work (4, 10, 11, 14):
   clap, output formats, emitters, SVG layout and a benchmark harness. Set
   explicitly, since Opus 5.5 defaults to `medium`. Sonnet 5.5 at `xhigh` is
-  the cheaper alternative for 9, 10 and 13 if cost matters more than a
+  the cheaper alternative for 10, 11 and 14 if cost matters more than a
   first-pass finish.
 
 ### How the prompts are written
@@ -96,11 +98,12 @@ claude --model claude-fable-5-1 --effort xhigh --name step-05 ((open --raw plan/
 claude --model claude-fable-5-1 --effort xhigh --name step-06 ((open --raw plan/06-net-search.md) + "\n" + (open --raw plan/conduct.md))
 claude --model claude-fable-5-1 --effort xhigh --name step-07 ((open --raw plan/07-exponentials.md) + "\n" + (open --raw plan/conduct.md))
 claude --model claude-fable-5-1 --effort xhigh --name step-08 ((open --raw plan/08-intuitionistic.md) + "\n" + (open --raw plan/conduct.md))
-claude --model claude-opus-5-5 --effort high --name step-09 ((open --raw plan/09-latex-typst.md) + "\n" + (open --raw plan/conduct.md))
-claude --model claude-opus-5-5 --effort high --name step-10 ((open --raw plan/10-svg.md) + "\n" + (open --raw plan/conduct.md))
-claude --model claude-fable-5-1 --effort high --name step-11 ((open --raw plan/11-certificates.md) + "\n" + (open --raw plan/conduct.md))
-claude --model claude-fable-5-1 --effort xhigh --name step-12 ((open --raw plan/12-parallel.md) + "\n" + (open --raw plan/conduct.md))
-claude --model claude-opus-5-5 --effort high --name step-13 ((open --raw plan/13-benchmarks.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-09 ((open --raw plan/09-interactive.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort high --name step-10 ((open --raw plan/10-latex-typst.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort high --name step-11 ((open --raw plan/11-svg.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort high --name step-12 ((open --raw plan/12-certificates.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-13 ((open --raw plan/13-parallel.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort high --name step-14 ((open --raw plan/14-benchmarks.md) + "\n" + (open --raw plan/conduct.md))
 ```
 
 The aliases `fable` and `opus` also work for `--model`. The flags are
@@ -154,12 +157,12 @@ L1 at `u32` anyway, the memory that matters in search is bitsets and memo
 keys, which do not depend on index width, and the spec's `u64` bitset
 specialisation for `n ≤ 64` is the optimisation that pays. Two hedges: the
 occurrence index stays behind its single newtype so narrowing the forest
-later is a local change, and step 13's benchmarks decide with numbers
+later is a local change, and step 14's benchmarks decide with numbers
 whether to revisit.
 
 **D4. Module layout inside the `linlog` crate**, not eight crates as the
 spec proposes: the workspace stays `core/` and `cli/` (a `bench/` crate may
-come in step 11). Suggested modules, adjusted by the steps as they see fit:
+come in step 14). Suggested modules, adjusted by the steps as they see fit:
 `sequents` (arena, printing), `parse`, `serialize`, `fragment` (D2 and
 detection), `occurrences` (the forest of D5), `proofs` (terms, checker,
 derivations, rendering), `nets` (proof structures, the criterion, the two
@@ -199,7 +202,7 @@ reading the axiom links off the term). The checker's verdict together with a
 successful sequentialization is the net's correctness certificate: the
 resulting term passes the proof checker of D6. Nets exist for MLL with or
 without Mix, where they are canonical; MELL nets with boxes come later
-(step 14) and MALL nets are out of scope (non-canonical, exponentially
+(step 15) and MALL nets are out of scope (non-canonical, exponentially
 large). Search engines use whichever representation suits them; the
 conversions make every proof available in both.
 
@@ -220,7 +223,7 @@ whether it is a parameter or a sibling module). Proof-net search is
 | classical | MLL with units, MALL | focus (step 3) |
 | classical | MELL, LL | focus with exponentials and copy bound (step 7) |
 | affine | anything | focus with weakening and the supermultiset prune (step 7) |
-| intuitionistic | IMLL over `⊗ ⊸ 1` | embedding into net search (step 8), essential nets later (step 14) |
+| intuitionistic | IMLL over `⊗ ⊸ 1` | embedding into net search (step 8), essential nets later (step 15) |
 | intuitionistic | IMALL, IMELL, ILL, affine variants | two-sided focus (step 8) |
 
 **D9. Outcomes are three-valued.** `Proved(proof)`, `Unprovable` (only when
@@ -249,6 +252,29 @@ Fonts are declared, not measured: a monospace font with a fixed advance per
 character makes the layout exact without font metrics. No graphviz, no
 browser-side layout. The same layouts feed the LaTeX and Typst exports where
 a package needs coordinates (it does not for ebproof and curryst trees).
+
+**D13. Interactive proving is a partial derivation.** The state a client
+holds for step-by-step proving is a derivation of the standard calculus
+over the same occurrence forest, with open goals as leaves: the same
+sequent representation and rule names as the derivation view, applied by
+naming a goal, a formula position and a rule (with the choices some rules
+need, such as the split of a `⊗`). Search runs from any goal, not only the
+roots, and its result is grafted as a derivation. A completed state
+translates back into a proof term that the checker of D6 validates, so the
+interactive layer is trusted no more than an engine. The state has a
+stable JSON form, which is what a web client keeps between requests.
+
+**D14. Optional features.** Next to `parse` and `serialize`, the `linlog`
+crate gates the optional layers behind cargo features so that a client
+takes only what it ships: `interactive` (D13), `latex`, `typst`, `svg`,
+`rocq` and `parallel`. All are default features except `parallel`, which
+the CLI enables. Search, the checker, the derivation view and proof nets
+are unconditional: they are the crate. Once there are more than four
+features, the `features` check and the documented command become
+`cargo hack check --each-feature -p linlog` plus
+`cargo hack check --feature-powerset --depth 2 -p linlog` rather than the
+full powerset; the step that adds the fifth feature makes that change in
+`modules/checks.nix` and CLAUDE.md.
 
 ## Status
 
@@ -318,3 +344,27 @@ a package needs coordinates (it does not for ebproof and curryst trees).
   homepage on GitHub point at the Pages site. Follow-ups left open: the
   text renderer is slow on huge derivations (the export steps emit per
   inference instead), `check` could fall back to the file's mode.
+- 2026-09-29: step 5 reviewed and accepted. Seven commits, "Add proof
+  structures over the occurrence forest" to "Document proof nets"; all
+  checks pass including `nix flake check`; `--format net` tried by hand.
+  `ProofStructure` with O(1) `link`/`unlink`, the Danos–Regnier criterion
+  through Yeo's deletion test reduced to bridges (colours implicit),
+  witnesses for cycles and disconnections, sequentialization by the
+  splitting-tensor lemma, `from_proof`, text and JSON forms. A
+  fresh-context reviewer compared it with switching enumeration and Danos
+  contractibility on 413 745 structures with no disagreement. Accepted
+  decisions: no `ena` (a sixty-line union-find with an undo log), no stored
+  colours, `Scratch` explicit for the hot loop, links as a stack. The spec's
+  sequentialization test was wrong (deleting a `⊗` and counting components
+  under a switching cannot distinguish); the correction, with step 3's,
+  is now an "Errata" section at the top of the spec. Follow-ups left open:
+  `sequentialize` recurses (step 6 runs it on the search thread), the
+  witness isolation is quadratic on the error path, Guerrini's linear
+  criterion and sequentialization if profiles ask.
+- 2026-09-29: plan restructured on the author's request. Interactive
+  proving (D13) is new step 9 and the later steps moved up by one (10
+  LaTeX/Typst, 11 SVG, 12 certificates, 13 parallel, 14 benchmarks, 14b
+  performance, 15 later); optional cargo features (D14) gate the
+  interactive state and the exporters; prompts 7, 8, 10, 11, 12 and 15
+  amended for both. The CLI's code became the library `linlog_cli` with a
+  one-line binary so that rustdoc lists both crates in one tree.

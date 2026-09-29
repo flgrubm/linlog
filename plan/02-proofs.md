@@ -13,7 +13,7 @@ every item, the verification table, no pushing. Read before you start:
   two-sided engine), and "Cross-cutting engineering notes" ("Certificates
   first", "Testing strategy").
 - `plan/notes/export-targets.md`: how Click & coLLecT and Yalla represent
-  proofs. Ours must be translatable into both later (steps 9 and 11), which
+  proofs. Ours must be translatable into both later (steps 10 and 12), which
   fixes what the derivation view has to contain.
 - `.claude/rules/core.md` and the `core/src/**` step 1 left.
 

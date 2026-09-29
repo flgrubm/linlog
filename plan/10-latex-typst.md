@@ -1,4 +1,4 @@
-# Step 9: LaTeX and Typst export
+# Step 10: LaTeX and Typst export
 
 You are working in the linlog repository. CLAUDE.md applies throughout: jj
 only (never git), thematic commits as soon as a unit is done, doc comments on
@@ -19,7 +19,15 @@ every item, the verification table, no pushing. Read before you start:
 one-sided and intuitionistic two-sided) as LaTeX with ebproof and as Typst
 with curryst, as fragments to paste and as standalone documents that
 compile. `linlog prove --format latex|typst` and `linlog seq print --format
-latex|typst`. Proof nets are drawn in step 10 (SVG), not here.
+latex|typst`. Proof nets are drawn in step 11 (SVG), not here. Both
+emitters live behind cargo features `latex` and `typst` (decision D14), on
+by default and enabled by the CLI; step 9's partial derivations (open goals
+as leaves) render too, an open goal drawn as a leaf with a dotted bar and a
+mark. With `latex` and `typst` the crate has five features, so this step
+also replaces the full feature powerset by `cargo hack check
+--each-feature -p linlog` plus `--feature-powerset --depth 2 -p linlog` in
+`modules/checks.nix` and in CLAUDE.md's command list and verification
+table (decision D14).
 
 ## What to build
 
@@ -79,6 +87,6 @@ does not exist, pasted into the report.
 - Thematic jj commits ("Print formulas for LaTeX and Typst", "Export
   derivations with ebproof", "Export derivations with curryst", "Compile
   the export samples in nix", …).
-- `plan/reports/09-latex-typst.md`: API, the escaping rules, what the
+- `plan/reports/10-latex-typst.md`: API, the escaping rules, what the
   standalone documents need installed, decisions, deviations, open
-  questions, and what step 10 can reuse (the symbol tables, the bracketing).
+  questions, and what step 11 can reuse (the symbol tables, the bracketing).

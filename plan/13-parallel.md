@@ -1,4 +1,4 @@
-# Step 12: parallel search
+# Step 13: parallel search
 
 You are working in the linlog repository. CLAUDE.md applies throughout: jj
 only (never git), thematic commits as soon as a unit is done, doc comments on
@@ -26,7 +26,7 @@ the default under `--deterministic` and the reference in tests.
 
 ## What step 3 left you
 
-`plan/reports/03-focused-engine.md`, "For step 12": `Memo` is one type
+`plan/reports/03-focused-engine.md`, "For step 12" (now this step): `Memo` is one type
 with `get`/`insert` that a sharded map replaces; the stop closure polled per
 stable sequent is where the stop flag goes; `Engine` holds all state and its
 pools, so one engine per worker; there is no global.
@@ -81,5 +81,5 @@ sanitizer if the toolchain makes it easy; else say so.
 - Thematic jj commits ("Add the parallel runtime behind a feature",
   "Run the focused engine as cube-and-conquer", "Parallelize proof-net
   search", "Measure parallel speedups", …).
-- `plan/reports/12-parallel.md`: API and flags, the memo design under
+- `plan/reports/13-parallel.md`: API and flags, the memo design under
   concurrency, the speedup table, decisions, deviations, open questions.

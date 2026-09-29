@@ -8,7 +8,7 @@ every item, the verification table, no pushing. Read before you start:
   `plan/reports/`.
 - `proof-search-specifications.md`: "Intuitionistic fragments" in full
   (verdict, complexity, the two-sided focused engine specification,
-  pitfalls, data layout; the IMLL-Net essential-net engine is step 14, but
+  pitfalls, data layout; the IMLL-Net essential-net engine is step 15, but
   read it so nothing you build precludes it), "MLL variants" § "IMLL by
   embedding", "Other fragments" § "Additive-only LL", "Common
   infrastructure" (counts on the translation `⊢ Γ⊥, A`).
@@ -21,6 +21,10 @@ The dispatch in `search::prove_until` refuses intuitionistic mode with
 engine and `Additive`. The focused engine's report
 (`plan/reports/03-focused-engine.md`) describes the phases, the memo, the
 counts and the pools the two-sided engine should share rather than copy.
+
+Step 9 (interactive proving, decision D13) presents goals two-sided: the
+polarity of every occurrence (input or output) must be a query on the
+forest a goal can use, not something computed for the roots alone.
 
 ## Goal
 
@@ -42,7 +46,7 @@ fast path of D8.
    output-shaped; decide and document how the symmetric reading is handled).
    It returns the polarity of every occurrence (input or output), which is
    Lamarche's polarization and what the two-sided engine, the two-sided
-   printing and step 14's essential nets use. Extend `Fragment` naming with
+   printing and step 15's essential nets use. Extend `Fragment` naming with
    the intuitionistic fragment names (IMLL, IMALL, IMELL, ILL): step 1's
    report leaves the classical `Display` as is and asks for a mode-aware
    name (a method taking `Mode`, or a small wrapper type) that the CLI's
@@ -78,7 +82,7 @@ fast path of D8.
    sequents `Γ ⊢ A` with the ILL rule names (`⊸L`, `⊸R`, `⊗L`, `⊗R`,
    `&L₁`, `&L₂`, `&R`, `⊕L`, `⊕R₁`, `⊕R₂`, `1L`, `1R`, `0L`, `⊤R`, `!L`,
    `!R`, `!c`, `!w`, `ax`), mapped from the classical rules by the report's
-   table; rendering, JSON and the exports of steps 9 to 11 see the same view
+   table; rendering, JSON and the exports of steps 10 to 12 see the same view
    type.
 6. **Additive fast path** (`search::additive`): the memoized recursive
    procedure on subformula pairs for additive-only sequents with exactly two
@@ -121,5 +125,5 @@ fast path of D8.
   proof-net search", "Add the additive fast path", …).
 - `plan/reports/08-intuitionistic.md`: API, the shape rules as implemented,
   how the two-sided engine shares the classical one, decisions, deviations,
-  open questions, and what steps 9 to 11 (two-sided exports, ILL
-  certificates in Yalla's `ill`) and 14 (essential nets) must know.
+  open questions, and what steps 9 to 12 (interactive proving, two-sided exports, ILL
+  certificates in Yalla's `ill`) and 15 (essential nets) must know.

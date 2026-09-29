@@ -11,7 +11,7 @@ every item, the verification table, no pushing. Read before you start:
   (focused skeleton, count invariants, memoization contract), "MLL" (the
   "Fallback: MLL-Seq" subsection, "Pitfalls", "Data layout"), "MLL variants"
   (units, Mix), and "MALL" in full (MALL-Seq specification, interval counts,
-  pitfalls, data layout). The parallelization paragraphs are for step 12;
+  pitfalls, data layout). The parallelization paragraphs are for step 13;
   design so they remain possible (no global mutable state, memo behind a
   trait or a type that a sharded map can replace).
 - `.claude/rules/core.md`, `core/src/**`.
@@ -42,7 +42,7 @@ failed branches. `Top(o)` carries no context. `proof.check(mode)` in a
 like. Step 1 did not build the interval
 counts or the count equations: they are this step's. `submasks` takes at
 most 63 members: a `⊗` split over a larger context must not panic; decide
-what happens (the spec's lazy contexts are step 14 material, so an
+what happens (the spec's lazy contexts are step 15 material, so an
 `Unknown` outcome with a reason is acceptable, as is a count-pruned
 enumeration that does not need a `u64` mask). Atom-only sequents
 (`Fragment::EMPTY`) and every fragment up to MALL dispatch here.

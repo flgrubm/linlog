@@ -11,7 +11,7 @@ every item, the verification table, no pushing. Read before you start:
   specification: preprocessing, search, symmetry breaking; pitfalls; data
   layout), "MLL variants" (Mix), "Cross-cutting engineering notes"
   (differential testing, known-hard families). The parallelization
-  paragraph is for step 12: keep all search state per worker, no globals.
+  paragraph is for step 13: keep all search state per worker, no globals.
 - `.claude/rules/core.md`, `core/src/nets/**`, `core/src/search/**`.
 
 ## What step 3 left you
@@ -83,4 +83,4 @@ sample in release mode, and on the hard-family instance.
   engines on random sequents", …).
 - `plan/reports/06-net-search.md`: API, the pitfalls checklist with how
   each is handled, timings, decisions, deviations, open questions, and what
-  step 8 needs for the IMLL embedding and step 12 for cube-and-conquer.
+  step 8 needs for the IMLL embedding and step 13 for cube-and-conquer.

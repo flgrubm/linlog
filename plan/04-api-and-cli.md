@@ -109,7 +109,7 @@ then performance.
   where only the CLI needs it.
 - Keep `core`'s API free of CLI concepts (no clap types, no exit codes).
 - Do not implement engines or exports; wire what exists and leave clean
-  extension points for steps 5 to 11.
+  extension points for steps 5 to 12.
 
 ## Verification
 

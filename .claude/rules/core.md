@@ -300,7 +300,7 @@ and `Mode`). Its functions are the spec's rules: `asynchronous` (the phase
   Gray-code order (`submasks`), the empty submask first, two tallies moved
   per flip, and both sides must pass the counts before either premise is
   searched. More than 63 members is `Reason::ContextTooWide` for the whole
-  search, never a silent failure; the spec's lazy contexts (step 14) or a
+  search, never a silent failure; the spec's lazy contexts (step 15) or a
   branch-and-bound over the members are the ways past it.
 - **Mix** is tried last on a stable sequent, with the first member fixed on
   the left so each partition comes up once, the trivial partition skipped,
@@ -320,7 +320,7 @@ and `Mode`). Its functions are the spec's rules: `asynchronous` (the phase
   positive, so clause bodies whose atoms also appear as hypotheses are
   usually negative and their `⊗` splits are enumerated instead of forced;
   the 3-Partition refutation in the tests takes about a minute in release
-  mode for that reason. A bias override is step 13 material.
+  mode for that reason. A bias override is step 14 material.
 - **Every proof passes the checker**: `debug_assert!` in `search`, and
   every test that gets a proof calls `check`. The test-only generator
   `search/generate.rs` builds random provable sequents (and mutants of

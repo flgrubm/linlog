@@ -1,4 +1,4 @@
-# Step 11: proof certificates for Rocq
+# Step 12: proof certificates for Rocq
 
 You are working in the linlog repository. CLAUDE.md applies throughout: jj
 only (never git), thematic commits as soon as a unit is done, doc comments on
@@ -19,7 +19,8 @@ every item, the verification table, no pushing. Read before you start:
 
 ## Goal
 
-`export::rocq`: from a derivation, a Rocq script that certifies the sequent
+`export::rocq`, behind the cargo feature `rocq` (decision D14; on by
+default, enabled by the CLI): from a derivation, a Rocq script that certifies the sequent
 in a Yalla-based kernel, the way Click & coLLecT does with NanoYalla, for
 classical derivations (MLL, MALL, MELL, LL, with Mix where the kernel
 supports it) and, if Yalla's ILL development makes it reasonable, for
@@ -82,6 +83,6 @@ the Rocq check itself with its output pasted into the report.
 
 - Thematic jj commits ("Export derivations as Rocq scripts for NanoYalla",
   "Check the Rocq certificates in nix", …).
-- `plan/reports/11-certificates.md`: the kernel chosen and why, the
+- `plan/reports/12-certificates.md`: the kernel chosen and why, the
   permutation strategy, what is certified for which fragments and modes,
   the Lean/Agda assessment, decisions, deviations, open questions.

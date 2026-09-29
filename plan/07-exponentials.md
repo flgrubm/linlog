@@ -29,6 +29,15 @@ its `Rules` with exponentials. Keep the engine's shape: the functions are
 the spec's rules, the pools keep the hot path allocation-free, and the
 stop closure is polled per stable sequent.
 
+## Room for a later step
+
+Step 9 (interactive proving, `plan/09-interactive.md`, decision D13) will
+search from a goal: a multiset of occurrences of the forest, with `?`
+formulas in the linear zone and repeats where a contraction was applied by
+hand, instead of the roots. Give the engine one entry that takes such a
+goal, with the roots as the default, rather than baking the roots into the
+asynchronous phase; step 9 wires the rest.
+
 ## What step 2 fixed about the terms
 
 Read "How an engine constructs a proof" and "The dyadic-to-standard
@@ -133,4 +142,4 @@ size grows with the bound.
 - `plan/reports/07-exponentials.md`: API and option changes, the soundness
   arguments in a few sentences each, timings, decisions, deviations, open
   questions, what step 8 (two-sided engine reuses the dyadic machinery) and
-  step 12 (memo with bounds under concurrency) must know.
+  step 13 (memo with bounds under concurrency) must know.
