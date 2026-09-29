@@ -174,7 +174,9 @@ that cannot repeat the engine's mistakes. Engines only call `Proof::check`.
   `check.rs`'s `accepts_every_rule`, so keep them when the checker changes.
 - `CheckError` reports ids, not formulas: `node`, its `rule`, the derived
   `premises` as `Dyadic` sequents and a `Problem`. `Display` prints ids too;
-  a front end that wants formulas has the forest.
+  `describe(&forest)` prints the same message with formulas (nodes keep
+  their ids), which is what the CLI shows. Both go through one writer
+  (`CheckError::write`), so a new `Problem` gets one arm.
 
 ## The derivation view
 

@@ -68,9 +68,18 @@ impl Display for Dyadic {
     /// Writes `⊢ Θ ; Γ` with the zones as ids, omitting `Θ ;` when it is
     /// empty, and `…` after `Γ` when anything more is allowed.
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        self.write(f, None)
+    }
+}
+
+impl Dyadic {
+    /// Writes the sequent as [`Display`] does, with formulas instead of ids
+    /// when a forest is given.
+    fn write(&self, f: &mut Formatter<'_>, forest: Option<&Forest>) -> FmtResult {
         let list = |f: &mut Formatter<'_>, ids: &[OccId]| {
-            for (i, o) in ids.iter().enumerate() {
-                write!(f, "{}{}", if i == 0 { " " } else { ", " }, o.get())?;
+            for (i, &o) in ids.iter().enumerate() {
+                f.write_str(if i == 0 { " " } else { ", " })?;
+                occurrence(f, forest, o)?;
             }
             Ok(())
         };
@@ -88,6 +97,14 @@ impl Display for Dyadic {
             })?;
         }
         Ok(())
+    }
+}
+
+/// Writes an occurrence as its id, or as its formula when a forest is given.
+fn occurrence(f: &mut Formatter<'_>, forest: Option<&Forest>, o: OccId) -> FmtResult {
+    match forest {
+        Some(forest) => write!(f, "{}", forest.formula(o)),
+        None => write!(f, "{}", o.get()),
     }
 }
 
@@ -145,33 +162,92 @@ impl Display for CheckError {
     /// from 0, 1) with premises ⊢ 0, 3 and ⊢ 3, 4: premise 0 lacks
     /// occurrence 2`.
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "node {} ({})", self.node.get(), self.rule)?;
+        self.write(f, None)
+    }
+}
+
+impl CheckError {
+    /// Returns the error for display with formulas instead of occurrence
+    /// ids, read from `forest`, the forest of the proof that failed; the
+    /// nodes keep their ids. For instance `node 2 (⊗ on A ⊗ ~B from 0, 1)
+    /// with premises ⊢ ~A, ~B and ⊢ ~B, B: premise 0 lacks A`.
+    pub fn describe<'a>(&'a self, forest: &'a Forest) -> Described<'a> {
+        Described {
+            error: self,
+            forest,
+        }
+    }
+
+    /// Writes the error as [`Display`] does, with formulas instead of ids
+    /// when a forest is given.
+    fn write(&self, f: &mut Formatter<'_>, forest: Option<&Forest>) -> FmtResult {
+        write!(f, "node {} ({}", self.node.get(), self.rule.name())?;
+        for (i, o) in self.rule.occurrences().enumerate() {
+            f.write_str(if i == 0 { " on " } else { ", " })?;
+            occurrence(f, forest, o)?;
+        }
+        for (i, p) in self.rule.premises().enumerate() {
+            write!(f, "{}{}", if i == 0 { " from " } else { ", " }, p.get())?;
+        }
+        f.write_str(")")?;
         for (i, p) in self.premises.iter().enumerate() {
-            write!(
-                f,
-                "{}{p}",
-                match i {
-                    0 => " with premises ",
-                    _ => " and ",
-                }
-            )?;
+            f.write_str(if i == 0 { " with premises " } else { " and " })?;
+            p.write(f, forest)?;
         }
         f.write_str(": ")?;
         use Problem::*;
         match &self.problem {
-            Forbidden => write!(f, "the mode forbids the rule"),
-            Intuitionistic => write!(f, "intuitionistic proofs cannot be checked yet"),
-            Kind(o) => write!(f, "occurrence {} is not what the rule acts on", o.get()),
-            NotDual => write!(f, "the literals are not an atom and its negation"),
+            Forbidden => f.write_str("the mode forbids the rule"),
+            Intuitionistic => f.write_str("intuitionistic proofs cannot be checked yet"),
+            Kind(o) => {
+                if forest.is_none() {
+                    f.write_str("occurrence ")?;
+                }
+                occurrence(f, forest, *o)?;
+                f.write_str(" is not what the rule acts on")
+            }
+            NotDual => f.write_str("the literals are not an atom and its negation"),
             Missing {
                 premise,
-                occurrence,
-            } => write!(f, "premise {premise} lacks occurrence {}", occurrence.get()),
-            NotEmpty => write!(f, "the linear zone is not empty"),
-            Differ => write!(f, "the premises differ"),
-            NotUnderQuest(o) => write!(f, "occurrence {} is not under a ?", o.get()),
-            Conclusion(d) => write!(f, "the proof concludes {d}, not the sequent"),
+                occurrence: o,
+            } => {
+                write!(f, "premise {premise} lacks ")?;
+                if forest.is_none() {
+                    f.write_str("occurrence ")?;
+                }
+                occurrence(f, forest, *o)
+            }
+            NotEmpty => f.write_str("the linear zone is not empty"),
+            Differ => f.write_str("the premises differ"),
+            NotUnderQuest(o) => {
+                if forest.is_none() {
+                    f.write_str("occurrence ")?;
+                }
+                occurrence(f, forest, *o)?;
+                f.write_str(" is not under a ?")
+            }
+            Conclusion(d) => {
+                f.write_str("the proof concludes ")?;
+                d.write(f, forest)?;
+                f.write_str(", not the sequent")
+            }
         }
+    }
+}
+
+/// A [`CheckError`] displayed with formulas, as [`CheckError::describe`]
+/// returns it.
+pub struct Described<'a> {
+    /// The error.
+    error: &'a CheckError,
+    /// The forest of the proof that failed.
+    forest: &'a Forest,
+}
+
+impl Display for Described<'_> {
+    /// Writes the error with formulas instead of occurrence ids.
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        self.error.write(f, Some(self.forest))
     }
 }
 
@@ -861,6 +937,14 @@ mod tests {
             p.check(Mode::CLASSICAL).unwrap_err().to_string(),
             "node 2 (⊗ on 1 from 1, 0) with premises ⊢ 3, 4 and ⊢ 0, 2: \
              premise 0 lacks occurrence 2"
+        );
+        assert_eq!(
+            p.check(Mode::CLASSICAL)
+                .unwrap_err()
+                .describe(p.forest())
+                .to_string(),
+            "node 2 (⊗ on A ⊗ ~B from 1, 0) with premises ⊢ ~B, B and ⊢ ~A, A: \
+             premise 0 lacks A"
         );
         // ⊢ ?~A, A with the ? step missing: a dyadic sequent with Θ.
         let p = proof("!A |- A", vec![Ax(o(1), o(2)), Copy(o(1), n(0))]);

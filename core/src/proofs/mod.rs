@@ -24,7 +24,7 @@ mod fmt;
 /// Multisets of occurrence ids.
 mod multiset;
 
-pub use check::{CheckError, Dyadic, Problem};
+pub use check::{CheckError, Described, Dyadic, Problem};
 pub use derivation::{Derivation, InfId, Inference, Rule};
 
 use crate::Error;
