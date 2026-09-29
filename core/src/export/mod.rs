@@ -2,8 +2,8 @@
 // Licensed under the EUPL
 
 //! Export of sequents and derivations: to LaTeX with the `ebproof` package
-//! ([`latex`](crate::export::latex), feature `latex`), and sequents to
-//! Typst ([`typst`](crate::export::typst), feature `typst`).
+//! ([`latex`](crate::export::latex), feature `latex`) and to Typst with the
+//! `curryst` package ([`typst`](crate::export::typst), feature `typst`).
 //! Every function is a pure function of its input returning the text, as a
 //! fragment to paste or as a standalone document
 //! ([`Form`](crate::export::Form)); the output is deterministic.

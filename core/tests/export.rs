@@ -33,11 +33,16 @@ fn snapshot(name: &str, actual: &str) {
     assert_eq!(actual, expected.trim_end_matches('\n'), "{name}");
 }
 
-/// Pins a derivation as the snapshot `name.tex`.
+/// Pins a derivation in both targets as the snapshots `name.tex` and
+/// `name.typ`.
 fn pin(name: &str, derivation: &Derivation) {
     snapshot(
         &format!("{name}.tex"),
         &latex::derivation(derivation, Form::Standalone),
+    );
+    snapshot(
+        &format!("{name}.typ"),
+        &typst::derivation(derivation, Form::Standalone),
     );
 }
 
@@ -57,8 +62,8 @@ fn pin_proof(name: &str, input: &str, mode: Mode) {
     pin(name, &derivation.unwrap());
 }
 
-/// Derivations of each fragment, one-sided and two-sided, as ebproof
-/// trees.
+/// Derivations of each fragment, one-sided and two-sided, as ebproof and
+/// curryst trees.
 #[test]
 fn derivations() {
     pin_proof("mll", "A * B |- B * A", Mode::CLASSICAL);
@@ -68,7 +73,7 @@ fn derivations() {
 }
 
 /// An open goal of a proof in progress is its sequent under vertical dots,
-/// with no inference line.
+/// with no inference line, in both targets.
 #[test]
 fn open_goal() {
     let sequent: Sequent = "A, A -o B |- B".parse().unwrap();
