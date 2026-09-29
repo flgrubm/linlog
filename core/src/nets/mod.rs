@@ -19,6 +19,8 @@
 
 /// The coloured structure graph and the criterion's tests on it.
 mod graph;
+/// From a proof net to a proof term.
+mod sequentialize;
 /// The `⅋`-free skeleton as a union-find with undo.
 mod skeleton;
 
