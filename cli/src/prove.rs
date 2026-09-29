@@ -7,7 +7,7 @@ use crate::{Status, catch_interrupt, interrupted};
 use anyhow::{Context, Result, anyhow, bail};
 use linlog::proofs::Problem;
 use linlog::search::{Options, Outcome, Reason, Statistics, Verdict, prove_until};
-use linlog::{Mode, Proof};
+use linlog::{Error, Fragment, Mode, Proof, ProofStructure, Sequent};
 use std::fmt::Write;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -67,15 +67,37 @@ fn derivation(proof: &Proof) -> Result<String> {
         .map_err(|e| anyhow!("the proof is invalid: {}", e.describe(proof.forest())))
 }
 
+/// Returns the proof net of a proof as text, or why its links are not
+/// one.
+fn net(proof: &Proof, mode: Mode) -> Result<String> {
+    Ok(ProofStructure::from_proof(proof, mode.mix)?.to_string())
+}
+
+/// Fails unless proof nets exist for the sequent in the mode: unit-free
+/// MLL, classical, with or without Mix.
+fn nets_exist(sequent: &Sequent, mode: Mode) -> Result<()> {
+    if mode.intuitionistic || mode.affine {
+        bail!("proof nets exist in classical mode only, with or without --mix, not in {mode} mode");
+    }
+    let fragment = sequent.fragment();
+    if !Fragment::MLL.contains(fragment) {
+        return Err(Error::NetFragment(fragment).into());
+    }
+    Ok(())
+}
+
 /// Runs `prove`: reads the sequent, searches on a large stack, and prints
-/// the verdict line, the derivation and the statistics, or the outcome as
-/// JSON.
+/// the verdict line, the derivation or the proof net and the statistics,
+/// or the outcome as JSON.
 pub(crate) fn prove(args: &ProveArgs) -> Result<Status> {
     if args.copies.is_some() {
         bail!("--copies bounds the copies of ? formulas, which no engine searches yet");
     }
     let sequent = args.input.sequent()?;
     let mode = args.mode.mode();
+    if args.output.format == Format::Net {
+        nets_exist(&sequent, mode)?;
+    }
     let options = Options::default()
         .memo_limit(args.memo_limit)
         .recursion_limit(args.recursion_limit)
@@ -107,6 +129,7 @@ pub(crate) fn prove(args: &ProveArgs) -> Result<Status> {
         let elapsed = start.elapsed();
         let derivation = match (&outcome.verdict, format, quiet) {
             (Verdict::Proved(proof), Format::Text, false) => Some(derivation(proof)?),
+            (Verdict::Proved(proof), Format::Net, false) => Some(net(proof, mode)?),
             _ => None,
         };
         anyhow::Ok((outcome, stop, elapsed, derivation))
@@ -114,7 +137,7 @@ pub(crate) fn prove(args: &ProveArgs) -> Result<Status> {
 
     let text = match format {
         Format::Json => serde_json::to_string(&outcome)?,
-        Format::Text => {
+        Format::Text | Format::Net => {
             let mut text = verdict_line(&outcome, args.fragment.is_some(), stop);
             if let Some(derivation) = derivation {
                 write!(text, "\n{derivation}")?;
@@ -203,10 +226,14 @@ fn check_text(proof: &Proof, mode: Mode, format: Format, quiet: bool) -> Result<
             "error": result.as_ref().err().map(|e| e.describe(proof.forest()).to_string()),
         })
         .to_string(),
-        Format::Text => {
+        Format::Text | Format::Net => {
             let sequent = proof.sequent();
             match &result {
                 Ok(()) if quiet => format!("valid proof of {sequent} ({mode})"),
+                Ok(()) if format == Format::Net => {
+                    nets_exist(sequent, mode)?;
+                    format!("valid proof of {sequent} ({mode})\n{}", net(proof, mode)?)
+                }
                 Ok(()) => format!("valid proof of {sequent} ({mode})\n{}", derivation(proof)?),
                 Err(e) => format!(
                     "invalid proof of {sequent} ({mode}): {}",

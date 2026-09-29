@@ -399,6 +399,32 @@ impl ProofStructure {
     }
 }
 
+impl Display for ProofStructure {
+    /// Writes the sequent, then one line per link as `~A[0] — A[2]`, each
+    /// literal with its occurrence id, the links ordered by their first
+    /// id, then the verdict of the criterion: `proof net`, `proof net with
+    /// Mix`, or `not a proof net: ` and the reason with formulas. No
+    /// trailing newline.
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        writeln!(f, "{}", self.sequent())?;
+        let mut links: Vec<(OccId, OccId)> = self
+            .links
+            .iter()
+            .map(|&(x, y)| (x.min(y), x.max(y)))
+            .collect();
+        links.sort_unstable();
+        for (x, y) in links {
+            let (fx, fy) = (self.forest.formula(x), self.forest.formula(y));
+            writeln!(f, "{fx}[{}] — {fy}[{}]", x.get(), y.get())?;
+        }
+        match self.is_correct() {
+            Ok(()) if self.mix => f.write_str("proof net with Mix"),
+            Ok(()) => f.write_str("proof net"),
+            Err(e) => write!(f, "not a proof net: {}", e.describe(&self.forest)),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -546,13 +572,57 @@ mod tests {
                 let outcome = prove(&s, mode, &Options::default()).unwrap();
                 let proof = outcome.verdict.proof().expect("the sequent is provable");
                 assert_eq!(proof.check(mode), Ok(()), "{text:?}");
-                let net = ProofStructure::from_proof(proof, mix).unwrap_or_else(|e| panic!("{text:?}: {e}"));
-                let back = net.sequentialize().unwrap_or_else(|e| panic!("{text:?}: {e}"));
+                let net = ProofStructure::from_proof(proof, mix)
+                    .unwrap_or_else(|e| panic!("{text:?}: {e}"));
+                let back = net
+                    .sequentialize()
+                    .unwrap_or_else(|e| panic!("{text:?}: {e}"));
                 assert_eq!(back.check(mode), Ok(()), "{text:?}");
                 let again = ProofStructure::from_proof(&back, mix).unwrap();
                 assert_eq!(links(&again), links(&net), "{text:?}");
             }
         }
+    }
+
+    /// The text form lists the sequent, the links with their positions and
+    /// the verdict, with formulas in the reason when there is one.
+    #[cfg(feature = "parse")]
+    #[test]
+    fn text_form() {
+        let net = ProofStructure::from_links(
+            forest("A, A -o B |- B"),
+            false,
+            &[(o(2), o(0)), (o(3), o(4))],
+        )
+        .unwrap();
+        assert_eq!(
+            net.to_string(),
+            "⊢ ~A, A ⊗ ~B, B\n~A[0] — A[2]\n~B[3] — B[4]\nproof net"
+        );
+        let mut net = ProofStructure::new(forest("|- A par B, ~A, ~B"), true).unwrap();
+        net.link(o(1), o(3));
+        assert_eq!(
+            net.to_string(),
+            "⊢ A ⅋ B, ~A, ~B\nA[1] — ~A[3]\nnot a proof net: literal B[2] has no axiom link"
+        );
+        net.link(o(2), o(4));
+        assert!(net.to_string().ends_with("\nproof net with Mix"));
+        let net = ProofStructure::from_links(forest("|- A * ~A"), false, &[(o(1), o(2))]).unwrap();
+        assert!(
+            net.to_string().ends_with(
+                "not a proof net: a switching cycle runs through A ⊗ ~A[0], A[1], ~A[2]"
+            )
+        );
+        let net = ProofStructure::from_links(
+            forest("|- A par B, ~A, ~B"),
+            false,
+            &[(o(1), o(3)), (o(2), o(4))],
+        )
+        .unwrap();
+        assert!(net.to_string().ends_with(
+            "not a proof net: every switching falls into 2 parts; keeping every left premise, \
+             they are {A ⅋ B[0], ~A[3]} and {B[2], ~B[4]}"
+        ));
     }
 
     /// The links of a structure as sorted pairs, for comparing nets.
@@ -579,7 +649,10 @@ mod tests {
             (vec![(o(2), o(0))], NetError::NotLiteral(o(2))),
             (vec![(o(0), o(4))], NetError::NotDual(o(0), o(4))),
             (vec![(o(1), o(3))], NetError::NotDual(o(1), o(3))),
-            (vec![(o(0), o(1)), (o(0), o(3))], NetError::LinkedTwice(o(0))),
+            (
+                vec![(o(0), o(1)), (o(0), o(3))],
+                NetError::LinkedTwice(o(0)),
+            ),
         ] {
             match ProofStructure::from_links(f(), false, &links) {
                 Err(Error::InvalidNet(e)) => assert_eq!(e, error, "{links:?}"),

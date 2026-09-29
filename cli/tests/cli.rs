@@ -116,6 +116,41 @@ fn check_reads_what_prove_writes() {
     );
 }
 
+/// `--format net` prints the proof net of a proof after the verdict line,
+/// for `prove` and for `check`, and is refused outside unit-free MLL and
+/// classical mode.
+#[test]
+fn net_format() {
+    let (status, out, _) = linlog(&["prove", "--format", "net", "A, A -o B |- B"], "");
+    assert_eq!(status, 0);
+    assert_eq!(
+        out,
+        "provable (MLL, classical, focus engine)\n\
+         ⊢ ~A, A ⊗ ~B, B\n\
+         ~A[0] — A[2]\n\
+         ~B[3] — B[4]\n\
+         proof net\n"
+    );
+    let (_, json, _) = linlog(&["prove", "--format", "json", "A, A -o B |- B"], "");
+    let (status, out, _) = linlog(&["check", "--format", "net"], &json);
+    assert_eq!(status, 0);
+    assert!(out.ends_with("~B[3] — B[4]\nproof net\n"), "{out}");
+    for (args, error) in [
+        (
+            &["prove", "--format", "net", "A & B |- A"][..],
+            "proof nets exist for MLL without units only, not for ALL",
+        ),
+        (
+            &["prove", "--format", "net", "--affine", "A |- A"],
+            "proof nets exist in classical mode only",
+        ),
+    ] {
+        let (status, out, err) = linlog(args, "");
+        assert_eq!((status, out.as_str()), (2, ""), "{args:?}");
+        assert!(err.contains(error), "{args:?}: {err}");
+    }
+}
+
 /// `seq` prints a sequent one-sided, as JSON that it reads back, and its
 /// fragment.
 #[test]

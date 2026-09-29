@@ -223,6 +223,11 @@ pub(crate) enum Format {
     /// One JSON object: verdict, fragment, mode, engine, statistics, and the
     /// proof, which `check` reads
     Json,
+    /// The verdict on one line, then the proof net of the proof: the
+    /// sequent, its axiom links as pairs of literals with their occurrence
+    /// numbers, and the verdict of the correctness criterion; for MLL
+    /// without units, in classical mode with or without Mix
+    Net,
 }
 
 /// The fragments `--fragment` names.
