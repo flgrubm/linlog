@@ -146,9 +146,13 @@ const OUT: u8 = 2;
 /// sequent two-sided, `Γ ⊢ A`, with intuitionistic formulas.
 ///
 /// The reading is deterministic. A root that can only be a goal is the
-/// goal; otherwise the last root, in id order, that can be one (a formula
-/// built from `⊤` and `0` alone can stand on either side, and the parser
-/// numbers the succedent after the hypotheses). Inside a
+/// goal; otherwise the last root, in id order, that can be one. Only a
+/// formula built from `⊤` and `0` alone can stand on either side, and for
+/// those the written succedent is not recoverable: the arena keeps its
+/// roots sorted by term, not in the order they were written, so `0, ⊤ ⊢ ⊤`
+/// reads as `0, 0 ⊢ 0`. Both readings of such a sequent are provable or
+/// neither is, so the verdict does not depend on the choice, only the
+/// two-sided print does. Inside a
 /// formula the only choice is which factor of an implication is the
 /// antecedent, `⅋` in output position being `A ⊸ B` for `A⊥ ⅋ B` and `⊗` in
 /// input position `A ⊗ B⊥`: the left factor is the antecedent when that

@@ -79,6 +79,17 @@ pub enum Error {
         /// The mode the search was asked for.
         mode: Mode,
     },
+    /// The additive engine, forced by the options, decides only sequents of
+    /// exactly two additive-only formulas.
+    #[error(
+        "the additive engine decides a sequent of two additive-only formulas, not {roots} formulas of {fragment}"
+    )]
+    NotAdditive {
+        /// The fragment the sequent was searched in.
+        fragment: Fragment,
+        /// How many formulas the sequent has.
+        roots: usize,
+    },
     /// No engine handles the fragment in the mode yet.
     #[error("no engine for {fragment} in {mode} mode yet")]
     NoEngine {

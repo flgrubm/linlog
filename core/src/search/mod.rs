@@ -5,8 +5,10 @@
 //! dispatch on fragment and mode, and one submodule per engine: proof-net
 //! search for unit-free MLL, the focused sequent engine for everything
 //! else, one-sided in classical mode and two-sided in intuitionistic mode,
-//! and later the additive fast path.
+//! and the additive fast path for two additive-only formulas.
 
+/// The additive fast path.
+pub mod additive;
 /// The focused sequent engine.
 pub mod focus;
 /// Random provable sequents for the tests.
@@ -36,8 +38,9 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 /// ([`Error::NoEngine`]); the net engine outside unit-free MLL
 /// ([`Error::NetFragment`]) and in affine mode ([`Error::NetMode`]); the
 /// focus engine in intuitionistic mode and the two-sided engine in
-/// classical mode ([`Error::EngineMode`]); and a sequent with more
-/// subformula occurrences than a forest can index
+/// classical mode ([`Error::EngineMode`]); the additive engine on anything
+/// but two additive-only formulas ([`Error::NotAdditive`]); and a sequent
+/// with more subformula occurrences than a forest can index
 /// ([`Error::TooManyOccurrences`]).
 ///
 /// # Examples
@@ -109,11 +112,11 @@ pub fn prove_until(
         Some(asserted) => asserted,
         None => detected,
     };
-    // The dispatch: unit-free MLL with mostly distinct atoms goes to the net
-    // engine (in intuitionistic mode by the embedding of IMLL into MLL),
-    // every other fragment, and every fragment in affine mode, to the
-    // focused engine, one-sided or two-sided by the mode. Mix has no
-    // intuitionistic form.
+    // The dispatch: two additive-only formulas go to the additive path;
+    // unit-free MLL with mostly distinct atoms to the net engine (in
+    // intuitionistic mode by the embedding of IMLL into MLL); every other
+    // fragment, and every fragment in affine mode, to the focused engine,
+    // one-sided or two-sided by the mode. Mix has no intuitionistic form.
     if mode.intuitionistic && mode.mix {
         return Err(Error::NoEngine { fragment, mode });
     }
@@ -124,8 +127,13 @@ pub fn prove_until(
         None
     };
     let is_mll = Fragment::MLL.contains(fragment);
+    // Two formulas of the additive fragment; by default only when some
+    // additive occurs, since atoms alone are the net engine's.
+    let is_additive = Fragment::ALL.contains(fragment) && forest.roots().len() == 2;
     let engine = options.engine.unwrap_or({
-        if is_mll && !mode.affine && prefers_net(&forest) {
+        if is_additive && !fragment.is_empty() {
+            Engine::Additive
+        } else if is_mll && !mode.affine && prefers_net(&forest) {
             Engine::Net
         } else if mode.intuitionistic {
             Engine::TwoSided
@@ -139,6 +147,12 @@ pub fn prove_until(
         Engine::Focus if mode.intuitionistic => return Err(Error::EngineMode { engine, mode }),
         Engine::TwoSided if !mode.intuitionistic => {
             return Err(Error::EngineMode { engine, mode });
+        }
+        Engine::Additive if !is_additive => {
+            return Err(Error::NotAdditive {
+                fragment,
+                roots: forest.roots().len(),
+            });
         }
         _ => {}
     }
@@ -155,6 +169,10 @@ pub fn prove_until(
             (verdict, statistics, None)
         }
         Engine::Net => net::search(&forest, mode, options, &mut stop),
+        Engine::Additive => {
+            let (verdict, statistics) = additive::search(&forest, mode, options, &mut stop);
+            (verdict, statistics, None)
+        }
     };
     Ok(Outcome {
         verdict,
@@ -201,15 +219,19 @@ pub enum Engine {
     /// The focused sequent engine of [`focus`] two-sided, keeping one goal
     /// on every branch: intuitionistic mode.
     TwoSided,
+    /// The fast path of [`additive`] for two additive-only formulas, in
+    /// every mode.
+    Additive,
 }
 
 impl Display for Engine {
-    /// Writes the engine's name: `focus`, `net` or `two-sided`.
+    /// Writes the engine's name: `focus`, `net`, `two-sided` or `additive`.
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Engine::Focus => f.write_str("focus"),
             Engine::Net => f.write_str("net"),
             Engine::TwoSided => f.write_str("two-sided"),
+            Engine::Additive => f.write_str("additive"),
         }
     }
 }
@@ -419,13 +441,14 @@ impl Display for Reason {
 
 /// What a search cost. The focused engine counts stable sequents, memo use
 /// and splits; the net engine counts literals chosen, links and exact
-/// tests; the other counters stay zero.
+/// tests; the additive path counts pairs of subformulas; the other
+/// counters stay zero.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Statistics {
     /// The nodes of the search: the stable sequents the focused engine
-    /// visited, memo hits included, or the literals the net engine chose a
-    /// partner for.
+    /// visited, memo hits included, the literals the net engine chose a
+    /// partner for, or the pairs of subformulas the additive path decided.
     pub nodes: u64,
     /// The visits answered from the memo.
     pub memo_hits: u64,
@@ -462,8 +485,9 @@ mod tests {
             ("a * a |- a * a", Fragment::MLL, Engine::Net),
             ("a * a * a |- a * a * a", Fragment::MLL, Engine::Focus),
             ("|- 1, bot", Fragment::MULTIPLICATIVE_UNITS, Engine::Focus),
-            ("|- a & b, ~a + ~b", Fragment::ADDITIVES, Engine::Focus),
-            ("|- top, 0", Fragment::ADDITIVE_UNITS, Engine::Focus),
+            ("|- a & b, ~a + ~b", Fragment::ADDITIVES, Engine::Additive),
+            ("|- top, 0", Fragment::ADDITIVE_UNITS, Engine::Additive),
+            ("|- top, a, b", Fragment::ADDITIVE_UNITS, Engine::Focus),
             ("|- (a * top) + 1, ~a, bot", Fragment::MALL, Engine::Focus),
         ] {
             let outcome = prove(&sequent(input), Mode::CLASSICAL, &Options::default()).unwrap();
@@ -586,7 +610,8 @@ mod tests {
             ("a, a -o b |- b", Fragment::MLL, Engine::Net),
             ("a * a * a |- a * a * a", Fragment::MLL, Engine::TwoSided),
             ("1 |- 1", Fragment::MULTIPLICATIVE_UNITS, Engine::TwoSided),
-            ("a & b |- a", Fragment::ADDITIVES, Engine::TwoSided),
+            ("a & b |- a", Fragment::ADDITIVES, Engine::Additive),
+            ("a & b, 0 |- a", Fragment::ALL, Engine::TwoSided),
             (
                 "!a |- a * a",
                 Fragment::MLL | Fragment::EXPONENTIALS,
@@ -630,6 +655,77 @@ mod tests {
         let outcome = prove(&sequent("a, a -o b |- b"), i, &two_sided).unwrap();
         assert_eq!(outcome.engine, Engine::TwoSided);
         assert!(outcome.verdict.proof().is_some());
+        let additive = Options::default().engine(Some(Engine::Additive));
+        let error = prove(&sequent("a & b, c |- a"), i, &additive).unwrap_err();
+        assert!(matches!(error, Error::NotAdditive { .. }));
+        assert_eq!(
+            error.to_string(),
+            "the additive engine decides a sequent of two additive-only formulas, not 3 formulas of ALL"
+        );
+    }
+
+    /// IMLL by embedding: on generated intuitionistic sequents over `⊗` and
+    /// `⊸` and their mutants, where the dispatch picks the net engine on the
+    /// one-sided sequent, the two-sided engine gives the same verdict, and
+    /// every net-engine proof passes the intuitionistic checker (every
+    /// sequent of a cut-free MLL proof of an intuitionistic sequent has one
+    /// goal).
+    #[test]
+    fn embedding_agrees_with_the_two_sided_engine() {
+        use crate::search::generate::{self, IllRules, Rng};
+        let i = Mode::INTUITIONISTIC;
+        let rules = IllRules {
+            units: false,
+            additives: false,
+            zero: false,
+            exponentials: false,
+        };
+        let mut rng = Rng::new(7);
+        let (mut compared, mut provable) = (0, 0);
+        for _ in 0..200 {
+            let budget = 2 + rng.below(8);
+            let generate::Ill {
+                mut hypotheses,
+                goal,
+                ..
+            } = generate::ill(&mut rng, rules, 3, budget);
+            hypotheses.push(goal);
+            for mutated in [false, true] {
+                if mutated && !generate::mutate(&mut rng, &mut hypotheses, 3) {
+                    continue;
+                }
+                let goal = hypotheses.last().unwrap();
+                let text = generate::two_sided(&hypotheses[..hypotheses.len() - 1], goal);
+                let s = sequent(&text);
+                let by_net = prove(&s, i, &Options::default()).unwrap();
+                if by_net.engine != Engine::Net {
+                    // Repeated literals: the dispatch keeps the net engine
+                    // off them.
+                    continue;
+                }
+                let two_sided = Options::default().engine(Some(Engine::TwoSided));
+                let by_two_sided = prove(&s, i, &two_sided).unwrap();
+                assert_eq!(by_two_sided.engine, Engine::TwoSided);
+                let verdict = |outcome: Outcome| match outcome.verdict {
+                    Verdict::Proved(proof) => {
+                        assert_eq!(proof.check(i), Ok(()), "{text:?} by {}", outcome.engine);
+                        assert_eq!(outcome.net.is_some(), outcome.engine == Engine::Net);
+                        true
+                    }
+                    Verdict::Unprovable => false,
+                    Verdict::Unknown(reason) => panic!("{text:?} by {}: {reason}", outcome.engine),
+                };
+                let (net, focus) = (verdict(by_net), verdict(by_two_sided));
+                assert_eq!(net, focus, "{text:?}: net {net}, two-sided {focus}");
+                assert!(mutated || net, "{text:?} is provable");
+                compared += 1;
+                provable += usize::from(net);
+            }
+        }
+        assert!(
+            compared > 100 && provable > 50 && provable < compared,
+            "{provable} of {compared}"
+        );
     }
 
     /// The stop condition ends the search with `Unknown`.
