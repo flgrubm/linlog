@@ -118,6 +118,18 @@ pub struct ProveArgs {
     /// a thread whose stack grows with the limit.
     #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_RECURSION_LIMIT)]
     pub recursion_limit: u32,
+    /// How many threads the search may use
+    ///
+    /// The default is the machine's parallelism. More than one runs the
+    /// focused engine and the net engine on that many threads; the proof
+    /// found may then differ from run to run, the verdict never does.
+    #[arg(short, long, value_name = "N", default_value_t = default_jobs())]
+    pub jobs: usize,
+    /// Run the sequential engines, whose proof is a function of the input
+    ///
+    /// The same as `--jobs 1`, and takes precedence over `--jobs`.
+    #[arg(long)]
+    pub deterministic: bool,
     /// Where and how to write the result.
     #[command(flatten)]
     pub output: OutputArgs,
@@ -164,6 +176,18 @@ pub struct InteractArgs {
     /// up; see `prove --recursion-limit`
     #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_RECURSION_LIMIT)]
     pub recursion_limit: u32,
+    /// How many threads a `close` may use; see `prove --jobs`
+    #[arg(short, long, value_name = "N", default_value_t = default_jobs())]
+    pub jobs: usize,
+    /// Run the sequential engines; see `prove --deterministic`
+    #[arg(long)]
+    pub deterministic: bool,
+}
+
+/// The default of `--jobs`: the threads the machine runs at once, or one
+/// when that is unknown.
+fn default_jobs() -> usize {
+    std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
 }
 
 /// The arguments of `check`.

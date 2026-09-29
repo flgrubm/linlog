@@ -2,7 +2,7 @@
 // Licensed under the EUPL
 
 use crate::argument_parsing::{Format, InteractArgs};
-use crate::prove::{derivation, describe, on_large_stack};
+use crate::prove::{derivation, describe, on_large_stack, polls_per_clock};
 use crate::{Status, catch_interrupt, clear_interrupt, interrupted, io};
 use anyhow::{Context, Result, bail};
 use linlog::export::svg::{self, Style};
@@ -48,14 +48,17 @@ pub fn interact(args: &InteractArgs) -> Result<Status> {
     let options = Options::default()
         .memo_limit(args.memo_limit)
         .recursion_limit(args.recursion_limit)
-        .copies(args.copies);
+        .copies(args.copies)
+        .jobs(if args.deterministic { 1 } else { args.jobs });
     catch_interrupt();
+    let stack_size = options.stack_size();
     let mut session = Session {
         state,
         options,
+        period: polls_per_clock(if args.deterministic { 1 } else { args.jobs }),
         timeout: args.timeout,
     };
-    on_large_stack(args.recursion_limit, move || session.run())?
+    on_large_stack(stack_size, move || session.run())?
 }
 
 /// Reads a session from a JSON file.
@@ -71,6 +74,9 @@ struct Session {
     state: Interactive,
     /// The search settings of `close`.
     options: Options,
+    /// How many polls of the stop condition go between two looks at the
+    /// clock.
+    period: u32,
     /// How long a `close` may take.
     timeout: Option<Duration>,
 }
@@ -222,9 +228,10 @@ impl Session {
         clear_interrupt();
         let deadline = self.timeout.map(|t| Instant::now() + t);
         let mut polls = 0u32;
+        let period = self.period;
         let stop = || {
             polls = polls.wrapping_add(1);
-            polls.is_multiple_of(1024)
+            polls.is_multiple_of(period)
                 && (interrupted() || deadline.is_some_and(|d| Instant::now() >= d))
         };
         let outcome = self.state.close(goal, &self.options, stop)?;

@@ -13,28 +13,21 @@ use std::fmt::Write;
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// The stack one level of recursion may take, in the search or in building
-/// and printing the derivation: twice the most the search was measured to
-/// take (2 KiB unoptimized, 512 bytes optimized), for the derivation's
-/// frames and some slack.
-const STACK_PER_LEVEL: usize = if cfg!(debug_assertions) { 4096 } else { 1024 };
-
-/// The smallest stack the search thread gets: a main thread's.
-const MIN_STACK: usize = 8 << 20;
-
 /// How many polls of the stop condition go by between two looks at the
-/// clock, so that the clock costs nothing next to the search.
+/// clock on one thread, so that the clock costs nothing next to the
+/// search; on several threads the driver polls once a millisecond and
+/// every poll looks.
 const POLLS_PER_CLOCK: u32 = 1024;
 
-/// Runs `f` on a thread whose stack fits `recursion_limit` levels, and
-/// returns its result.
-pub(crate) fn on_large_stack<T: Send>(
-    recursion_limit: u32,
-    f: impl FnOnce() -> T + Send,
-) -> Result<T> {
-    let size = (recursion_limit as usize)
-        .saturating_mul(STACK_PER_LEVEL)
-        .max(MIN_STACK);
+/// How many polls go between two looks at the clock with `jobs` threads.
+pub(crate) fn polls_per_clock(jobs: usize) -> u32 {
+    if jobs > 1 { 1 } else { POLLS_PER_CLOCK }
+}
+
+/// Runs `f` on a thread with a stack of `size` bytes, as
+/// [`Options::stack_size`] sizes it for the recursion limit, and returns
+/// its result.
+pub(crate) fn on_large_stack<T: Send>(size: usize, f: impl FnOnce() -> T + Send) -> Result<T> {
     thread::scope(|scope| {
         let handle = thread::Builder::new()
             .name("search".into())
@@ -42,8 +35,7 @@ pub(crate) fn on_large_stack<T: Send>(
             .spawn_scoped(scope, f)
             .with_context(|| {
                 format!(
-                    "cannot start a search thread with a {} MiB stack for a recursion limit of \
-                     {recursion_limit}",
+                    "cannot start a search thread with a {} MiB stack",
                     size >> 20
                 )
             })?;
@@ -211,7 +203,9 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         .recursion_limit(args.recursion_limit)
         .engine(args.engine.into())
         .fragment(args.fragment.map(Into::into))
-        .copies(args.copies);
+        .copies(args.copies)
+        .jobs(if args.deterministic { 1 } else { args.jobs });
+    let period = polls_per_clock(if args.deterministic { 1 } else { args.jobs });
     let format = args.output.format;
     let quiet = args.output.quiet;
     let form = form(
@@ -220,14 +214,14 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
     )?;
     catch_interrupt();
 
-    let (outcome, stop, elapsed, derivation) = on_large_stack(args.recursion_limit, || {
+    let (outcome, stop, elapsed, derivation) = on_large_stack(options.stack_size(), || {
         let start = Instant::now();
         let deadline = args.timeout.map(|t| (start + t, t));
         let mut stop = None;
         let mut polls = 0u32;
         let outcome = prove_until(&sequent, mode, &options, || {
             polls = polls.wrapping_add(1);
-            if !polls.is_multiple_of(POLLS_PER_CLOCK) {
+            if !polls.is_multiple_of(period) {
                 return false;
             }
             if interrupted() {
@@ -355,7 +349,7 @@ pub fn check(args: &CheckArgs) -> Result<Status> {
         args.output.standalone,
         matches!(format, Format::Latex | Format::Typst | Format::Rocq),
     )?;
-    let (valid, text) = on_large_stack(Options::DEFAULT_RECURSION_LIMIT, || {
+    let (valid, text) = on_large_stack(Options::default().stack_size(), || {
         check_text(&proof, mode, format, form, quiet)
     })??;
     io::write(args.output.output.as_deref(), &text)?;

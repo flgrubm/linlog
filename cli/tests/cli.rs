@@ -99,7 +99,16 @@ fn prove_verdicts_and_exit_statuses() {
         );
     }
 
-    let (status, out, _) = linlog(&["prove", "-q", "--stats", "|- a * b, ~a par ~b"], "");
+    let (status, out, _) = linlog(
+        &[
+            "prove",
+            "-q",
+            "--stats",
+            "--deterministic",
+            "|- a * b, ~a par ~b",
+        ],
+        "",
+    );
     assert_eq!(status, 0);
     assert!(
         out.starts_with(

@@ -77,18 +77,29 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
 - **Exit status**: 0 proved, valid or done; 1 unprovable or invalid; 2 an
   error, the same status clap uses for bad arguments; 3 unknown. Scripts
   depend on it, and `cli/tests/cli.rs` pins it.
-- **The search runs on its own thread** (`on_large_stack`) with a stack of
-  `recursion_limit × STACK_PER_LEVEL`, at least 8 MiB. `STACK_PER_LEVEL` is
-  twice the engine's measured cost per level (4 KiB unoptimized, 1 KiB
-  optimized), because the derivation builder and its renderer, which also
-  recurse to the proof's height, run on the same thread. A 1000-level
-  `⊗` chain renders on it without overflow in a debug build.
+- **The search runs on its own thread** (`on_large_stack`) with the stack
+  core's `Options::stack_size` computes for the recursion limit: twice
+  the engine's measured cost per level (4 KiB unoptimized, 1 KiB
+  optimized), at least 8 MiB, because the derivation builder and its
+  renderer, which also recurse to the proof's height, run on the same
+  thread. A 1000-level `⊗` chain renders on it without overflow in a
+  debug build. The parallel search sizes its pool's threads by the same
+  function, so the CLI computes no stack size of its own.
 - **The stop closure looks at the clock and the Ctrl-C flag every 1024
-  polls** (`POLLS_PER_CLOCK`): the engine polls once per stable sequent,
-  a few million times a second, and reading the clock every time would cost
-  a noticeable share. The CLI knows why the search stopped (`Stop`), so the
+  polls on one thread** (`POLLS_PER_CLOCK`, `polls_per_clock`): the
+  engine polls once per stable sequent, a few million times a second,
+  and reading the clock every time would cost a noticeable share. With
+  several threads core's driver polls the closure once a millisecond on
+  the calling thread and every poll looks, or a time limit would be off
+  by seconds. The CLI knows why the search stopped (`Stop`), so the
   verdict line says "the time limit of 10s was reached" or "interrupted"
   instead of `Reason::Stopped`'s generic phrase.
+- **`--jobs` defaults to the machine's parallelism** (`default_jobs`) and
+  `--deterministic` overrides it with one thread, on `prove` and
+  `interact`: the sequential engines are what a pinned output (a test's
+  `--stats` counts, a proof compared across runs) needs, since a parallel
+  run's counts add every thread's and its proof is the first found. The
+  CLI enables core's `parallel` feature in `cli/Cargo.toml`.
 - **Ctrl-C** (`ctrlc`, whose handler runs on a thread of its own once per
   signal): the first sets a flag the search polls, so the outcome is
   unknown and `--stats` still prints; the second exits with 130. The
