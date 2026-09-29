@@ -233,12 +233,44 @@ pub fn prove_goal(
         }
         _ => {}
     }
+    // Several threads run the focused engine and the net engine on a pool
+    // of their own; the additive path is sequential in every case.
+    #[cfg(feature = "parallel")]
+    let runtime = if options.jobs > 1 && engine != Engine::Additive {
+        Some(parallel::Runtime::new(options.jobs, options.stack_size())?)
+    } else {
+        None
+    };
     let (verdict, statistics, net) = match engine {
         Engine::Net => net::search(forest, mode, options, &mut stop),
         Engine::Focus | Engine::TwoSided | Engine::Additive => {
             let (result, nodes, statistics) = if engine == Engine::Additive {
                 additive::search_goal(forest, goal, options, &mut stop)
             } else {
+                #[cfg(feature = "parallel")]
+                if let Some(runtime) = &runtime {
+                    focus::parallel::search_goal(
+                        forest,
+                        goal,
+                        fragment,
+                        mode,
+                        reading.as_ref(),
+                        options,
+                        runtime,
+                        &mut stop,
+                    )
+                } else {
+                    focus::search_goal(
+                        forest,
+                        goal,
+                        fragment,
+                        mode,
+                        reading.as_ref(),
+                        options,
+                        &mut stop,
+                    )
+                }
+                #[cfg(not(feature = "parallel"))]
                 focus::search_goal(
                     forest,
                     goal,

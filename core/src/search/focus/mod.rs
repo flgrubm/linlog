@@ -47,15 +47,18 @@ mod context;
 mod counts;
 /// The memo of stable sequents.
 mod memo;
+#[cfg(feature = "parallel")]
+pub(crate) mod parallel;
 
 use self::context::Context;
 use self::counts::{Counts, Tally};
-use self::memo::{Entry, Failure, Key, Memo};
-use super::{Options, Reason, Statistics, Verdict};
+use self::memo::{Entry, Failure, Key, Memo, Table};
+use super::{Options, Reason, Statistics, Stop, Verdict};
 use crate::fragment::{Fragment, Mode};
 use crate::occurrences::{Forest, OccId, OccSet, Polarity, Position, Reading, submasks};
 use crate::proofs::{Node, NodeId, Proof, Side};
 use crate::sequents::Kind;
+use std::sync::Mutex;
 
 /// The most members a context can have for its splits to be enumerated.
 const MAX_SPLIT: usize = 63;
@@ -115,10 +118,25 @@ pub(crate) fn search_goal(
     options: &Options,
     stop: &mut dyn FnMut() -> bool,
 ) -> (Search, Vec<Node>, Statistics) {
-    let mut engine = Engine::new(forest, fragment, mode, reading, options, stop);
+    let counts = Counts::new(forest);
+    let rules = Rules::new(fragment, mode, &counts);
+    let mut engine = Engine::new(
+        forest,
+        rules,
+        reading,
+        &counts,
+        options,
+        Stop::Closure(stop),
+        Table::Own(Memo::new(options.memo_limit)),
+        Arena::Own(Vec::new()),
+    );
     let result = engine.run(goal);
     let statistics = engine.statistics();
-    (result, engine.nodes, statistics)
+    let nodes = match engine.nodes {
+        Arena::Own(nodes) => nodes,
+        Arena::Shared(_) => unreachable!("a sequential search owns its arena"),
+    };
+    (result, nodes, statistics)
 }
 
 /// Whether a split of a goal into the two premises of a `⊗`, each given
@@ -192,6 +210,40 @@ impl Rules {
 /// it is unprovable, or the reason the whole search stops.
 pub(crate) type Search = Result<Option<NodeId>, Reason>;
 
+/// The proof arena of a run: every node built so far, failed branches
+/// included; the engine's own in a sequential search, shared by every
+/// worker behind a lock in a parallel one, where a push holds the lock
+/// for the time of the push, so that a node's id is its position in the
+/// one arena every memo entry refers to and a premise always precedes its
+/// conclusion.
+pub(crate) enum Arena<'a> {
+    /// The engine's own arena.
+    Own(Vec<Node>),
+    /// The arena of a parallel search.
+    Shared(&'a Mutex<Vec<Node>>),
+}
+
+impl Arena<'_> {
+    /// Appends a node and returns its id.
+    fn push(&mut self, node: Node) -> NodeId {
+        match self {
+            Self::Own(nodes) => {
+                let id = NodeId::new(nodes.len() as u32);
+                nodes.push(node);
+                id
+            }
+            Self::Shared(nodes) => {
+                let mut nodes = nodes
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                let id = NodeId::new(nodes.len() as u32);
+                nodes.push(node);
+                id
+            }
+        }
+    }
+}
+
 /// The state of one run: the problem, the memo, the proof arena, the
 /// counters, the bound bookkeeping, and pools of scratch buffers so that no
 /// step allocates once the pools are warm.
@@ -201,13 +253,13 @@ struct Engine<'a> {
     /// Its intuitionistic reading, for a two-sided search.
     reading: Option<&'a Reading<'a>>,
     /// Its count invariants.
-    counts: Counts,
+    counts: &'a Counts,
     /// The rules in force.
     rules: Rules,
     /// The memo of stable sequents.
-    memo: Memo,
-    /// The proof arena: every node built so far, failed branches included.
-    nodes: Vec<Node>,
+    memo: Table<'a>,
+    /// The proof arena.
+    nodes: Arena<'a>,
     /// The counters.
     statistics: Statistics,
     /// The nesting of engine calls right now.
@@ -225,8 +277,20 @@ struct Engine<'a> {
     /// a failure that rests on such a prune is a fact about the branch,
     /// not about the sequent, and is not memoized.
     dependency: u32,
-    /// The caller's stop condition.
-    stop: &'a mut dyn FnMut() -> bool,
+    /// The stop condition.
+    stop: Stop<'a>,
+    /// The runtime, when the search runs on several threads.
+    #[cfg(feature = "parallel")]
+    runtime: Option<&'a super::parallel::Runtime>,
+    /// How many choices among alternatives on this branch ran on several
+    /// threads: the levels of cube-and-conquer above the current sequent.
+    or_depth: u32,
+    /// The seed of the order in which this engine tries the alternatives
+    /// of a choice, zero for the order by id.
+    seed: u64,
+    /// Whether the workers of a parallel search order their choices by
+    /// seeds of their own.
+    portfolio: bool,
     /// The stable sequents of the current branch, the root end first; only
     /// the first `stack_len` are live, the rest are spare buffers.
     stack: Vec<Key>,
@@ -245,24 +309,26 @@ struct Engine<'a> {
 }
 
 impl<'a> Engine<'a> {
-    /// Prepares a run on the forest.
+    /// Prepares a run on the forest with the rules given, its counts, the
+    /// stop condition, the memo and the arena to use.
+    #[allow(clippy::too_many_arguments)]
     fn new(
         forest: &'a Forest,
-        fragment: Fragment,
-        mode: Mode,
+        rules: Rules,
         reading: Option<&'a Reading<'a>>,
+        counts: &'a Counts,
         options: &Options,
-        stop: &'a mut dyn FnMut() -> bool,
+        stop: Stop<'a>,
+        memo: Table<'a>,
+        nodes: Arena<'a>,
     ) -> Self {
-        let counts = Counts::new(forest);
-        let rules = Rules::new(fragment, mode, &counts);
         Self {
             forest,
             reading,
             counts,
             rules,
-            memo: Memo::new(options.memo_limit),
-            nodes: Vec::new(),
+            memo,
+            nodes,
             statistics: Statistics::default(),
             depth: 0,
             recursion_limit: options.recursion_limit,
@@ -270,6 +336,11 @@ impl<'a> Engine<'a> {
             exhausted: false,
             dependency: NO_DEPENDENCY,
             stop,
+            #[cfg(feature = "parallel")]
+            runtime: None,
+            or_depth: 0,
+            seed: 0,
+            portfolio: options.portfolio,
             stack: Vec::new(),
             stack_len: 0,
             sets: Vec::new(),
@@ -398,6 +469,10 @@ impl<'a> Engine<'a> {
         o: OccId,
         budget: u32,
     ) -> Search {
+        #[cfg(feature = "parallel")]
+        if self.cubes() {
+            return self.with_parallel(theta, gamma, list, o, budget);
+        }
         let mut left_gamma = self.take_context();
         left_gamma.clone_from(gamma);
         let mut left_list = self.take_list();
@@ -452,7 +527,7 @@ impl<'a> Engine<'a> {
     /// decision.
     fn prove_stable(&mut self, theta: &OccSet, gamma: &Context, budget: u32) -> Search {
         self.statistics.nodes += 1;
-        if (self.stop)() {
+        if self.stop.fired() {
             return Err(Reason::Stopped);
         }
         let mut key = self.take_key();
@@ -584,7 +659,7 @@ impl<'a> Engine<'a> {
         // cases tested below.
         let mut zero = false;
         for &o in members {
-            tally.add(&self.counts, o);
+            tally.add(self.counts, o);
             match self.forest.kind(o) {
                 Kind::Zero => zero = true,
                 Kind::Tensor | Kind::Plus => candidates.push(o),
@@ -613,7 +688,28 @@ impl<'a> Engine<'a> {
 
         // Forced splits first, then `⊕`, then the free splits; by id within
         // a class, so that the run is deterministic.
-        candidates.sort_by_key(|&o| (self.focus_class(o), o));
+        candidates.sort_by_key(|&o| (self.focus_class(o), self.rank(o)));
+        // After them the copies from `Θ`, a formula with an unconsumed copy
+        // in `Γ` skipped (a second copy cannot help before the first is
+        // used), those that can meet a literal of `Γ` first, then by id.
+        if self.rules.exponentials {
+            copies.extend(theta.iter().filter(|&a| !gamma.contains(a)));
+            if budget == 0 {
+                // A branch cut by the bound: the level cannot claim
+                // completeness, unless nothing was there to copy.
+                self.exhausted |= !copies.is_empty();
+                copies.clear();
+            } else {
+                copies.sort_by_key(|&a| (!self.meets(a, members), self.rank(a)));
+            }
+        }
+        #[cfg(feature = "parallel")]
+        if let Some(result) = self.choices_parallel(theta, gamma, candidates, copies, budget) {
+            if let Some(node) = result? {
+                return Ok(Some(node));
+            }
+            return self.last_resort(theta, gamma, members, tally, budget);
+        }
         let mut rest = self.take_context();
         for &f in candidates.iter() {
             rest.clone_from(gamma);
@@ -624,30 +720,43 @@ impl<'a> Engine<'a> {
             }
         }
         self.give_context(rest);
-
-        // Then the copies from `Θ`, a formula with an unconsumed copy in `Γ`
-        // skipped (a second copy cannot help before the first is used),
-        // those that can meet a literal of `Γ` first, then by id.
-        if self.rules.exponentials {
-            copies.extend(theta.iter().filter(|&a| !gamma.contains(a)));
-            if budget == 0 {
-                // A branch cut by the bound: the level cannot claim
-                // completeness, unless nothing was there to copy.
-                self.exhausted |= !copies.is_empty();
-            } else {
-                copies.sort_by_key(|&a| (!self.meets(a, members), a));
-                for &a in copies.iter() {
-                    if let Some(node) = self.focus(theta, gamma, a, budget - 1)? {
-                        return Ok(Some(self.push(Node::Copy(a, node))));
-                    }
-                }
+        for &a in copies.iter() {
+            if let Some(node) = self.focus(theta, gamma, a, budget - 1)? {
+                return Ok(Some(self.push(Node::Copy(a, node))));
             }
         }
+        self.last_resort(theta, gamma, members, tally, budget)
+    }
 
+    /// What is tried on a stable sequent after every focus failed: Mix,
+    /// when the rules have it.
+    fn last_resort(
+        &mut self,
+        theta: &OccSet,
+        gamma: &Context,
+        members: &[OccId],
+        tally: &Tally,
+        budget: u32,
+    ) -> Search {
         if self.rules.mix {
             return self.mix(theta, gamma, members, tally, budget);
         }
         Ok(None)
+    }
+
+    /// The position of an occurrence in the order this engine tries the
+    /// alternatives of a choice: its id, or a mix of the id with the
+    /// engine's seed when it has one, which orders the alternatives
+    /// differently on every worker of a portfolio.
+    fn rank(&self, o: OccId) -> u64 {
+        if self.seed == 0 {
+            return u64::from(o.get());
+        }
+        // The finalizer of splitmix64 over the id and the seed.
+        let mut x = u64::from(o.get()) ^ self.seed;
+        x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        x ^ (x >> 31)
     }
 
     /// The initial rules on a stable sequent: a dual pair in `Γ`, or a
@@ -754,6 +863,10 @@ impl<'a> Engine<'a> {
     fn focus_on(&mut self, theta: &OccSet, gamma: &Context, f: OccId, budget: u32) -> Search {
         match self.forest.kind(f) {
             Kind::Plus => {
+                #[cfg(feature = "parallel")]
+                if self.cubes() {
+                    return self.plus_parallel(theta, gamma, f, budget);
+                }
                 for (side, sub) in [
                     (Side::Left, self.forest.left(f).unwrap()),
                     (Side::Right, self.forest.right(f).unwrap()),
@@ -938,53 +1051,100 @@ impl<'a> Engine<'a> {
             return Err(Reason::ContextTooWide(members.len()));
         }
         let mut left_tally = self.take_tally();
-        left_tally.add(&self.counts, a);
+        left_tally.add(self.counts, a);
         if let Some(goal) = fixed_left {
-            left_tally.add(&self.counts, goal);
+            left_tally.add(self.counts, goal);
         }
         let mut right_tally = self.take_tally();
-        right_tally.add(&self.counts, b);
+        right_tally.add(self.counts, b);
         for m in right.iter() {
-            right_tally.add(&self.counts, m);
+            right_tally.add(self.counts, m);
         }
 
-        // The empty submask is the starting state of the enumeration.
-        self.statistics.splits += 1;
-        let mut result = if self.sides_pass(&left_tally, &right_tally) {
-            self.premises(theta, &left, &right, f, a, b, budget)?
+        #[cfg(feature = "parallel")]
+        let result = if self.cubes() && members.len() >= 2 {
+            self.split_parallel(
+                theta,
+                &members,
+                (&left, &right),
+                (&left_tally, &right_tally),
+                (f, a, b),
+                budget,
+            )
         } else {
-            None
+            self.enumerate_split(
+                theta,
+                &members,
+                0,
+                (&mut left, &mut right),
+                (&mut left_tally, &mut right_tally),
+                (f, a, b),
+                budget,
+            )
         };
-        if result.is_none() {
-            for flip in submasks(members.len()) {
-                let m = members[flip.position as usize];
-                self.statistics.splits += 1;
-                if flip.mask >> flip.position & 1 == 1 {
-                    right.remove(m);
-                    left.insert(m);
-                    right_tally.remove(&self.counts, m);
-                    left_tally.add(&self.counts, m);
-                } else {
-                    left.remove(m);
-                    right.insert(m);
-                    left_tally.remove(&self.counts, m);
-                    right_tally.add(&self.counts, m);
-                }
-                if !self.sides_pass(&left_tally, &right_tally) {
-                    continue;
-                }
-                if let Some(node) = self.premises(theta, &left, &right, f, a, b, budget)? {
-                    result = Some(node);
-                    break;
-                }
-            }
-        }
+        #[cfg(not(feature = "parallel"))]
+        let result = self.enumerate_split(
+            theta,
+            &members,
+            0,
+            (&mut left, &mut right),
+            (&mut left_tally, &mut right_tally),
+            (f, a, b),
+            budget,
+        );
         self.give_list(members);
         self.give_context(left);
         self.give_context(right);
         self.give_tally(left_tally);
         self.give_tally(right_tally);
-        Ok(result)
+        result
+    }
+
+    /// Searches the splits of the context into the premises of `F = A ⊗ B`
+    /// (`(f, a, b)`), starting from the sides given: those sides as they
+    /// are first, then every submask of the members from `start` on in
+    /// Gray-code order, one member moved and the two tallies updated per
+    /// flip, both sides having to pass the counts before either premise
+    /// is searched. Returns the `⊗` node of the first split proved.
+    #[allow(clippy::too_many_arguments)]
+    fn enumerate_split(
+        &mut self,
+        theta: &OccSet,
+        members: &[OccId],
+        start: usize,
+        (left, right): (&mut Context, &mut Context),
+        (left_tally, right_tally): (&mut Tally, &mut Tally),
+        (f, a, b): (OccId, OccId, OccId),
+        budget: u32,
+    ) -> Search {
+        self.statistics.splits += 1;
+        if self.sides_pass(left_tally, right_tally)
+            && let Some(node) = self.premises(theta, left, right, f, a, b, budget)?
+        {
+            return Ok(Some(node));
+        }
+        for flip in submasks(members.len() - start) {
+            let m = members[start + flip.position as usize];
+            self.statistics.splits += 1;
+            if flip.mask >> flip.position & 1 == 1 {
+                right.remove(m);
+                left.insert(m);
+                right_tally.remove(self.counts, m);
+                left_tally.add(self.counts, m);
+            } else {
+                left.remove(m);
+                right.insert(m);
+                left_tally.remove(self.counts, m);
+                right_tally.add(self.counts, m);
+            }
+            if !self.sides_pass(left_tally, right_tally) {
+                continue;
+            }
+            if let Some(node) = self.premises(theta, left, right, f, a, b, budget)? {
+                return Ok(Some(node));
+            }
+        }
+        Ok(None)
     }
 
     /// Whether both sides of a split pass the counts.
@@ -1042,10 +1202,10 @@ impl<'a> Engine<'a> {
         right.clone_from(gamma);
         right.remove(members[0]);
         let mut left_tally = self.take_tally();
-        left_tally.add(&self.counts, members[0]);
+        left_tally.add(self.counts, members[0]);
         let mut right_tally = self.take_tally();
         for &m in rest {
-            right_tally.add(&self.counts, m);
+            right_tally.add(self.counts, m);
         }
         let everything = (1u64 << rest.len()) - 1;
         // The first member alone is the starting state of the enumeration.
@@ -1064,13 +1224,13 @@ impl<'a> Engine<'a> {
             if flip.mask >> flip.position & 1 == 1 {
                 right.remove(m);
                 left.insert(m);
-                right_tally.remove(&self.counts, m);
-                left_tally.add(&self.counts, m);
+                right_tally.remove(self.counts, m);
+                left_tally.add(self.counts, m);
             } else {
                 left.remove(m);
                 right.insert(m);
-                left_tally.remove(&self.counts, m);
-                right_tally.add(&self.counts, m);
+                left_tally.remove(self.counts, m);
+                right_tally.add(self.counts, m);
             }
             if flip.mask == everything || !self.sides_pass(&left_tally, &right_tally) {
                 continue;
@@ -1099,9 +1259,7 @@ impl<'a> Engine<'a> {
 
     /// Appends a node to the arena and returns its id.
     fn push(&mut self, node: Node) -> NodeId {
-        let id = NodeId::new(self.nodes.len() as u32);
-        self.nodes.push(node);
-        id
+        self.nodes.push(node)
     }
 
     /// Enters a nested engine call, unless the nesting is at its limit.
