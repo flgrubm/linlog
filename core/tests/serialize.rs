@@ -7,7 +7,8 @@
 
 #![cfg(all(feature = "parse", feature = "serialize"))]
 
-use linlog::{Forest, Mode, Node, NodeId, OccId, Proof, Sequent, Side};
+use linlog::search::{Options, prove, prove_until};
+use linlog::{Forest, Fragment, Mode, Node, NodeId, OccId, Proof, Sequent, Side};
 
 /// Parses `input` and serializes it as compact JSON.
 fn json(input: &str) -> String {
@@ -214,4 +215,63 @@ fn broken_proof_is_rejected() {
     let json = format!(r#"{{"sequent":{sequent},"proof":[{{"ax":[0,0]}}]}}"#);
     let p: Proof = serde_json::from_str(&json).unwrap();
     assert!(p.check(Mode::CLASSICAL).is_err());
+}
+
+/// A fragment serializes as its name and reads back as the named fragment,
+/// which contains it; a mode serializes as its three flags.
+#[test]
+fn fragment_and_mode_json_format() {
+    for (fragment, name) in [
+        (Fragment::EMPTY, "MLL"),
+        (Fragment::MLL, "MLL"),
+        (Fragment::MULTIPLICATIVE_UNITS, "MLL with units"),
+        (Fragment::ADDITIVES, "ALL"),
+        (Fragment::MALL, "MALL"),
+        (Fragment::MELL, "MELL"),
+        (Fragment::LL, "LL"),
+    ] {
+        let json = serde_json::to_string(&fragment).unwrap();
+        assert_eq!(json, format!("{name:?}"));
+        let back: Fragment = serde_json::from_str(&json).unwrap();
+        assert!(back.contains(fragment) && back.name() == name, "{name}");
+    }
+    assert!(serde_json::from_str::<Fragment>(r#""mll""#).is_err());
+
+    let mode = Mode::CLASSICAL.affine();
+    let json = r#"{"intuitionistic":false,"affine":true,"mix":false}"#;
+    assert_eq!(serde_json::to_string(&mode).unwrap(), json);
+    assert_eq!(serde_json::from_str::<Mode>(json).unwrap(), mode);
+}
+
+/// An outcome serializes as its verdict, the reason for `unknown`, the
+/// fragment, mode and engine, the statistics, and for `proved` the proof's
+/// own keys, so that it deserializes as the proof.
+#[test]
+fn outcome_json_format() {
+    let s: Sequent = "A, A -o B |- B".parse().unwrap();
+    let outcome = prove(&s, Mode::CLASSICAL, &Options::default()).unwrap();
+    let json = serde_json::to_string(&outcome).unwrap();
+    let sequent = serde_json::to_string(&s).unwrap();
+    let head = r#"{"verdict":"proved","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"focus","#;
+    assert_eq!(
+        json,
+        format!(
+            r#"{head}"statistics":{{"nodes":2,"memo_hits":0,"memo_entries":2,"splits":1}},"sequent":{sequent},"proof":[{{"ax":[3,4]}},{{"ax":[2,0]}},{{"⊗":[1,1,0]}}]}}"#
+        )
+    );
+    let proof: Proof = serde_json::from_str(&json).unwrap();
+    assert_eq!(proof.check(Mode::CLASSICAL), Ok(()));
+
+    let s: Sequent = "|- A par B, ~A, ~B".parse().unwrap();
+    let outcome = prove(&s, Mode::CLASSICAL, &Options::default()).unwrap();
+    assert_eq!(
+        serde_json::to_string(&outcome).unwrap(),
+        r#"{"verdict":"unprovable","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"focus","statistics":{"nodes":1,"memo_hits":0,"memo_entries":1,"splits":0}}"#
+    );
+    let outcome =
+        prove_until(&s, Mode::CLASSICAL.with_mix(), &Options::default(), || true).unwrap();
+    assert_eq!(
+        serde_json::to_string(&outcome).unwrap(),
+        r#"{"verdict":"unknown","reason":"stopped","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":true},"engine":"focus","statistics":{"nodes":1,"memo_hits":0,"memo_entries":0,"splits":0}}"#
+    );
 }

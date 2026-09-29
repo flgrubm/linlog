@@ -59,7 +59,7 @@ enum Step {
 /// The serialized form of a proof: its sequent and its nodes, premises
 /// before conclusions, the root last.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct Proof {
+pub(super) struct Proof {
     /// The sequent proved.
     sequent: Sequent,
     /// The nodes.

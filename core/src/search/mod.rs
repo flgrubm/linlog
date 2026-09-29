@@ -114,6 +114,7 @@ pub fn prove_until(
     Ok(Outcome {
         verdict,
         fragment,
+        mode,
         engine,
         statistics,
     })
@@ -225,6 +226,8 @@ pub struct Outcome {
     /// The fragment searched in: the detected one, or the one the options
     /// asserted.
     pub fragment: Fragment,
+    /// The mode searched in.
+    pub mode: Mode,
     /// The engine that ran.
     pub engine: Engine,
     /// What the search cost.

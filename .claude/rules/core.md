@@ -364,4 +364,21 @@ is not in the file. Both are interchange formats for the CLI and the planned
 web front end, so a tag or key change is a format break;
 `core/tests/serialize.rs` pins the exact strings. A binary format would come
 from the same proxies (postcard encodes the variants by index), in the crate
-that wants it. `Fragment`, `Mode` and `Forest` have no serde yet.
+that wants it.
+
+`serialize/search.rs` gives the search's values a wire form, pinned in the
+same test file:
+- `Fragment` is its name (`"MALL"`, `"MLL with units"`), not its flags, so a
+  human reads it. Deserializing a name gives the named fragment, which
+  contains every fragment of that name: the trip is lossy towards larger,
+  which as an assertion only switches off prunes, never refuses a sequent
+  it came from.
+- `Mode` is `{"intuitionistic": …, "affine": …, "mix": …}`.
+- `Outcome` serializes only (it is output): `verdict` (`proved`,
+  `unprovable`, `unknown`), `reason` for `unknown` (a snake_case tag,
+  `{"context_too_wide": n}`), `fragment`, `mode`, `engine`, `statistics`,
+  and for `proved` the proof's own `sequent` and `proof` keys, flattened, so
+  that the whole outcome deserializes as a `Proof` (serde ignores the other
+  keys) and `linlog check` reads the output of `linlog prove --format json`.
+  A new `Reason` variant or `Statistics` field needs its line in the proxy.
+- `Forest` has no serde; it is rebuilt from the sequent.
