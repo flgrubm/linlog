@@ -606,3 +606,34 @@ into an option or names it as a follow-up.
   has units, the `ex_t_r` chain for wide sequents) and 15h the
   `--lemma`/`--prelude` flags and certifying a finished `interact`
   session.
+- 2026-09-30: step 13 reviewed and accepted. Six commits, "Add the
+  parallel runtime behind a feature" to "Measure parallel speedups"; all
+  checks pass with and without the feature, including `nix flake check`;
+  the planning session read the runtime, the focused engine's parallel
+  layer and the net engine's cubes in full, timed a 3-Partition
+  refutation in release (one thread past a 90 s limit, eight threads
+  exhaustive in 51 s), checked the parallel time limit and a parallel
+  `close` in `interact`, and fixed one pre-existing nit the report named
+  (two test imports of the nets module unused without default features,
+  now gated on `parse`). D7, D9, D10 and D11 held: rayon behind the
+  `parallel` feature, off by default and on in the CLI, one pool per
+  call and no global; cube-and-conquer as nested fork-join at the first
+  two choices of a branch with and-parallel `&`, every alternative on a
+  worker so the choice's cancel flag reaches it; a sharded memo whose
+  merge under the shard's lock is the compare-and-swap D10 asked for; one
+  shared arena so `Proved` entries mean one node to every worker; the
+  net engine's cubes from a counter; the caller's stop closure polled on
+  the calling thread once a millisecond, so no `Send` bound and no API
+  change; `--jobs` and `--deterministic`; every level of the copy bound
+  searched to its end, so a parallel run may return another proof and
+  never another decided verdict, which the tests and the step's
+  fresh-context fuzzer (about 20 000 parallel runs, no mismatch) pin. The
+  fuzzer's one real finding, an alternative run in place that no sibling
+  could cancel, was fixed in the step. The numbers: 6× on 8 threads for
+  wide or-trees, 7× for the net engine's cubes, little for memo-bound
+  families, the portfolio nothing. Decisions accepted: nested fork-join
+  over a static cube list, a shared arena over relocation, no `dashmap`,
+  no thread sanitizer on stable Rust, a timing test over criterion.
+  Prompts 14 and 15 amended: 14 gets the baseline-row rule, the pool's
+  per-call cost, the generators to reuse from the ignored `speedups`
+  tests and the portfolio's status; 15j collects the parallel follow-ups.

@@ -211,6 +211,23 @@ with the sequent's width; a chain of `ex_t_r` swaps if a wide sequent
 turns out slow. Identifier escaping writes non-ASCII as code points where
 Rocq would accept many Unicode letters. Fable 5.1, high.
 
+## 15j. Parallel follow-ups
+
+Left open by step 13 (`plan/reports/13-parallel.md`, "Open questions").
+A per-worker proof arena with a relocation pass at the merge
+(`Proof::new` renumbers already, so `(worker, index)` ids are a bounded
+change) if a profile ever shows the shared arena's lock, which the
+report's table does not. A `Runtime` kept across calls for a caller that
+closes many small goals (a web server, an `interact` session), which
+needs a runtime value in the public API next to D9's plain-data options.
+The duplicated exploration of and-parallel `&` premises and of copies as
+alternatives on memo-bound families, which is where the parallel focused
+engine gains little (14b measures it first). A thread-sanitizer run needs
+nightly and a rebuilt standard library; the code has no `unsafe` and
+every shared value is behind a lock or an atomic, so it stays a wish.
+The parallel tests take about a minute in debug builds; trim the samples
+if the suite's time matters more than the coverage.
+
 ## 15g'. Interactive follow-ups
 
 Left open by step 9, none a correctness issue. The net engine works on a

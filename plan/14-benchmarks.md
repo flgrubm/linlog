@@ -20,6 +20,43 @@ solved-within-timeout counts per family; the hard families from the spec
 generated on demand; and a place where the numbers are tracked so a later
 change shows its effect.
 
+## What step 13 left you
+
+`plan/reports/13-parallel.md`. The search runs on a pool when
+`Options::jobs` is above one (`--jobs N`, `-j`, default every core in the
+CLI; `--deterministic` is one thread): the focused engine as nested
+fork-join over the first two choices of a branch with and-parallel `&`
+premises, a sharded memo and one proof arena shared by the workers; the
+net engine as cubes of the first links pulled from a counter; the
+additive path sequential. What the harness must respect: the sequential
+engines are the reference, so every problem runs with `jobs` at one as
+its baseline row, and the parallel columns (2, 4, 8, every core) are
+further rows or columns of the same table, wall time being the number
+that matters there since `Statistics::nodes` on a parallel run is the
+sum over all threads (up to twice the sequential count on memo-bound
+families, which is the duplicated exploration the report measured, not
+the memo's locks); a pool is built per call, milliseconds, so problems
+that take under a millisecond lose on any pool and the table should show
+that rather than hide it; `Options::portfolio` exists and showed no
+consistent gain on the report's families, so it gets a column only if a
+family here disagrees. The stop closure of `prove_until` is polled on the
+calling thread once a millisecond on a parallel run and once per stable
+sequent on a sequential one, so a per-problem deadline through the
+closure is reliable in both cases, and a fresh thread per problem is
+still right for the recursion limit's stack (`Options::stack_size`) and
+for isolating a runaway. The report's speedup table (3-Partition refuted
+6.0× on 8 threads, the net engine's Partition instances 7.4× and 6.7×,
+the counter programs 1.35× or a loss) is the number a parallel column
+here should reproduce, and the ignored `speedups` tests in
+`core/src/search/focus/parallel.rs` and `core/src/search/net.rs` hold
+the generators for those families (`three_partition`, `counter`,
+`partition`, test-private today): move them into the family generators
+of item 2 rather than writing them again, and retire the ignored tests
+once the harness covers them. For the performance pass (14b), the
+report names the duplicated exploration of and-parallel `&` premises and
+of copies run as alternatives as the thing to measure first on
+memo-bound families.
+
 ## What to build
 
 1. **LLTP reader**: the `fof(...)` syntax used by LLTP/ILLTP (read the
@@ -54,8 +91,10 @@ change shows its effect.
    the performance pass should try first: leaf symmetry breaking for pure
    `⊗`/`⅋` trees of equal literals (sound by the argument in
    `.claude/rules/core.md`; the spec forbade it), a per-atom balance over
-   the `⊗`-skeleton components of a partial structure, and a portfolio
-   once threads exist.
+   the `⊗`-skeleton components of a partial structure. The portfolio
+   exists since step 13 (`Options::portfolio`, off by default) and the
+   report's families showed no gain from it; measure it on the LLTP
+   problems before the performance pass decides whether to keep it.
 6. **The exponential families and their follow-ups.** Step 7's report
    ("Timings", "Open questions and follow-ups") measured the counter
    program `!(a ⊗ a ⊸ b), !(b ⊗ b ⊸ c), !(c ⊗ c ⊸ d), a^8 ⊢ d` (millions of
