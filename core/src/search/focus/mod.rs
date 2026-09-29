@@ -1707,6 +1707,124 @@ mod tests {
         );
     }
 
+    /// Encodes a Horn program with reusable clauses, as the ILLTP library
+    /// states Petri-net reachability: every clause `body ⊸ head` (products
+    /// of atoms) under a `!`, the initial marking as hypotheses, the goal
+    /// marking as the conclusion.
+    fn horn(clauses: &[(&str, &str)], marking: &[&str], goal: &[&str]) -> String {
+        let mut hypotheses: Vec<String> = clauses
+            .iter()
+            .map(|(body, head)| format!("!({body} -o {head})"))
+            .collect();
+        hypotheses.extend(marking.iter().map(|a| (*a).to_string()));
+        format!("{} |- {}", hypotheses.join(", "), goal.join(" * "))
+    }
+
+    /// The counter program: `n` tokens `a`, two `a` make a `b`, two `b` a
+    /// `c`, and so on up the alphabet, with `n` a power of two.
+    fn counter(n: usize) -> (Vec<(String, String)>, Vec<&'static str>, &'static str) {
+        let levels = n.trailing_zeros() as usize;
+        let names = ["a", "b", "c", "d", "e", "f"];
+        let clauses = (0..levels)
+            .map(|i| {
+                (
+                    format!("{} * {}", names[i], names[i]),
+                    names[i + 1].to_string(),
+                )
+            })
+            .collect();
+        (clauses, vec!["a"; n], names[levels])
+    }
+
+    /// Horn problems over reusable clauses: a chain of implications takes
+    /// one copy per clause on one branch, the counter program reaches its
+    /// goal within the copies its firings take and not below, an
+    /// unreachable marking is undecided within the bound in linear mode and
+    /// refuted in affine mode, which also reaches a goal that leaves a
+    /// token over.
+    #[test]
+    fn horn_programs() {
+        let m = Mode::CLASSICAL;
+        let chain: Vec<(String, String)> = (0..6)
+            .map(|i| (format!("x{i}"), format!("x{}", i + 1)))
+            .collect();
+        let chain: Vec<(&str, &str)> = chain.iter().map(|(b, h)| (&**b, &**h)).collect();
+        let text = horn(&chain, &["x0"], &["x6"]);
+        assert!(
+            run(&text, m, &Options::default().copies(6))
+                .0
+                .proof()
+                .is_some()
+        );
+        assert!(matches!(
+            run(&text, m, &Options::default().copies(5)).0,
+            Verdict::Unknown(Reason::CopyBound(5))
+        ));
+
+        let (clauses, marking, goal) = counter(4);
+        let clauses: Vec<(&str, &str)> = clauses.iter().map(|(b, h)| (&**b, &**h)).collect();
+        assert!(provable(&horn(&clauses, &marking, &[goal]), m));
+        assert!(matches!(
+            run(
+                &horn(&clauses, &marking, &[goal, "a"]),
+                m,
+                &Options::default()
+            )
+            .0,
+            Verdict::Unknown(Reason::CopyBound(3))
+        ));
+        assert!(matches!(
+            run(
+                &horn(&clauses, &marking, &[goal, "a"]),
+                m.affine(),
+                &Options::default()
+            )
+            .0,
+            Verdict::Unprovable
+        ));
+        let mut five = marking.clone();
+        five.push("a");
+        assert!(matches!(
+            run(&horn(&clauses, &five, &[goal]), m, &Options::default()).0,
+            Verdict::Unknown(Reason::CopyBound(3))
+        ));
+        assert!(provable(&horn(&clauses, &five, &[goal]), m.affine()));
+    }
+
+    /// Larger counter programs, timed: run in release mode and read the
+    /// numbers.
+    #[test]
+    #[ignore = "a few seconds in release mode; run with --release -- --ignored --nocapture"]
+    fn horn_programs_slow() {
+        for (n, copies) in [(8, 7), (16, 15), (32, 31)] {
+            let (clauses, marking, goal) = counter(n);
+            let clauses: Vec<(&str, &str)> = clauses.iter().map(|(b, h)| (&**b, &**h)).collect();
+            for (goal, mode, copies) in [
+                (vec![goal], Mode::CLASSICAL, copies),
+                (vec![goal, "a"], Mode::CLASSICAL, 3),
+                (vec![goal, "a"], Mode::CLASSICAL.affine(), copies),
+            ] {
+                let text = horn(&clauses, &marking, &goal);
+                let start = std::time::Instant::now();
+                let (verdict, statistics) = run(&text, mode, &Options::default().copies(copies));
+                let verdict = match verdict {
+                    Verdict::Proved(_) => "proved".to_string(),
+                    Verdict::Unprovable => "unprovable".to_string(),
+                    Verdict::Unknown(reason) => format!("unknown ({reason})"),
+                };
+                println!(
+                    "counter {n} ⊢ {} in {mode} mode with {copies} copies: {verdict} in {:.2?}, \
+                     {} stable sequents, {} memo hits, {} memo entries at most",
+                    goal.join(" ⊗ "),
+                    start.elapsed(),
+                    statistics.nodes,
+                    statistics.memo_hits,
+                    statistics.memo_entries
+                );
+            }
+        }
+    }
+
     /// Encodes a 3-Partition instance as a linear Horn program in the style
     /// of Kanovich's encodings: bin `j` offers `size` units `bj` and three
     /// slots `tj`; item `i` is a `&` over the bins of a clause taking its
