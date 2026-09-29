@@ -1862,6 +1862,80 @@ mod tests {
         );
     }
 
+    /// Proves `samples` generated intuitionistic sequents of up to `budget`
+    /// rules per rule set, each within the derelictions of its proof, in
+    /// linear and affine mode; compares the two-sided verdict on each with
+    /// the classical engine's on the same one-sided sequent, which must
+    /// agree without `0`; and on a mutant of each. Returns how many
+    /// sequents and mutants were compared and how many mutants the classical
+    /// engine proved that the two-sided one refuted, which only `0` allows.
+    fn generated_ill(samples: u64, budget: usize) -> (u64, u64, u64) {
+        use crate::search::generate::IllRules;
+        let i = Mode::INTUITIONISTIC;
+        let (mut sequents, mut mutants, mut non_conservative) = (0, 0, 0);
+        for (n, rules) in IllRules::ALL.into_iter().enumerate() {
+            let mut rng = Rng::new(100 + n as u64);
+            for _ in 0..samples {
+                let budget = 2 + rng.below(budget - 1);
+                let generate::Ill {
+                    mut hypotheses,
+                    goal,
+                    copies,
+                } = generate::ill(&mut rng, rules, 3, budget);
+                let text = generate::two_sided(&hypotheses, &goal);
+                let options = Options::default().copies(copies);
+                let (verdict, _) = run(&text, i, &options);
+                assert!(
+                    verdict.proof().is_some(),
+                    "{text:?} is provable in ILL within {copies} copies, but the engine says \
+                     {verdict:?}"
+                );
+                let (affine, _) = run(&text, i.affine(), &options);
+                assert!(affine.proof().is_some(), "{text:?} affine: {affine:?}");
+                sequents += 1;
+                // The classical engine on the same one-sided sequent.
+                let classical = decided(&text, Mode::CLASSICAL, &options);
+                assert!(
+                    classical != Some(false),
+                    "{text:?} is provable in ILL, so classically too, but the engine says \
+                     {classical:?}"
+                );
+                hypotheses.push(goal);
+                if generate::mutate(&mut rng, &mut hypotheses, 3) {
+                    let goal = hypotheses.pop().unwrap();
+                    let text = generate::two_sided(&hypotheses, &goal);
+                    let two_sided = decided(&text, i, &Options::default());
+                    let classical = decided(&text, Mode::CLASSICAL, &Options::default());
+                    match (two_sided, classical) {
+                        (Some(true), Some(false)) => panic!("{text:?}: provable in ILL only"),
+                        (Some(false), Some(true)) => {
+                            assert!(rules.zero, "{text:?}: provable classically only");
+                            non_conservative += 1;
+                        }
+                        _ => {}
+                    }
+                    mutants += 1;
+                }
+            }
+        }
+        (sequents, mutants, non_conservative)
+    }
+
+    /// Every generated intuitionistic sequent is proved two-sided with a
+    /// checked proof within the derelictions of its proof, in every
+    /// intuitionistic fragment, and the classical engine agrees on the
+    /// mutants except where `0` makes classical linear logic prove more.
+    #[test]
+    fn generated_intuitionistic_sequents() {
+        let (sequents, mutants, non_conservative) = generated_ill(40, 10);
+        assert_eq!(sequents, 480);
+        assert!(mutants > 300, "{mutants} mutants");
+        assert!(
+            non_conservative < mutants / 10,
+            "{non_conservative} of {mutants}"
+        );
+    }
+
     /// The same on a larger sample of larger proofs, without exponentials:
     /// with them, a few sequents of a sample this size take minutes at the
     /// bound their derelictions give. Run it in release mode and read the

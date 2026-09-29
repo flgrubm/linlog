@@ -118,6 +118,8 @@ pub(crate) enum Tree {
     Bang(Box<Tree>),
     /// `?A`
     Quest(Box<Tree>),
+    /// `A ⊸ B`, in intuitionistic sequents only.
+    Lolli(Box<Tree>, Box<Tree>),
 }
 
 impl Tree {
@@ -127,13 +129,18 @@ impl Tree {
         match self {
             Var(a) | Dual(a) => vec![a],
             One | Bot | Top | Zero => vec![],
-            Tensor(l, r) | Par(l, r) | With(l, r) | Plus(l, r) => {
+            Tensor(l, r) | Par(l, r) | With(l, r) | Plus(l, r) | Lolli(l, r) => {
                 let mut all = l.literals();
                 all.extend(r.literals());
                 all
             }
             Bang(a) | Quest(a) => a.literals(),
         }
+    }
+
+    /// Whether the formula is a `!` formula.
+    fn is_bang(&self) -> bool {
+        matches!(self, Tree::Bang(_))
     }
 
     /// Whether the formula is a `?` formula.
@@ -161,6 +168,340 @@ impl Display for Tree {
             Plus(l, r) => binary(f, l, "+", r),
             Bang(a) => write!(f, "!{a}"),
             Quest(a) => write!(f, "?{a}"),
+            Lolli(l, r) => binary(f, l, "-o", r),
+        }
+    }
+}
+
+/// Writes an intuitionistic sequent for the parser: `A, B |- C`.
+pub(crate) fn two_sided(hypotheses: &[Tree], goal: &Tree) -> String {
+    let mut text = String::new();
+    for (i, formula) in hypotheses.iter().enumerate() {
+        if i > 0 {
+            text.push_str(", ");
+        }
+        text.push_str(&formula.to_string());
+    }
+    if !hypotheses.is_empty() {
+        text.push(' ');
+    }
+    text.push_str("|- ");
+    text.push_str(&goal.to_string());
+    text
+}
+
+/// Which rules a generated intuitionistic proof may use, beyond the axiom,
+/// `⊗` and `⊸`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct IllRules {
+    /// `1`.
+    pub(crate) units: bool,
+    /// `&`, `⊕` and `⊤`.
+    pub(crate) additives: bool,
+    /// `0`, which makes classical linear logic non-conservative over the
+    /// intuitionistic one.
+    pub(crate) zero: bool,
+    /// `!`: promotion, dereliction, contraction and weakening.
+    pub(crate) exponentials: bool,
+}
+
+impl IllRules {
+    /// Every combination of the four switches, `zero` only with additives.
+    pub(crate) const ALL: [IllRules; 12] = {
+        let mut all = [IllRules {
+            units: false,
+            additives: false,
+            zero: false,
+            exponentials: false,
+        }; 12];
+        let (mut i, mut n) = (0, 0);
+        while i < 16 {
+            let zero = i & 4 != 0;
+            let additives = i & 2 != 0;
+            if !zero || additives {
+                all[n] = IllRules {
+                    units: i & 1 != 0,
+                    additives,
+                    zero,
+                    exponentials: i & 8 != 0,
+                };
+                n += 1;
+            }
+            i += 1;
+        }
+        all
+    };
+}
+
+/// A generated provable intuitionistic sequent: its hypotheses, its goal,
+/// and the derelictions of the proof it was read off.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Ill {
+    /// The hypotheses.
+    pub(crate) hypotheses: Vec<Tree>,
+    /// The goal.
+    pub(crate) goal: Tree,
+    /// The derelictions of the proof, all branches together.
+    pub(crate) copies: u32,
+}
+
+/// Builds a random provable intuitionistic sequent: a cut-free two-sided
+/// proof of about `budget` rule applications over `atoms` atom names, using
+/// the rules allowed, and returns its conclusion with the derelictions of
+/// the proof.
+pub(crate) fn ill(rng: &mut Rng, rules: IllRules, atoms: u8, budget: usize) -> Ill {
+    let mut generator = IllGenerator { rng, rules, atoms };
+    let (hypotheses, goal, copies) = generator.proof(budget);
+    Ill {
+        hypotheses,
+        goal,
+        copies,
+    }
+}
+
+/// The state of one intuitionistic generation.
+struct IllGenerator<'a> {
+    /// The random source.
+    rng: &'a mut Rng,
+    /// The rules allowed.
+    rules: IllRules,
+    /// How many atom names to draw from.
+    atoms: u8,
+}
+
+impl IllGenerator<'_> {
+    /// Builds the conclusion of a random two-sided proof of about `budget`
+    /// rules: the hypotheses, the goal and the derelictions.
+    fn proof(&mut self, budget: usize) -> (Vec<Tree>, Tree, u32) {
+        use Tree::*;
+        if budget <= 1 {
+            return self.leaf();
+        }
+        let (mut hypotheses, mut goal, mut copies) = self.proof(budget - 1);
+        // Weighted choice among the rules the switches allow and the
+        // premise admits: the rules on a hypothesis need one, `⊗L` two.
+        let mut choices: Vec<u8> = vec![b'a', b't', b't'];
+        if !hypotheses.is_empty() {
+            choices.extend(*b"llLL");
+            if self.rules.additives {
+                choices.extend(*b"wo");
+            }
+            if self.rules.exponentials {
+                choices.push(b'd');
+            }
+        }
+        if hypotheses.len() >= 2 {
+            choices.push(b'T');
+        }
+        if self.rules.units {
+            choices.push(b'1');
+        }
+        if self.rules.additives {
+            choices.extend(*b"&+");
+        }
+        if self.rules.exponentials {
+            choices.extend(*b"!cW");
+        }
+        let boxed = |t: Tree| Box::new(t);
+        match choices[self.rng.below(choices.len())] {
+            b'a' => return self.leaf(),
+            b't' => {
+                // Γ ⊢ A and Δ ⊢ B give Γ, Δ ⊢ A ⊗ B.
+                let other = 1 + self.rng.below(budget - 1);
+                let (delta, b, c) = self.proof(other);
+                hypotheses.extend(delta);
+                goal = Tensor(boxed(goal), boxed(b));
+                copies += c;
+            }
+            b'l' => {
+                // Γ, A ⊢ B gives Γ ⊢ A ⊸ B.
+                let a = self.take_hypothesis(&mut hypotheses);
+                goal = Lolli(boxed(a), boxed(goal));
+            }
+            b'L' => {
+                // Γ ⊢ A and Δ, B ⊢ C give Γ, Δ, A ⊸ B ⊢ C.
+                let other = 1 + self.rng.below(budget - 1);
+                let (gamma, a, c) = self.proof(other);
+                let b = self.take_hypothesis(&mut hypotheses);
+                hypotheses.extend(gamma);
+                hypotheses.push(Lolli(boxed(a), boxed(b)));
+                copies += c;
+            }
+            b'T' => {
+                // Γ, A, B ⊢ C gives Γ, A ⊗ B ⊢ C.
+                let a = self.take_hypothesis(&mut hypotheses);
+                let b = self.take_hypothesis(&mut hypotheses);
+                hypotheses.push(Tensor(boxed(a), boxed(b)));
+            }
+            b'1' => hypotheses.push(One),
+            b'&' => {
+                // Γ ⊢ A and Γ ⊢ T give Γ ⊢ A & T, with T a twin of A.
+                let twin = self.twin(&goal);
+                goal = if self.rng.one_in(2) {
+                    With(boxed(goal), boxed(twin))
+                } else {
+                    With(boxed(twin), boxed(goal))
+                };
+            }
+            b'+' => {
+                let junk = self.junk(2);
+                goal = if self.rng.one_in(2) {
+                    Plus(boxed(goal), boxed(junk))
+                } else {
+                    Plus(boxed(junk), boxed(goal))
+                };
+            }
+            b'w' => {
+                // Γ, A ⊢ C gives Γ, A & J ⊢ C.
+                let a = self.take_hypothesis(&mut hypotheses);
+                let junk = self.junk(2);
+                hypotheses.push(if self.rng.one_in(2) {
+                    With(boxed(a), boxed(junk))
+                } else {
+                    With(boxed(junk), boxed(a))
+                });
+            }
+            b'o' => {
+                // Γ, A ⊢ C and Γ, T ⊢ C give Γ, A ⊕ T ⊢ C, with T a twin of
+                // A as a hypothesis: A itself, `0`, or A & anything.
+                let a = self.take_hypothesis(&mut hypotheses);
+                let twin = match self.rng.below(3) {
+                    0 if self.rules.zero => Zero,
+                    1 => With(boxed(a.clone()), boxed(self.junk(2))),
+                    _ => a.clone(),
+                };
+                hypotheses.push(if self.rng.one_in(2) {
+                    Plus(boxed(a), boxed(twin))
+                } else {
+                    Plus(boxed(twin), boxed(a))
+                });
+            }
+            b'd' => {
+                // Dereliction: Γ, A ⊢ C gives Γ, !A ⊢ C.
+                let a = self.take_hypothesis(&mut hypotheses);
+                hypotheses.push(Bang(boxed(a)));
+                copies += 1;
+            }
+            b'!' => {
+                // Promotion: !Γ ⊢ A gives !Γ ⊢ !A, once every hypothesis
+                // is a `!` formula, which dereliction arranges.
+                for h in &mut hypotheses {
+                    if !h.is_bang() {
+                        *h = Bang(boxed(std::mem::replace(h, One)));
+                        copies += 1;
+                    }
+                }
+                goal = Bang(boxed(goal));
+            }
+            b'c' => {
+                // Contraction: Γ, !A, !A ⊢ C gives Γ, !A ⊢ C, on two equal
+                // `!` hypotheses if there are any.
+                let repeated = (0..hypotheses.len())
+                    .find(|&j| hypotheses[j].is_bang() && hypotheses[..j].contains(&hypotheses[j]));
+                if let Some(j) = repeated {
+                    hypotheses.remove(j);
+                }
+            }
+            b'W' => {
+                // Weakening: Γ ⊢ C gives Γ, !J ⊢ C.
+                let junk = self.junk(2);
+                hypotheses.push(Bang(boxed(junk)));
+            }
+            _ => unreachable!(),
+        }
+        (hypotheses, goal, copies)
+    }
+
+    /// A proof with no premises: an axiom, `⊢ 1`, `Γ ⊢ ⊤` or `Γ, 0 ⊢ A` for
+    /// arbitrary `Γ` and `A`, as the rules allow.
+    fn leaf(&mut self) -> (Vec<Tree>, Tree, u32) {
+        let mut choices: Vec<u8> = vec![b'a', b'a'];
+        if self.rules.units {
+            choices.push(b'1');
+        }
+        if self.rules.additives {
+            choices.push(b'T');
+        }
+        if self.rules.zero {
+            choices.push(b'0');
+        }
+        let junk_context = |this: &mut Self| -> Vec<Tree> {
+            (0..this.rng.below(3)).map(|_| this.junk(2)).collect()
+        };
+        match choices[self.rng.below(choices.len())] {
+            b'a' => {
+                let a = self.rng.below(self.atoms as usize) as u8;
+                (vec![Tree::Var(a)], Tree::Var(a), 0)
+            }
+            b'1' => (vec![], Tree::One, 0),
+            b'T' => (junk_context(self), Tree::Top, 0),
+            b'0' => {
+                let mut context = junk_context(self);
+                context.push(Tree::Zero);
+                let goal = self.junk(2);
+                (context, goal, 0)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// Removes a random hypothesis, of which there must be one, and returns
+    /// it.
+    fn take_hypothesis(&mut self, hypotheses: &mut Vec<Tree>) -> Tree {
+        hypotheses.remove(self.rng.below(hypotheses.len()))
+    }
+
+    /// A formula that every context proving `a` proves as well, for the
+    /// other side of a `&`: `a` itself, `⊤`, or `a` under a `⊕`.
+    fn twin(&mut self, a: &Tree) -> Tree {
+        match self.rng.below(3) {
+            0 => Tree::Top,
+            1 => {
+                let junk = self.junk(2);
+                if self.rng.one_in(2) {
+                    Tree::Plus(Box::new(a.clone()), Box::new(junk))
+                } else {
+                    Tree::Plus(Box::new(junk), Box::new(a.clone()))
+                }
+            }
+            _ => a.clone(),
+        }
+    }
+
+    /// An arbitrary intuitionistic formula of the allowed connectives, of
+    /// at most `size` connectives.
+    fn junk(&mut self, size: usize) -> Tree {
+        let mut choices: Vec<u8> = vec![b'v', b'v'];
+        if self.rules.units {
+            choices.push(b'1');
+        }
+        if self.rules.additives {
+            choices.push(b'T');
+        }
+        if self.rules.zero {
+            choices.push(b'0');
+        }
+        if size > 0 {
+            choices.extend(*b"tl");
+            if self.rules.additives {
+                choices.extend(*b"&+");
+            }
+            if self.rules.exponentials {
+                choices.push(b'!');
+            }
+        }
+        let boxed = |t: Tree| Box::new(t);
+        match choices[self.rng.below(choices.len())] {
+            b'v' => Tree::Var(self.rng.below(self.atoms as usize) as u8),
+            b'1' => Tree::One,
+            b'T' => Tree::Top,
+            b'0' => Tree::Zero,
+            b't' => Tree::Tensor(boxed(self.junk(size - 1)), boxed(self.junk(size - 1))),
+            b'l' => Tree::Lolli(boxed(self.junk(size - 1)), boxed(self.junk(size - 1))),
+            b'&' => Tree::With(boxed(self.junk(size - 1)), boxed(self.junk(size - 1))),
+            b'+' => Tree::Plus(boxed(self.junk(size - 1)), boxed(self.junk(size - 1))),
+            b'!' => Tree::Bang(boxed(self.junk(size - 1))),
+            _ => unreachable!(),
         }
     }
 }
