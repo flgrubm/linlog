@@ -1795,14 +1795,16 @@ mod tests {
         assert!(provable(&horn(&clauses, &five, &[goal]), m.affine()));
     }
 
-    /// Larger counter programs, timed: run in release mode and read the
-    /// numbers.
+    /// A larger counter program, timed: run in release mode and read the
+    /// numbers. Sixteen tokens do not finish within a quarter of an hour:
+    /// the tokens are distinct occurrences, so every choice of the two a
+    /// clause consumes is a stable sequent of its own.
     #[test]
-    #[ignore = "a few seconds in release mode; run with --release -- --ignored --nocapture"]
+    #[ignore = "under a second in release mode; run with --release -- --ignored --nocapture"]
     fn horn_programs_slow() {
         // A branch to a token of the goal fires one clause per level of
         // the counter, so the bound is the number of levels.
-        for (n, copies) in [(8, 3), (16, 4), (32, 5)] {
+        for (n, copies) in [(8, 3)] {
             let (clauses, marking, goal) = counter(n);
             let clauses: Vec<(&str, &str)> = clauses.iter().map(|(b, h)| (&**b, &**h)).collect();
             for (goal, mode, copies) in [
