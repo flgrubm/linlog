@@ -6,7 +6,9 @@
 //! a sequent. A client names a goal, a formula in it and a rule; the rule
 //! is validated against the formula, the mode and, in intuitionistic mode,
 //! the one-succedent condition, and the goals it leaves are returned. The
-//! search can close any goal.
+//! search can close any goal, and a finished derivation translates back
+//! into a proof term that the checker validates, so this layer is trusted
+//! no more than an engine.
 //!
 //! The inferences are those of the derivation view, with the same sequent
 //! representation (occurrence ids in ascending order, with repeats) and
@@ -16,9 +18,9 @@
 //! index than its conclusion, the reverse of a [`Derivation`], which
 //! [`Interactive::derivation`] renumbers.
 
-use super::Side;
 use super::derivation::{Derivation, InfId, Inference, Rule};
 use super::multiset::Multiset;
+use super::{Node, NodeId, Proof, Side};
 use crate::Error;
 use crate::fragment::Mode;
 use crate::occurrences::{Forest, OccId, Position, Reading};
@@ -151,7 +153,8 @@ impl std::error::Error for Refusal {}
 /// made so far and the goals still open. It starts from a sequent as one
 /// open goal; rules are applied to a formula of a goal by position, the
 /// search closes goals, [`undo`](Self::undo) retracts the last step (or
-/// the client keeps a clone).
+/// the client keeps a clone), and once no goal is open
+/// [`proof`](Self::proof) gives the checked term.
 ///
 /// # Examples
 ///
@@ -169,7 +172,8 @@ impl std::error::Error for Refusal {}
 /// assert_eq!(goals.len(), 2);
 /// state.apply(goals[0], 0, Rule::Ax, &[])?;
 /// state.apply(goals[1], 0, Rule::Ax, &[])?;
-/// assert!(state.is_complete());
+/// let proof = state.proof()?;
+/// assert_eq!(proof.nodes().len(), 3);
 /// # Ok::<(), linlog::Error>(())
 /// ```
 #[derive(Clone, Debug)]
@@ -384,7 +388,7 @@ impl Interactive {
             && expected
                 .iter()
                 .zip(&inference.premises)
-                .all(|(e, p)| e.0.as_slice() == self.inferences[p.index()].sequent);
+                .all(|(e, p)| e.as_slice() == self.inferences[p.index()].sequent);
         if same {
             Ok(())
         } else {
@@ -540,7 +544,7 @@ impl Interactive {
             .collect();
         for premise in premises {
             self.inferences.push(Inference {
-                sequent: premise.0.into_vec(),
+                sequent: premise.into_vec(),
                 rule: Rule::Open,
                 principal: None,
                 premises: vec![],
@@ -566,7 +570,7 @@ impl Interactive {
         position: usize,
         rule: Rule,
         left: &[usize],
-    ) -> Result<Vec<Premise>, Refusal> {
+    ) -> Result<Vec<Multiset>, Refusal> {
         use Rule::*;
         let f = &self.forest;
         let o = formula_at(sequent, position)?;
@@ -705,7 +709,7 @@ impl Interactive {
                 }
             }
         }
-        Ok(premises.into_iter().map(Premise).collect())
+        Ok(premises)
     }
 
     /// Returns whether a split of the open goal for a `⊗` at `position`
@@ -740,8 +744,8 @@ impl Interactive {
             &self.forest,
             fragment,
             self.mode,
-            l.0.as_slice(),
-            r.0.as_slice(),
+            l.as_slice(),
+            r.as_slice(),
         ))
     }
 
@@ -874,15 +878,30 @@ impl Interactive {
             .collect();
         Derivation::from_parts(&self.forest, self.reading(), inferences)
     }
-}
 
-/// The sequent of a premise a rule yields.
-struct Premise(Multiset);
-
-impl Premise {
-    /// The occurrences in ascending order.
-    fn as_slice(&self) -> &[OccId] {
-        self.0.as_slice()
+    /// Translates the finished derivation into a proof term and checks it,
+    /// returning the proof. Fails while goals are open
+    /// ([`Error::OpenGoals`]) or if the checker rejects the term
+    /// ([`Error::InvalidProof`]), which it never does for a derivation built
+    /// through this interface.
+    pub fn proof(&self) -> Result<Proof, Error> {
+        let open = self.goals().count();
+        if open > 0 {
+            return Err(Error::OpenGoals(open));
+        }
+        let mut terms = Terms {
+            state: self,
+            nodes: Vec::with_capacity(self.inferences.len()),
+        };
+        let mut root = terms.term(InfId::new(0));
+        for &r in self.forest.roots() {
+            if self.forest.kind(r) == Kind::Quest {
+                root = terms.push(Node::Quest(r, root));
+            }
+        }
+        let proof = Proof::new(self.forest.clone(), terms.nodes, root)?;
+        proof.check(self.mode)?;
+        Ok(proof)
     }
 }
 
@@ -894,9 +913,110 @@ fn formula_at(sequent: &[OccId], position: usize) -> Result<OccId, Refusal> {
     })
 }
 
+/// The translation of a finished derivation into a proof term, bottom-up
+/// over the tree: every rule is its node; a dereliction is a copy, a
+/// contraction and a `?w` are nothing, since a `?` formula lives in the
+/// unrestricted zone from the point where it enters the derivation, which
+/// is where its `?` node goes: below the rule that introduces it as a
+/// subformula, or below the root for a `?` formula of the sequent.
+struct Terms<'a> {
+    /// The finished derivation.
+    state: &'a Interactive,
+    /// The arena being built, premises before conclusions.
+    nodes: Vec<Node>,
+}
+
+impl Terms<'_> {
+    /// Appends a node and returns its id.
+    fn push(&mut self, node: Node) -> NodeId {
+        self.nodes.push(node);
+        NodeId::new(self.nodes.len() as u32 - 1)
+    }
+
+    /// Builds the term of the premise `id`, then the `?` nodes of the
+    /// `?` formulas the rule below introduced into it.
+    fn premise(&mut self, id: InfId, introduced: &[OccId]) -> NodeId {
+        let mut node = self.term(id);
+        for &x in introduced {
+            if self.state.forest.kind(x) == Kind::Quest {
+                node = self.push(Node::Quest(x, node));
+            }
+        }
+        node
+    }
+
+    /// Builds the term of the subtree at `id`.
+    fn term(&mut self, id: InfId) -> NodeId {
+        use Rule::*;
+        let f = &self.state.forest;
+        let inference = &self.state.inferences[id.index()];
+        let sequent = &inference.sequent;
+        let premises = &inference.premises;
+        let o = || {
+            sequent[inference
+                .principal
+                .expect("every rule but ax and mix has one")]
+        };
+        let a = || f.left(o()).expect("a connective with a subformula");
+        let b = || f.right(o()).expect("a binary connective");
+        match inference.rule.classical() {
+            Ax => self.push(Node::Ax(sequent[0], sequent[1])),
+            One => self.push(Node::One(o())),
+            Top => self.push(Node::Top(o())),
+            Par => {
+                let p = self.premise(premises[0], &[a(), b()]);
+                self.push(Node::Par(o(), p))
+            }
+            Bot => {
+                let p = self.premise(premises[0], &[]);
+                self.push(Node::Bot(o(), p))
+            }
+            With => {
+                let l = self.premise(premises[0], &[a()]);
+                let r = self.premise(premises[1], &[b()]);
+                self.push(Node::With(o(), l, r))
+            }
+            PlusLeft => {
+                let p = self.premise(premises[0], &[a()]);
+                self.push(Node::Plus(o(), Side::Left, p))
+            }
+            PlusRight => {
+                let p = self.premise(premises[0], &[b()]);
+                self.push(Node::Plus(o(), Side::Right, p))
+            }
+            Promotion => {
+                let p = self.premise(premises[0], &[a()]);
+                self.push(Node::Bang(o(), p))
+            }
+            Dereliction => {
+                let p = self.premise(premises[0], &[a()]);
+                self.push(Node::Copy(a(), p))
+            }
+            Contraction | Weakening => self.term(premises[0]),
+            AffineWeakening => {
+                let p = self.term(premises[0]);
+                self.push(Node::Weaken(o(), p))
+            }
+            Tensor => {
+                let l = self.premise(premises[0], &[a()]);
+                let r = self.premise(premises[1], &[b()]);
+                self.push(Node::Tensor(o(), l, r))
+            }
+            Mix => {
+                let l = self.term(premises[0]);
+                let r = self.term(premises[1]);
+                self.push(Node::Mix(l, r))
+            }
+            Open => unreachable!("no goal is open"),
+            _ => unreachable!("classical rules only"),
+        }
+    }
+}
+
 #[cfg(all(test, feature = "parse"))]
 mod tests {
     use super::*;
+    use crate::search::Reason;
 
     /// Parses `input`.
     fn sequent(input: &str) -> Sequent {
@@ -934,6 +1054,116 @@ mod tests {
         state
             .apply(goal, position, rule, &left)
             .unwrap_or_else(|e| panic!("{rule} on {text}: {e}"))
+    }
+
+    /// Every rule applied once through the interface, in a proof the
+    /// checker accepts, per fragment and mode.
+    #[test]
+    fn every_rule_once() {
+        use Rule::*;
+        let classical = Mode::CLASSICAL;
+        // ⅋, ⊗ with a split, ax.
+        let (mut s, g) = start("|- ~a par ~b, a * b", classical);
+        let [g] = step(&mut s, g, "~a ⅋ ~b", Par, &[])[..] else {
+            panic!()
+        };
+        let [l, r] = step(&mut s, g, "a ⊗ b", Tensor, &["~a"])[..] else {
+            panic!()
+        };
+        assert_eq!(s.goals().collect::<Vec<_>>(), [l, r]);
+        step(&mut s, l, "a", Ax, &[]);
+        assert_eq!(s.rules(r, 0).unwrap(), [Ax]);
+        step(&mut s, r, "b", Ax, &[]);
+        assert!(s.is_complete());
+        let proof = s.proof().unwrap();
+        assert_eq!(proof.nodes().len(), 4);
+        assert_eq!(
+            s.derivation().to_string(),
+            proof.derivation().unwrap().to_string()
+        );
+        // ⊥ and 1.
+        let (mut s, g) = start("|- bot, 1", classical);
+        let [g] = step(&mut s, g, "⊥", Bot, &[])[..] else {
+            panic!()
+        };
+        step(&mut s, g, "1", One, &[]);
+        s.proof().unwrap();
+        // &, ⊕₁, ⊕₂ and ⊤.
+        let (mut s, g) = start("|- a & b, ~a + ~b", classical);
+        let [l, r] = step(&mut s, g, "a & b", With, &[])[..] else {
+            panic!()
+        };
+        let [l] = step(&mut s, l, "~a ⊕ ~b", PlusLeft, &[])[..] else {
+            panic!()
+        };
+        step(&mut s, l, "a", Ax, &[]);
+        let [r] = step(&mut s, r, "~a ⊕ ~b", PlusRight, &[])[..] else {
+            panic!()
+        };
+        step(&mut s, r, "~b", Ax, &[]);
+        s.proof().unwrap();
+        let (mut s, g) = start("|- top, 0", classical);
+        assert_eq!(s.rules(g, at(&s, g, "0")).unwrap(), []);
+        step(&mut s, g, "⊤", Top, &[]);
+        s.proof().unwrap();
+        // ?c, ?d, ! and ?w.
+        let (mut s, g) = start("!a |- a * a", classical);
+        let [g] = step(&mut s, g, "?~a", Contraction, &[])[..] else {
+            panic!()
+        };
+        let [l, r] = step(&mut s, g, "a ⊗ a", Tensor, &["?~a"])[..] else {
+            panic!()
+        };
+        for g in [l, r] {
+            let [g] = step(&mut s, g, "?~a", Dereliction, &[])[..] else {
+                panic!()
+            };
+            step(&mut s, g, "~a", Ax, &[]);
+        }
+        let proof = s.proof().unwrap();
+        assert_eq!(
+            proof.derivation().unwrap().to_string(),
+            "─────── ax    ─────── ax\n\
+             ⊢ ~a, a       ⊢ ~a, a\n\
+             ──────── ?d   ──────── ?d\n\
+             ⊢ ?~a, a      ⊢ ?~a, a\n\
+             ────────────────────── ⊗\n\
+            \x20 ⊢ ?~a, ?~a, a ⊗ a\n\
+            \x20 ───────────────── ?c\n\
+            \x20   ⊢ ?~a, a ⊗ a"
+        );
+        let (mut s, g) = start("!a |- !a", classical);
+        let [g] = step(&mut s, g, "!a", Promotion, &[])[..] else {
+            panic!()
+        };
+        let [g] = step(&mut s, g, "?~a", Dereliction, &[])[..] else {
+            panic!()
+        };
+        step(&mut s, g, "~a", Ax, &[]);
+        s.proof().unwrap();
+        let (mut s, g) = start("|- ?a, 1", classical);
+        let [g] = step(&mut s, g, "?a", Weakening, &[])[..] else {
+            panic!()
+        };
+        step(&mut s, g, "1", One, &[]);
+        s.proof().unwrap();
+        // wk in affine mode, and Mix.
+        let (mut s, g) = start("a, b |- a", classical.affine());
+        assert_eq!(s.rules(g, at(&s, g, "~b")).unwrap(), [Ax, AffineWeakening]);
+        let [g] = step(&mut s, g, "~b", AffineWeakening, &[])[..] else {
+            panic!()
+        };
+        step(&mut s, g, "~a", Ax, &[]);
+        s.proof().unwrap();
+        let (mut s, g) = start("|- a, ~a, b, ~b", classical.with_mix());
+        assert_eq!(s.rules(g, 0).unwrap(), [Ax, Mix]);
+        let [l, r] = step(&mut s, g, "a", Mix, &["~a"])[..] else {
+            panic!()
+        };
+        step(&mut s, l, "a", Ax, &[]);
+        step(&mut s, r, "b", Ax, &[]);
+        assert_eq!(s.steps(), 3);
+        s.proof().unwrap();
     }
 
     /// A rule that does not apply is refused with what it needed, and the
@@ -1070,6 +1300,114 @@ mod tests {
             Interactive::new(&sequent("a |- a"), i.with_mix()),
             Err(Error::IntuitionisticMix)
         ));
+    }
+
+    /// In intuitionistic mode the rules carry their two-sided names, the
+    /// classical name is accepted, and the derivation is the two-sided one.
+    #[test]
+    fn intuitionistic() {
+        use Rule::*;
+        let i = Mode::INTUITIONISTIC;
+        let (mut s, g) = start("a, a -o b |- b", i);
+        let imp = at(&s, g, "a ⊗ ~b");
+        let a = at(&s, g, "~a");
+        let [l, r] = s.apply(g, imp, Tensor, &[a]).unwrap()[..] else {
+            panic!()
+        };
+        assert_eq!(s.inferences()[g.index()].rule, ImpLeft);
+        assert_eq!(
+            s.derivation().to_string(),
+            "a ⊢ a   b ⊢ b\n\
+             ───────────── ⊸L\n\
+             a, a ⊸ b ⊢ b"
+        );
+        s.apply(l, 0, Ax, &[]).unwrap();
+        s.apply(r, 0, Ax, &[]).unwrap();
+        let proof = s.proof().unwrap();
+        assert_eq!(proof.check(i), Ok(()));
+        assert_eq!(
+            s.derivation().to_string(),
+            proof.two_sided_derivation().unwrap().to_string()
+        );
+        // !L, !c and !R by their two-sided names.
+        let (mut s, g) = start("!a |- !(a * a)", i);
+        let [g] = s.apply(g, at(&s, g, "!(a ⊗ a)"), BangRight, &[]).unwrap()[..] else {
+            panic!()
+        };
+        let [g] = s.apply(g, at(&s, g, "?~a"), BangContraction, &[]).unwrap()[..] else {
+            panic!()
+        };
+        assert_eq!(
+            s.rules(g, at(&s, g, "?~a")).unwrap(),
+            [BangLeft, BangContraction, BangWeakening]
+        );
+        let [l, r] = s
+            .apply(g, at(&s, g, "a ⊗ a"), TensorRight, &[at(&s, g, "?~a")])
+            .unwrap()[..]
+        else {
+            panic!()
+        };
+        for g in [l, r] {
+            let [g] = s.apply(g, at(&s, g, "?~a"), BangLeft, &[]).unwrap()[..] else {
+                panic!()
+            };
+            s.apply(g, 0, Ax, &[]).unwrap();
+        }
+        assert_eq!(s.proof().unwrap().check(i), Ok(()));
+    }
+
+    /// The search closes one goal or every goal, grafting its derivation,
+    /// and the result passes the checker; an unprovable goal stays open.
+    #[test]
+    fn search_closes_goals() {
+        use Rule::*;
+        let options = Options::default();
+        let (mut s, g) = start("|- (a & b) * c, ~a + ~b, ~c", Mode::CLASSICAL);
+        let t = at(&s, g, "(a & b) ⊗ c");
+        let [l, r] = s.apply(g, t, Tensor, &[at(&s, g, "~a ⊕ ~b")]).unwrap()[..] else {
+            panic!()
+        };
+        let outcome = s.close(l, &options, || false).unwrap();
+        assert!(matches!(outcome.verdict, Verdict::Proved(_)));
+        assert_eq!(outcome.engine, crate::search::Engine::Additive);
+        assert_eq!(s.goals().collect::<Vec<_>>(), [r]);
+        assert_eq!(s.steps(), 2);
+        let outcomes = s.close_all(&options, || false).unwrap();
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].0, r);
+        assert!(s.is_complete());
+        let proof = s.proof().unwrap();
+        assert_eq!(proof.check(Mode::CLASSICAL), Ok(()));
+        assert!(s.derivation().to_string().contains("⊕₂"));
+
+        // An unprovable goal stays open, a stopped search too.
+        let (mut s, g) = start("|- a * b, ~a, ~b", Mode::CLASSICAL);
+        let [l, r] = s
+            .apply(g, at(&s, g, "a ⊗ b"), Tensor, &[at(&s, g, "~b")])
+            .unwrap()[..]
+        else {
+            panic!()
+        };
+        let outcome = s.close(l, &options, || false).unwrap();
+        assert!(matches!(outcome.verdict, Verdict::Unprovable));
+        let outcome = s.close(r, &options, || true).unwrap();
+        assert!(matches!(outcome.verdict, Verdict::Unknown(Reason::Stopped)));
+        assert_eq!(s.goals().collect::<Vec<_>>(), [l, r]);
+        assert!(matches!(s.proof(), Err(Error::OpenGoals(2))));
+        assert!(matches!(
+            s.close(g, &options, || false),
+            Err(Error::Refused(Refusal::NoGoal(_)))
+        ));
+
+        // Two-sided: the grafted derivation carries the two-sided names.
+        let (mut s, g) = start("a & b, !(a -o c) |- c", Mode::INTUITIONISTIC);
+        let [g] = s.apply(g, at(&s, g, "~a ⊕ ~b"), WithLeft1, &[]).unwrap()[..] else {
+            panic!()
+        };
+        let outcome = s.close(g, &options, || false).unwrap();
+        assert!(matches!(outcome.verdict, Verdict::Proved(_)));
+        assert!(s.derivation().to_string().contains("!L"));
+        assert_eq!(s.proof().unwrap().check(Mode::INTUITIONISTIC), Ok(()));
     }
 
     /// The split helper says which splits the counts refuse.
