@@ -580,3 +580,29 @@ into an option or names it as a follow-up.
   a Yalla `ill` target, `show rocq` in `interact`, a `--lemma` flag and
   the Lean target join the follow-ups. D15 held: `rocq::Options` (lemma
   name, prelude) is the whole configuration.
+- 2026-09-29: step 12 reviewed and accepted (the entry above is the step
+  session's own). All checks pass including `nix flake check` with the
+  `rocq` check; the planning session built the kernel locally from the
+  pinned input and compiled ten further certificates from the CLI (a
+  distribution over `⊕`, three copies of a `!`, a chain of `⊸L`s with
+  `⊤`, four-way `⊗` nestings in both orders, two contracted `!`s under a
+  four-way `⊗`, `⊤` and `⊥` with contexts, the four units, a `⅋` inside a
+  `⊗`), all accepted with no output. D6 and D15 held: the exporter is a
+  pure function of the derivation, tracks the list Rocq shows for every
+  goal so that one exchange per `⊗` suffices, refuses Mix, affine
+  weakening and open goals before writing anything, and `Options` (lemma
+  name, prelude) is its whole configuration. Decisions accepted: NanoYalla
+  over Yalla's kernels (derived rules at a position, builds with nixpkgs'
+  Rocq 9.1.1 and the standard library alone, what Click & coLLecT users
+  have), pinned as a non-flake input rather than vendored (LGPL stays out
+  of the tree); a `Lemma` with `formula` binders, so the certificate is
+  schematic in the atoms; constructors rather than the kernel's
+  notations; intuitionistic proofs certified as the classical proofs they
+  are, which sidesteps the reading's ambiguity; the check kept in
+  `nix flake check` despite the 1.2 GB closure, since it is a cached
+  download. Prompts 13 and 15 amended: 13 notes that the exports need no
+  parallel work and how to run one check alone; 15i collects the second
+  kernels (Yalla `ill` with the ambiguity in its statement, Lean once it
+  has units, the `ex_t_r` chain for wide sequents) and 15h the
+  `--lemma`/`--prelude` flags and certifying a finished `interact`
+  session.

@@ -59,6 +59,19 @@ through a global. `focus::split_passes` and `Rules::new` were factored out
 for the interactive state's split helper; keep them equal to what the
 engine prunes.
 
+## What steps 10 to 12 left you
+
+Nothing in the search changed: the exports (`export::latex`, `typst`,
+`svg`, `rocq`) read the `Proof` and `Derivation` types the engines return,
+so a parallel engine that returns the same `Proof` needs no export work.
+Two practical points: the crate has seven features before `parallel`, so
+the feature check (`--each-feature` and `--feature-powerset --depth 2`)
+grows by a few sets, which is fine; and `nix flake check` now includes
+the `export` check (TeX Live, Typst, resvg) and the `rocq` check (Rocq's
+1.2 GB closure from the binary cache), so its first run on a machine is a
+download, not a build, and `nix build .#checks.x86_64-linux.<name>` runs
+one check alone when iterating.
+
 ## What to build
 
 1. **Runtime**: one rayon pool sized by `--jobs`; the stop flag; the sharded

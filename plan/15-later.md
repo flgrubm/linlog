@@ -178,8 +178,14 @@ today, which becomes a field). What a user might vary:
   math font), the sizes, gaps and colours `Style` already has, a dark
   preset, and per-formula ids on or off (15g'');
 - for the text renderer: the bar character and the gap between premises;
-- for the interactive session and the certificates: the lemma name, the
-  message language of `Refusal` if the web front end localises.
+- for the certificates: `rocq::Options` exists (`lemma`, `prelude`); the
+  CLI gets `--lemma` and `--prelude` through the same `--style` surface,
+  and `interact` a way to certify a finished session (`show rocq` cannot,
+  since `show` draws the user's partial derivation; the certificate is
+  `Interactive::proof()` then `proof.derivation()`, so a `proof rocq`
+  spelling or a `certify` command);
+- for the interactive session: the message language of `Refusal` if the
+  web front end localises.
 Presets are named values of the options type (`Style::dark()`), not code
 paths. The CLI maps `--style KEY=VALUE` flags or a `--style-file` (JSON,
 the options' serde form) onto the options; the web front end holds the
@@ -188,6 +194,22 @@ plugin or a notebook reuses the same JSON. The step that does this
 records in `.claude/rules/core.md` that a new export option is a field,
 never a constant, and its report says how each front end sets each
 option. Fable 5.1, high.
+
+## 15i. Second certificate kernels
+
+Left open by step 12 (`plan/reports/12-certificates.md`, "Open questions").
+Yalla's `ill` for intuitionistic certificates: a `kernel` field of
+`rocq::Options` (D15), full Yalla and OLlibs as flake inputs built at
+their Rocq version (nixpkgs packages neither), the two-sided statement
+from the reading (which carries step 8's `⊤`/`0` ambiguity, 15a'', into
+the statement), and `Permutation_Type` witnesses for every exchange
+since `ill` has no `_ext` layer; the same kernel would take Mix through
+`mix2_r`. A Lean 4 target once FormalizedFormalLogic/LinearLogic has
+units and a release (its multiset sequents need no exchange at all). The
+exchange `ex_perm_r` makes Rocq compute `permL_of_perm`, whose cost grows
+with the sequent's width; a chain of `ex_t_r` swaps if a wide sequent
+turns out slow. Identifier escaping writes non-ASCII as code points where
+Rocq would accept many Unicode letters. Fable 5.1, high.
 
 ## 15g'. Interactive follow-ups
 
