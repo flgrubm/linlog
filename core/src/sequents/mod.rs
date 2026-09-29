@@ -318,7 +318,7 @@ mod tests {
         let s = raw(vec![One, bang(2), Bot], &[1], &[]);
         assert_eq!(
             s.verify_integrity().unwrap_err().to_string(),
-            "Term index not decreasing: term at index 1 has subterm at index 2 >= 1"
+            "term 1 refers to term 2, but a subterm must come before the terms that use it"
         );
         assert!(s.clone().optimize().is_err());
     }

@@ -17,40 +17,38 @@ use thiserror::Error;
 pub enum Error {
     /// A term refers to a variable index (first) outside the variable
     /// dictionary (its length second).
-    #[error("Variable name at index does not exist: require index < {1}, but have index == {0}")]
+    #[error("a term refers to atom {0}, but the atom list has {1} names")]
     InvalidVariableIndex(usize, usize),
     /// A root formula index (first) lies outside the arena (its length second).
-    #[error("Term index out of bounds: tried to access index {0} while number of terms is {1}")]
+    #[error("a root formula is term {0}, but the arena has {1} terms")]
     TermIndexOutOfBounds(usize, usize),
     /// A subterm index (first) is not below the index of its parent term
     /// (second).
-    #[error("Term index not decreasing: term at index {1} has subterm at index {0} >= {1}")]
+    #[error("term {1} refers to term {0}, but a subterm must come before the terms that use it")]
     SubtermIndexNotDecreasing(usize, usize),
     /// A sequent has at least this many subformula occurrences, more than a
     /// forest can index.
-    #[error("Sequent has at least {0} subformula occurrences, more than a forest can index")]
+    #[error(
+        "the sequent unfolds to at least {0} subformula occurrences, more than a forest can index (2³² − 1)"
+    )]
     TooManyOccurrences(u64),
     /// The input is not a sequent, for each of the reasons listed.
     #[cfg(feature = "parse")]
-    #[error("Parsing failed with errors: {0:?}")]
+    #[error("cannot parse the sequent: {}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join("; "))]
     SequentParsing(Vec<ParseError>),
     /// A proof node index (first) lies outside the arena (its length second).
-    #[error(
-        "Proof node index out of bounds: tried to access node {0} while number of nodes is {1}"
-    )]
+    #[error("a proof refers to node {0}, but it has {1} nodes")]
     NodeIndexOutOfBounds(usize, usize),
     /// A premise's node index (first) is not below the index of the node it
     /// proves (second).
-    #[error("Proof node index not decreasing: node {1} has premise {0} >= {1}")]
+    #[error("proof node {1} has premise {0}, but a premise must come before the nodes that use it")]
     PremiseIndexNotDecreasing(usize, usize),
     /// A proof node refers to an occurrence (first) outside its forest (its
     /// length second).
-    #[error(
-        "Occurrence index out of bounds: a proof node refers to occurrence {0} while the forest has {1}"
-    )]
+    #[error("a proof node refers to occurrence {0}, but the sequent has {1} occurrences")]
     OccurrenceIndexOutOfBounds(usize, usize),
     /// A proof does not prove its sequent.
-    #[error("Invalid proof: {0}")]
+    #[error("invalid proof: {0}")]
     InvalidProof(#[from] CheckError),
     /// No engine handles the fragment in the mode yet.
     #[error("no engine for {fragment} in {mode} mode yet")]

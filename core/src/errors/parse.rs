@@ -18,19 +18,18 @@ pub struct ParseError {
 }
 
 impl fmt::Display for ParseError {
-    /// Writes where parsing failed, what was found there and what was expected.
+    /// Writes what was found where parsing failed, and what was expected if
+    /// known, as in `unexpected "-" at byte 8`.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Parse error at {:?}: found {}",
-            self.span,
-            self.found.as_deref().unwrap_or("end of input")
-        )?;
+        match &self.found {
+            Some(token) => write!(f, "unexpected {token:?} at byte {}", self.span.start)?,
+            None => f.write_str("unexpected end of input")?,
+        }
         if let Some(label) = &self.label {
-            write!(f, ", expected {}", label)?;
+            write!(f, ", expected {label}")?;
         }
         if !self.expected.is_empty() {
-            write!(f, ", expected one of: {:?}", self.expected)?;
+            write!(f, ", expected one of {}", self.expected.join(", "))?;
         }
         Ok(())
     }
