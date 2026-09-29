@@ -53,7 +53,11 @@ Current contents:
   lock files. `env` sets `CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS`, which drops
   Claude Code's built-in commit/PR instructions and its git status snapshot:
   both describe git, and in a colocated jj repo the snapshot shows a detached
-  HEAD. It also enables the `rust-analyzer-lsp` plugin (code intelligence;
+  HEAD. `env` also raises `CLAUDE_CODE_MAX_OUTPUT_TOKENS` to 128000, the
+  most a current model produces in one reply: the default of 64000 counts
+  thinking and text together, and a session that designs a whole module in
+  one turn can exceed it, which discards the turn. It also enables the
+  `rust-analyzer-lsp` plugin (code intelligence;
   needs `rust-analyzer` on PATH, which the devshell provides).
 
 ## Hooks
