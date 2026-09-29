@@ -3,7 +3,7 @@
 
 //! Proofs: terms over occurrence ids, the checker that validates a term
 //! against its sequent independently of any engine, and the derivation view
-//! for humans and exporters, as `plan/README.md` lays out.
+//! for humans and exporters.
 //!
 //! A [`Proof`] is an arena of [`Node`]s, one per rule instance, over the
 //! [`Forest`] of the sequent it proves. A node names the rule, the

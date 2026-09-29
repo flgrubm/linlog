@@ -137,7 +137,10 @@ even to read.** Every operation goes through `jj`, including lock updates:
 - Comments are short and targeted: they say why, or what the code cannot.
   Types and names carry the rest.
 - Comments are self-contained: they make sense from inside this repository,
-  with no references to other repositories, machines or conversations.
+  with no references to other repositories, machines or conversations, and
+  none to the Claude Code sessions, prompts, plan steps or decision numbers
+  (`plan/`) that produced the code. A comment says what the code does or
+  why; how the work was organised belongs in `plan/` and the jj history.
 - Every Rust item gets a concise doc comment that a human understands at
   first read: a function says what it does and returns, not how; a type,
   field, variant or module says what it is. The workspace lints in

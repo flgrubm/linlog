@@ -3,8 +3,8 @@
 
 //! Proof search: the front door `prove` with its options and outcome, the
 //! dispatch on fragment and mode, and one submodule per engine (the focused
-//! sequent engine, proof-net search, the additive fast path), as
-//! `plan/README.md` lays out. Only the focused engine exists so far.
+//! sequent engine, proof-net search, the additive fast path). Only the
+//! focused engine exists so far.
 
 /// The focused sequent engine.
 pub mod focus;
@@ -100,8 +100,9 @@ pub fn prove_until(
         Some(asserted) => asserted,
         None => detected,
     };
-    // The dispatch table of `plan/README.md` (D8): every classical row up to
-    // MALL goes to the focused engine; the other rows have no engine yet.
+    // The dispatch: every classical fragment up to MALL goes to the focused
+    // engine; intuitionistic and affine modes and the exponentials have no
+    // engine yet.
     if mode.intuitionistic || mode.affine || fragment.has_exponentials() {
         return Err(Error::NoEngine { fragment, mode });
     }

@@ -46,7 +46,10 @@ Record what a future session must know and cannot see in the code in
 `.claude/rules/core.md` (invariants, why a choice was made, what a check
 cannot catch), one point per bullet, and in your step report. Update an
 existing note rather than adding a duplicate; delete what turns out to be
-wrong.
+wrong. Code comments and doc comments never mention this session, the
+prompt, the plan, its steps or its decision numbers: they say what the
+code does or why, in terms a reader of the repository alone understands.
+The plan and the reports are where the organisation of the work lives.
 
 In the report and in your final message, lead with the outcome, then the
 decisions, then what is left open. Complete sentences, no working
