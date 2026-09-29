@@ -13,6 +13,21 @@ every item, the verification table, no pushing. Read before you start:
   README on GitHub) before emitting it.
 - `core/src/export/**` (placeholder), `core/src/proofs/**`, `cli/src/**`.
 
+## What step 9 left you
+
+`plan/reports/09-interactive.md`, "For steps 10 to 12 and the web front
+end". A proof in progress is `Interactive::derivation()`, an ordinary
+`Derivation` (premises before conclusions, the root last, two-sided in
+intuitionistic mode) whose open goals are inferences with `rule ==
+Rule::Open`, no principal and no premises; `Rule::name` gives `open` for
+it, which is never a label. The text renderer draws such a leaf as its
+sequent alone, with no bar. `Rule::classical()` maps a two-sided name to
+the one-sided rule and `Rule: FromStr` reads a name back, in case the
+label table wants either. The `interact` command's `show` prints the text
+tree; giving `show` and `proof` a format argument is welcome if it is one
+arm each, not a second output layer, since the web client (step 15g) is
+the front end for partial derivations.
+
 ## Goal
 
 `export::latex` and `export::typst`: sequents and derivations (classical
@@ -22,8 +37,9 @@ compile. `linlog prove --format latex|typst` and `linlog seq print --format
 latex|typst`. Proof nets are drawn in step 11 (SVG), not here. Both
 emitters live behind cargo features `latex` and `typst` (decision D14), on
 by default and enabled by the CLI; step 9's partial derivations (open goals
-as leaves) render too, an open goal drawn as a leaf with a dotted bar and a
-mark. With `latex` and `typst` the crate has five features, so this step
+as leaves of `Rule::Open`) render too, an open goal drawn as a leaf with a
+dotted bar and a mark (ebproof's `\hypo` with a marker, curryst's leaf),
+one shape for both targets. With `latex` and `typst` the crate has five features, so this step
 also replaces the full feature powerset by `cargo hack check
 --each-feature -p linlog` plus `--feature-powerset --depth 2 -p linlog` in
 `modules/checks.nix` and in CLAUDE.md's command list and verification
@@ -69,7 +85,8 @@ table (decision D14).
    check in the report. Follow `.claude/rules/ci.md` for anything under
    `.github/` and the dendritic layout for `modules/`.
 5. **Tests**: snapshot tests of the emitted text for a set of derivations
-   (MLL, MALL, MELL with structural rules, an ILL derivation), escaping of
+   (MLL, MALL, MELL with structural rules, an ILL derivation, and one
+   partial derivation from `Interactive` with an open goal), escaping of
    names, and the compile checks above if they exist.
 6. **Documentation**: README usage section; CLAUDE.md commands if a check
    was added; `.claude/rules/core.md` only if the derivation view changed.

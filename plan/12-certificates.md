@@ -17,6 +17,20 @@ every item, the verification table, no pushing. Read before you start:
   "Certificates first".
 - `.claude/rules/ci.md` and `modules/*.nix` if you add a nix check.
 
+## What step 9 left you
+
+`plan/reports/09-interactive.md`, "For steps 10 to 12 and the web front
+end". A derivation may now contain open goals (inferences with `rule ==
+Rule::Open`): a certificate of one does not exist, so the exporter refuses
+such a derivation with a clear error rather than emitting `Admitted`. A
+finished interactive proof is certified through its term: `Interactive::proof()`
+gives the checked `Proof`, and `proof.derivation()` (or
+`two_sided_derivation()`) is the tree to export, not
+`Interactive::derivation()`, since the checker's placement of `?c` and
+`?w` is the term's and the two can differ; only the root sequent agrees.
+`Rule::classical()` maps every two-sided name to its one-sided rule, which
+the Yalla mapping wants for the classical kernel.
+
 ## Goal
 
 `export::rocq`, behind the cargo feature `rocq` (decision D14; on by

@@ -11,10 +11,24 @@ every item, the verification table, no pushing. Read before you start:
 - `plan/notes/export-targets.md` § Crates for the `svg` crate.
 - `core/src/export/**`, `core/src/nets/**`, `core/src/proofs/**`.
 
+## What steps 9 and 10 left you
+
+`plan/reports/09-interactive.md`, "For steps 10 to 12 and the web front
+end": a proof in progress is `Interactive::derivation()`, a `Derivation`
+whose open goals are inferences with `rule == Rule::Open`, no principal
+and no premises; the text renderer draws such a leaf as its sequent alone
+with no bar, and step 10 chose one shape for an open leaf in LaTeX and
+Typst (its report): draw the same thing in SVG. The SVG of a partial
+derivation is what the web front end (step 15g) will draw after every
+`apply`, so the derivation function must be cheap to call repeatedly and
+pure (data in, string out); the report's list of what the front end will
+call is the client's side of it.
+
 ## Goal
 
 `export::svg`, behind the cargo feature `svg` (decision D14; on by default,
-enabled by the CLI), partial derivations with open goals included:
+enabled by the CLI), partial derivations with open goals (`Rule::Open`
+leaves) included:
 deterministic, dependency-light SVG for a sequent (one line of
 text), a derivation (a proof tree) and a proof net (formula trees with axiom
 links), usable from the CLI (`--format svg` on `prove` and `seq print`, and
@@ -57,8 +71,8 @@ string). Readable at the default size, scalable, with the text selectable.
    nets deserve their own entry point (draw a net from a serialized net or
    from a proved MLL sequent; check a net's correctness). `--output`
    writes the file; stdout otherwise.
-6. **Tests**: snapshot tests of the SVG text for small inputs; structural
-   tests (well-formed XML, the expected number of `<text>`/`<path>`
+6. **Tests**: snapshot tests of the SVG text for small inputs (one of them
+   a partial derivation from `Interactive`); structural tests (well-formed XML, the expected number of `<text>`/`<path>`
    elements, no element outside the viewBox); a visual check by you, by
    rendering a few samples with `rsvg-convert` or `resvg` from nixpkgs if
    available and looking at the PNGs (the `Read` tool shows images), and

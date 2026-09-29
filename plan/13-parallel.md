@@ -40,6 +40,25 @@ read-only and shared. The additive path (`search::additive`, a memoized
 recursion on subformula pairs) is small enough to stay sequential; say so
 rather than parallelizing it.
 
+## What step 9 left you
+
+The front door is `prove_goal(&forest, goal, mode, &options, stop)`, which
+decides any multiset of occurrences of a forest; `prove_until` is that on
+the roots, and `Interactive::close` calls it on an open goal with the
+client's stop closure. The parallel layer serves `prove_goal` too, since
+the engines' goal entries (`focus::search_goal`,
+`additive::search_goal`) are what it wraps; if cube-and-conquer only
+starts from the roots, goals off the roots go to the sequential path and
+the report says so. Two things to keep: the proof of a goal other than the
+roots fails `Proof::check` by design (its root concludes the goal), which
+is why `prove_goal`'s debug assertion is conditioned on `is_roots`; and
+`Interactive` must build and work without `parallel` (wasm) and with it,
+its stop closure being the only way a search it starts is stopped, so the
+atomic stop flag is reachable from that closure (or `Options`) rather than
+through a global. `focus::split_passes` and `Rules::new` were factored out
+for the interactive state's split helper; keep them equal to what the
+engine prunes.
+
 ## What to build
 
 1. **Runtime**: one rayon pool sized by `--jobs`; the stop flag; the sharded

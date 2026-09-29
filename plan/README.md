@@ -456,3 +456,28 @@ full powerset; the step that adds the fifth feature makes that change in
   efforts": the Opus steps 10, 11 and 14 move to `xhigh`, nothing else
   changes). Prompts 9 to 15 amended with what the reading, the two-sided
   view and the goal search now offer.
+- 2026-09-29: step 9 reviewed and accepted. Seven commits, "Search from a
+  goal instead of the roots" to "Document interactive proving"; all checks
+  pass including `nix flake check`; `linlog interact` was exercised by hand
+  in every mode (root `?w`, `?c` under a `⊗` with `!` above, affine `wk`,
+  Mix, `⊤R` and `0L`, the additive path off the roots, `!c` with `!R`
+  two-sided, the error paths). D13 held as written: `Interactive` is a
+  top-down arena of the view's `Inference`s with `Rule::Open` leaves,
+  formulas addressed by position, validation at application time complete
+  for the checker (R1 and R3 two-sided, R2 implied), `undo` by truncation,
+  search from any goal through the new front door `prove_goal` (the net
+  engine stays with the roots), the finished tree translated back to a
+  dyadic term with `Quest` at each `?` formula's entry and checked, JSON
+  with a replayed history; D14's `interactive` feature is on by default and
+  the CLI enables it. A fresh-context reviewer drove about 106 000 random
+  rule applications and 2 500 completed derivations against its own rules
+  and caught a Mix bug and several over-rejections on reading a state
+  back, all fixed and pinned. The planning session fixed two CLI nits
+  itself (a refused `close` printed its message twice through the error
+  chain; `--state` ignored the mode flags instead of refusing them), one
+  commit. Prompts 10 to 13 and 15 amended: `Rule::Open` leaves for the
+  exporters (one shape, a partial derivation in each snapshot set), the
+  certificates refuse open goals and export the term's derivation, the
+  parallel layer serves `prove_goal`, the web front end's plan starts from
+  the report's list of calls, and the interactive follow-ups (net engine
+  on a sub-forest, stored positions, nullary Mix) are 15g'.

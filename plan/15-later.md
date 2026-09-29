@@ -98,4 +98,31 @@ search vehicle. Assess first.
 feature (and without whichever optional features of D14 the client does not
 ship), the interactive state of step 9 as the client's state with its JSON
 as the wire form, the SVG of partial derivations from step 11 as the
-picture, and the JSON formats for import and export. Its own plan.
+picture, and the JSON formats for import and export. Its own plan, which
+starts from `plan/reports/09-interactive.md`, "For steps 10 to 12 and the
+web front end": the calls the client makes (`Interactive::new` or the JSON,
+`goals`/`goal`/`reading` to draw the goals with positions as click
+targets, `rules` for the menu, `split_passes` to grey out a split,
+`apply`, `undo`, `close` with a node-counting stop closure since wasm has
+no clock in core, `derivation` for the picture, `proof` at the end), and
+the `linlog interact` command of step 9 as the reference behaviour.
+
+## 15g'. Interactive follow-ups
+
+Left open by step 9, none a correctness issue. The net engine works on a
+proof structure over the whole forest, so an MLL goal off the roots goes
+to the focused engine and `Engine::Net` forced on it is `Error::NetGoal`;
+a structure over a sub-forest (the goal's subtrees as conclusions) would
+let the net engine close such goals, worth it only if the front end's
+profiles show `close` on wide MLL goals. The intuitionistic reading is
+recomputed per operation (O(n) in the forest), since `Reading` borrows the
+forest the state owns; positions stored in the state fix that if a client
+with thousands of occurrences asks. `rules` lists by connective and mode
+only, and `apply` says what the context lacks; a fully filtered list means
+trying each rule on a clone. A Mix that sends every formula to one side
+opens an empty goal that nothing closes (nullary Mix is not a rule);
+refusing that split is a one-line policy decision. `close_all` runs the
+goals in order under one stop closure; a per-goal budget is the client's
+wrapping. Reading a state back requires the two-sided rule names that the
+library writes, while `apply` also accepts the classical name in
+intuitionistic mode; harmless for the library's own JSON.
