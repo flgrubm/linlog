@@ -142,8 +142,22 @@ memo-bound families.
 
 `cargo clippy --workspace --all-targets -- --deny warnings`,
 `cargo test --workspace`, `cargo deny check` if a dependency changed,
-`nix flake check` at the end (`jj st` first), and one full benchmark run in
-release mode with the table pasted into the report.
+`nix flake check` at the end (`jj st` first), and the baseline run in
+release mode with the table pasted into the report. The machine is yours
+for this step (the author is not using it otherwise), so the baseline may
+be fuller than a quick pass: every family at three or four sizes rather
+than two, per-problem timeouts of a few minutes on the hard families
+rather than seconds, every engine that applies and the thread counts 1,
+2, 4 and every core, the ILL problems both ways, and the whole LLTP set
+you were able to fetch. Keep the whole run to a few hours of wall time
+in total, not a day: pick sizes so that the largest instance of each
+family times out and the rest do not, run the long instances once and
+the short ones a few times for a median, and run the harness in the
+background while you write the report so the machine is never idle. Say
+in the report how long the run took and on what hardware. A run that
+would exceed that budget is trimmed by dropping the largest size, never
+by shortening the timeouts below what the families need to show their
+scaling.
 
 ## Deliverables
 
