@@ -1,6 +1,12 @@
 # linlog
 
-A linear logic suite for all your needs.
+A linear logic suite for all your needs: a command line program and a Rust
+library that parse, print and decide sequents of classical linear logic and
+its fragments, keep the proofs in a checkable form and show them as
+derivation trees.
+
+[API documentation](https://flgrubm.github.io/linlog/) (rustdoc of `main`,
+rebuilt on every push).
 
 ## Usage
 
@@ -88,33 +94,60 @@ The syntax: `*`/`⊗` tensor, `|`/`par`/`⅋` par, `&` with, `+`/`⊕` plus,
 `-o`/`⊸` linear implication, `~A` or `A^` negation, `!` and `?`, and the
 units `1`, `bot`/`⊥`, `top`/`⊤`, `0`; `|-` or `⊢` separates the sides.
 
-## Roadmap
+## What exists and what is planned
 
-Currently planned are a command line program as well as an interactive website (hosted somewhere as a client side website) that provide some functionality of interacting with linear logic sequents and proofs. This tool is mainly meant for educational purposes, but since a major goal is the use of efficient code (within the limits of complexity classes), the tool should be usable for various other use cases.
+Built:
 
-Please feel free to make feature requests and contribute in any way. All of the code in this repository is licensed under the EUPL.
+- Parsing and printing of sequents in the syntax above, with the ASCII and
+  Unicode spellings of every connective, and a compact JSON form.
+- Detection of the fragment a sequent lives in (MLL, MLL with units, ALL,
+  MALL, MELL, LL) and the modes classical, affine, intuitionistic and Mix
+  as user choices.
+- Proofs as compact terms over subformula occurrences, an independent
+  checker that decides whether a term proves its sequent, and a derivation
+  view that unfolds a term into the tree of the standard sequent calculus,
+  printed as text.
+- Automatic proof search for MLL, MLL with units and MALL, with or without
+  Mix: a focused sequent engine over occurrence bitsets with a memo and
+  count-based pruning, returning a checked proof, "unprovable" after an
+  exhaustive search, or "unknown" with the reason.
+- The `linlog` command: `prove`, `check` and `seq`, with time limits,
+  Ctrl-C, statistics and JSON output.
 
-Planned features:
+Planned, in roughly this order:
 
-- Parse and print sequents
-- Step-wise interactive sequent proving
-- Automatic proof search (different methods for different sub-variants, e.g. MLL)
-- Creation and verification of proof nets
-- Convert classical/intuitionistic sequents to linear logic
-    - solve them and compare proof trees
-- Output sequents, proof trees and nets in various formats:
-    - PDF/SVG
-    - LaTeX/Typst
-    - plain Unicode
-    - Rocq/Lean/Agda proof
-    - interactive web-view
-- Further into the future:
-    - Intuitionistic linear logic
-    - Affine linear logic
-- inspired by [Click and Collect](https://www.click-and-collect.linear-logic.org), but more features planned
+- Proof nets for MLL as a representation of their own: correctness
+  criterion, sequentialization in both directions, and proof-net search as
+  the engine for unit-free MLL.
+- The exponentials (MELL, full LL) with a bounded copy rule, and affine
+  mode as a decision procedure.
+- Intuitionistic linear logic, with two-sided printing and derivations.
+- Export of sequents, derivations and proof nets to LaTeX, Typst and SVG,
+  and proof certificates for Rocq.
+- Parallel search, a benchmark harness with the standard problem
+  libraries, and performance work driven by its numbers.
+- Later: proof nets with exponential boxes, essential nets for
+  intuitionistic MLL, the inverse method, the Lambek calculus, and a web
+  front end.
+
+The design follows [Click and Collect](https://www.click-and-collect.linear-logic.org)
+where it is good and departs from it where it is not. Feature requests and
+contributions are welcome. All code is licensed under the EUPL.
 
 ## Architecture
 
-There will be three units: the CLI program (`linlog`, package `linlog-cli` in `cli/`), the web version (`linlog-web`, not started) as well as a library (`linlog`, in `core/`) for the common logic shared between the CLI and web application. The code is written using Rust, due to its high performance and great compatibility with WebAssembly (for the website).
+Two crates, with a third to come: the library `linlog` in `core/` holds all
+the logic; the command line program `linlog` (package `linlog-cli`) in
+`cli/` is a thin front end; a web front end will compile the library to
+WebAssembly, so the library uses neither threads nor the clock on its own.
 
-The library keeps a sequent as a compact arena of subformulas in negation normal form, one-sided (`Γ ⊢ Δ` becomes `⊢ Γ^⊥, Δ`). On top of that it detects the fragment a sequent lives in (MLL, MALL, MELL, LL, …) and builds the occurrence forest, the numbering of subformula occurrences that every proof-search engine, proof checker and proof net works on. A proof is a compact term over those occurrences, one node per rule instance; an independent checker decides whether it proves its sequent, and a derivation view unfolds it into the tree of explicit sequents of the standard sequent calculus, which prints as a text tree and which the exporters will read. Proof search decides a sequent with the engine its fragment calls for and returns a checked proof, that there is none, or why it could not tell; so far that is one focused sequent engine over occurrence bitsets with a memo, for the multiplicative and additive fragments with or without Mix. Proof nets, the exponentials and the export formats follow the plan in `plan/README.md`.
+The library keeps a sequent as a compact arena of subformulas in negation
+normal form, one-sided (`Γ ⊢ Δ` becomes `⊢ Γ^⊥, Δ`). On top of that it
+detects the fragment a sequent lives in and builds the occurrence forest,
+the numbering of subformula occurrences that every proof-search engine,
+proof checker and proof net works on. A proof is a compact term over those
+occurrences, one node per rule instance; an independent checker decides
+whether it proves its sequent, and a derivation view unfolds it into the
+tree of explicit sequents of the standard sequent calculus. Proof search
+decides a sequent with the engine its fragment calls for and returns a
+checked proof, that there is none, or why it could not tell.
