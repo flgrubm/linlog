@@ -29,15 +29,17 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
 - `interact.rs`: `interact`, a line-based session over `Interactive`:
   the state comes from the sequent argument or `--state FILE` (a session
   `save` wrote; the mode is then the file's), the commands from standard
-  input (`goals`, `rules`, `apply`, `undo`, `close`, `show [latex|typst]`,
+  input (`goals`, `rules`, `apply`, `undo`, `close`, `show [latex|typst|svg]`,
   `proof`, `save`, `load`, `help`, `quit`; `HELP` is the list; `show`
-  with a format prints the export fragment of the partial derivation),
+  with a format prints the export fragment of the partial derivation, or
+  its SVG document),
   every command's output or `error: …` goes to standard output and the
   session goes on,
   and the whole loop runs inside `on_large_stack` so that `close` and the
   derivation drawing have the stack `prove` has. `goal_line` prints a goal
   with the position of every formula, two-sided under the reading.
-- `prove.rs`: `prove` and `check`, and the `net` format's refusal of
+- `prove.rs`: `prove` and `check`, and the `net` and `net-svg` formats'
+  refusal of
   sequents outside unit-free MLL and of affine mode (`nets_exist`), before
   the search runs; in intuitionistic mode the net printed is the one of
   the one-sided sequent. `--copies` (default
@@ -51,9 +53,18 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   as comments of the target (`note`) and the derivation through
   `linlog::export` (`derivation(proof, mode, format, form)`, which also
   draws the text tree); `--standalone` makes the derivation a document and
-  is refused, exit 2, for the other formats (`form`). `seq print
-  --format` (`SequentFormat`) prints through `sequent_in`, which
-  `sequent_text` wraps.
+  is refused, exit 2, for the other formats (`form`). `--format svg`
+  draws the derivation and `--format net-svg` the net (`net_in`, the
+  same net `net` prints) through `linlog::export::svg` with the default
+  `Style`, the verdict and statistics as XML comments (`note`, which
+  turns every `-` into `‐`, since a comment cannot hold `--` and the
+  advice names flags). `--standalone` is refused for them too: an SVG is
+  always a whole document, so the flag would do nothing. An unprovable
+  sequent prints the comment alone, which is not an XML document; the
+  exit status says why. `seq print --format` (`SequentFormat`, with
+  `svg`) prints through `sequent_in`, which `sequent_text` wraps. There
+  is no `net` subcommand: the CLI's nets are those of proofs, which
+  `prove` and `check` draw.
 
 ## Invariants
 
@@ -110,13 +121,14 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
 - **An `interact` command**: an arm in `Session::command`, a line in
   `HELP`, and the session test in `cli/tests/cli.rs`, which pins the
   exact output of a scripted session.
-- **An output format** (`svg`, `rocq`): a variant of `Format` and its
+- **An output format** (`rocq`): a variant of `Format` and its
   arm in `prove`'s and `check_text`'s `match format`, as `net`, `latex`
   and `typst` have. A format that renders the derivation builds it inside
   the `on_large_stack` closure, as the text format does (an arm in
   `derivation`); `net` builds the net there too, though
   desequentialization does not recurse. A format with a document form
-  takes `--standalone` (`form` lists which formats have one), and one
+  takes `--standalone` (`form` lists which formats have one), a net
+  format builds the net in `net_in`, and one
   whose output is a source file writes the verdict as its comment
   (`note`), so that the output still compiles.
 - **A new `Reason`**: its arm in `verdict_line`, which turns a generic

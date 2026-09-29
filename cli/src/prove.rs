@@ -5,6 +5,7 @@ use crate::argument_parsing::{CheckArgs, Format, ProveArgs, SequentFormat};
 use crate::io;
 use crate::{Status, catch_interrupt, interrupted};
 use anyhow::{Context, Result, anyhow, bail};
+use linlog::export::svg::{self, Style};
 use linlog::export::{Form, latex, typst};
 use linlog::search::{Engine, Options, Outcome, Reason, Statistics, Verdict, prove_until};
 use linlog::{Error, Forest, Fragment, Mode, Proof, ProofStructure, Reading, Sequent};
@@ -62,8 +63,9 @@ enum Stop {
 }
 
 /// Returns the derivation of a proof, two-sided in intuitionistic mode:
-/// a LaTeX or Typst proof tree in `form` for those formats, a text tree
-/// otherwise; or the checker's complaint with formulas.
+/// a LaTeX or Typst proof tree in `form` for those formats, an SVG
+/// document for SVG, a text tree otherwise; or the checker's complaint
+/// with formulas.
 pub(crate) fn derivation(proof: &Proof, mode: Mode, format: Format, form: Form) -> Result<String> {
     let derivation = if mode.intuitionistic {
         proof.two_sided_derivation()
@@ -74,7 +76,8 @@ pub(crate) fn derivation(proof: &Proof, mode: Mode, format: Format, form: Form) 
         .map(|d| match format {
             Format::Latex => latex::derivation(&d, form),
             Format::Typst => typst::derivation(&d, form),
-            Format::Text | Format::Json | Format::Net => d.to_string(),
+            Format::Svg => svg::derivation(&d, &Style::default()),
+            Format::Text | Format::Json | Format::Net | Format::NetSvg => d.to_string(),
         })
         .map_err(|e| anyhow!("the proof is invalid: {}", e.describe(proof.forest())))
 }
@@ -87,7 +90,7 @@ pub fn sequent_text(sequent: &Sequent, mode: Mode) -> Result<String> {
 
 /// Returns a sequent in a format, one-sided, or two-sided in
 /// intuitionistic mode when it has an intuitionistic reading; LaTeX and
-/// Typst in `form`.
+/// Typst in `form`, SVG as a document.
 pub fn sequent_in(
     sequent: &Sequent,
     mode: Mode,
@@ -99,6 +102,7 @@ pub fn sequent_in(
             SequentFormat::Text => sequent.to_string(),
             SequentFormat::Latex => latex::sequent(sequent, form),
             SequentFormat::Typst => typst::sequent(sequent, form),
+            SequentFormat::Svg => svg::sequent(sequent, &Style::default()),
         });
     }
     let forest = Forest::new(sequent)?;
@@ -108,11 +112,13 @@ pub fn sequent_in(
         SequentFormat::Text => reading.to_string(),
         SequentFormat::Latex => latex::two_sided(&reading, form),
         SequentFormat::Typst => typst::two_sided(&reading, form),
+        SequentFormat::Svg => svg::two_sided(&reading, &Style::default()),
     })
 }
 
 /// Returns the form `--standalone` asks for, which only the LaTeX and
-/// Typst formats (`exported`) have.
+/// Typst formats (`exported`) have: the others have one form, an SVG
+/// always being a document, so the flag would change nothing.
 pub fn form(standalone: bool, exported: bool) -> Result<Form> {
     match (standalone, exported) {
         (false, _) => Ok(Form::Fragment),
@@ -122,14 +128,16 @@ pub fn form(standalone: bool, exported: bool) -> Result<Form> {
 }
 
 /// Returns a line or lines of text as the format writes them next to its
-/// output: as they are, or as LaTeX or Typst comments.
+/// output: as they are, or as LaTeX, Typst or XML comments.
 fn note(format: Format, text: &str) -> String {
-    let prefix = match format {
-        Format::Latex => "% ",
-        Format::Typst => "// ",
-        Format::Text | Format::Json | Format::Net => return text.to_owned(),
+    let comment = |line: &str| match format {
+        Format::Latex => format!("% {line}"),
+        Format::Typst => format!("// {line}"),
+        // An XML comment cannot hold `--`, which flag names bring.
+        Format::Svg | Format::NetSvg => format!("<!-- {} -->", line.replace('-', "\u{2010}")),
+        Format::Text | Format::Json | Format::Net => line.to_owned(),
     };
-    let lines: Vec<String> = text.lines().map(|l| format!("{prefix}{l}")).collect();
+    let lines: Vec<String> = text.lines().map(comment).collect();
     lines.join("\n")
 }
 
@@ -144,18 +152,30 @@ pub(crate) fn describe(error: Error, sequent: &Sequent) -> anyhow::Error {
     }
 }
 
-/// Returns the proof net of a proof as text, or why its links are not
-/// one.
-fn net(proof: &Proof, mode: Mode) -> Result<String> {
-    Ok(ProofStructure::from_proof(proof, mode.mix)?.to_string())
+/// Returns a proof net as the format writes it: an SVG document for
+/// `net-svg`, text otherwise.
+fn net_in(net: &ProofStructure, format: Format) -> String {
+    match format {
+        Format::NetSvg => svg::net(net, &Style::default()),
+        _ => net.to_string(),
+    }
 }
 
-/// Returns the proof net of an outcome as text: the net the net engine
-/// found, or the net of the proof another engine found.
-fn net_of(outcome: &Outcome, proof: &Proof, mode: Mode) -> Result<String> {
+/// Returns the proof net of a proof in a format, or why its links are not
+/// one.
+fn net(proof: &Proof, mode: Mode, format: Format) -> Result<String> {
+    Ok(net_in(
+        &ProofStructure::from_proof(proof, mode.mix)?,
+        format,
+    ))
+}
+
+/// Returns the proof net of an outcome in a format: the net the net
+/// engine found, or the net of the proof another engine found.
+fn net_of(outcome: &Outcome, proof: &Proof, mode: Mode, format: Format) -> Result<String> {
     match &outcome.net {
-        Some(net) => Ok(net.to_string()),
-        None => net(proof, mode),
+        Some(found) => Ok(net_in(found, format)),
+        None => net(proof, mode, format),
     }
 }
 
@@ -179,7 +199,7 @@ fn nets_exist(sequent: &Sequent, mode: Mode) -> Result<()> {
 pub fn prove(args: &ProveArgs) -> Result<Status> {
     let sequent = args.input.sequent()?;
     let mode = args.mode.mode();
-    if args.output.format == Format::Net {
+    if matches!(args.output.format, Format::Net | Format::NetSvg) {
         nets_exist(&sequent, mode)?;
     }
     let options = Options::default()
@@ -218,10 +238,14 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         .map_err(|e| describe(e, &sequent))?;
         let elapsed = start.elapsed();
         let derivation = match (&outcome.verdict, format, quiet) {
-            (Verdict::Proved(proof), Format::Text | Format::Latex | Format::Typst, false) => {
-                Some(derivation(proof, mode, format, form)?)
+            (
+                Verdict::Proved(proof),
+                Format::Text | Format::Latex | Format::Typst | Format::Svg,
+                false,
+            ) => Some(derivation(proof, mode, format, form)?),
+            (Verdict::Proved(proof), Format::Net | Format::NetSvg, false) => {
+                Some(net_of(&outcome, proof, mode, format)?)
             }
-            (Verdict::Proved(proof), Format::Net, false) => Some(net_of(&outcome, proof, mode)?),
             _ => None,
         };
         anyhow::Ok((outcome, stop, elapsed, derivation))
@@ -229,7 +253,12 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
 
     let text = match format {
         Format::Json => serde_json::to_string(&outcome)?,
-        Format::Text | Format::Net | Format::Latex | Format::Typst => {
+        Format::Text
+        | Format::Net
+        | Format::Latex
+        | Format::Typst
+        | Format::Svg
+        | Format::NetSvg => {
             let mut text = note(
                 format,
                 &verdict_line(&outcome, args.fragment.is_some(), stop),
@@ -344,7 +373,12 @@ fn check_text(
             "error": result.as_ref().err().map(|e| e.describe(proof.forest()).to_string()),
         })
         .to_string(),
-        Format::Text | Format::Net | Format::Latex | Format::Typst => {
+        Format::Text
+        | Format::Net
+        | Format::Latex
+        | Format::Typst
+        | Format::Svg
+        | Format::NetSvg => {
             // A sequent with no intuitionistic reading is an invalid proof
             // in intuitionistic mode, printed one-sided.
             let sequent =
@@ -352,9 +386,9 @@ fn check_text(
             let valid = note(format, &format!("valid proof of {sequent} ({mode})"));
             match &result {
                 Ok(()) if quiet => valid,
-                Ok(()) if format == Format::Net => {
+                Ok(()) if matches!(format, Format::Net | Format::NetSvg) => {
                     nets_exist(proof.sequent(), mode)?;
-                    format!("{valid}\n{}", net(proof, mode)?)
+                    format!("{valid}\n{}", net(proof, mode, format)?)
                 }
                 Ok(()) => format!("{valid}\n{}", derivation(proof, mode, format, form)?),
                 Err(e) => note(

@@ -450,6 +450,42 @@ fn latex_and_typst_formats() {
     );
 }
 
+/// `--format svg` and `--format net-svg` print the verdict as an XML
+/// comment, with no `--` in it, and the derivation or the proof net as an
+/// SVG document, for `prove`, `check`, `seq print` and the session's
+/// `show`; an SVG is always a document, so `--standalone` is refused.
+#[test]
+fn svg_formats() {
+    let (status, out, _) = linlog(&["prove", "--format", "svg", "A |- A"], "");
+    assert_eq!(status, 0);
+    assert!(
+        out.starts_with("<!-- provable (MLL, classical, net engine) -->\n<svg ")
+            && out.ends_with("</svg>\n"),
+        "{out}"
+    );
+    let (_, json, _) = linlog(&["prove", "--format", "json", "A * B |- B * A"], "");
+    let (status, out, _) = linlog(&["check", "--format", "net-svg"], &json);
+    assert_eq!(status, 0);
+    assert!(out.contains("<circle id=\"o0\""), "{out}");
+    let (status, out, _) = linlog(&["prove", "--format", "svg", "--copies", "0", "|- ?A"], "");
+    assert_eq!(status, 3);
+    assert!(
+        out.contains("raise it with \u{2010}\u{2010}copies -->"),
+        "{out}"
+    );
+    let (status, out, _) = linlog(&["seq", "print", "--format", "svg", "A |- A"], "");
+    assert_eq!(status, 0);
+    assert!(out.contains("<title>⊢ A⊥, A</title>"), "{out}");
+    let (status, _, err) = linlog(&["prove", "--format", "svg", "--standalone", "A |- A"], "");
+    assert_eq!(status, 2);
+    assert!(err.contains("--standalone needs --format latex"), "{err}");
+    let (_, out, _) = linlog(&["interact", "A |- A"], "show svg\nquit\n");
+    assert!(
+        out.starts_with("<svg ") && out.contains(">⋮</text>"),
+        "{out}"
+    );
+}
+
 /// `seq` prints a sequent one-sided, as JSON that it reads back, and its
 /// fragment.
 #[test]

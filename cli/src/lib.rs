@@ -114,7 +114,10 @@ fn run(cli: &Cli) -> Result<Status> {
                         intuitionistic: *intuitionistic,
                         ..Mode::CLASSICAL
                     };
-                    let form = prove::form(*standalone, *format != SequentFormat::Text)?;
+                    let form = prove::form(
+                        *standalone,
+                        matches!(format, SequentFormat::Latex | SequentFormat::Typst),
+                    )?;
                     let text = prove::sequent_in(&input.sequent()?, mode, *format, form)?;
                     io::write(output.as_deref(), &text)?;
                 }

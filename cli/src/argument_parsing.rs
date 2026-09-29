@@ -53,8 +53,9 @@ pub enum Command {
     /// formula P of goal G; `apply G P RULE [P…]` applies a rule, the
     /// further positions being the formulas that go to the left premise of
     /// a ⊗ or Mix; `undo` retracts the last step; `close [G]` lets the
-    /// search close goal G, or every open goal; `show [latex|typst]` draws
-    /// the derivation so far, as text or as a LaTeX or Typst proof tree;
+    /// search close goal G, or every open goal; `show [latex|typst|svg]`
+    /// draws the derivation so far, as text, as a LaTeX or Typst proof
+    /// tree, or as an SVG document;
     /// `proof [FILE]` checks the finished proof and prints it, or writes it
     /// as JSON for `check`; `save FILE` and `load FILE` keep and resume the
     /// session as JSON; `help`; `quit`. The exit status is 0
@@ -315,6 +316,13 @@ pub enum Format {
     /// The verdict as a comment, then the derivation as a Typst proof tree
     /// of the curryst package
     Typst,
+    /// The verdict as an XML comment, then the derivation drawn as an SVG
+    /// document, set in the Euler Math font
+    Svg,
+    /// The verdict as an XML comment, then the proof net of the proof
+    /// drawn as an SVG document: the formula trees with the axiom links as
+    /// arcs over the literals; for the sequents `net` takes
+    NetSvg,
 }
 
 /// The output formats of `seq print`.
@@ -326,6 +334,8 @@ pub enum SequentFormat {
     Latex,
     /// Typst math
     Typst,
+    /// An SVG document of one line, set in the Euler Math font
+    Svg,
 }
 
 /// The fragments `--fragment` names.
