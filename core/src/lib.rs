@@ -74,6 +74,9 @@ mod errors;
 /// Export of sequents and derivations to LaTeX, Typst and SVG, and of
 /// proof nets to SVG.
 pub mod export;
+/// Problem families with known verdicts, for benchmarks and tests.
+#[cfg(feature = "parse")]
+pub mod families;
 /// Fragments of linear logic, modes of proof search, and fragment detection.
 pub mod fragment;
 /// The hash tables of this crate.

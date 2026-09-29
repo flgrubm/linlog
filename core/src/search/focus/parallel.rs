@@ -671,45 +671,12 @@ mod tests {
         }
     }
 
-    /// Lincoln's two-literal encoding of a 3-Partition instance.
-    fn three_partition(items: &[usize], bins: usize, size: usize) -> String {
-        let mut hypotheses = Vec::new();
-        for j in 1..=bins {
-            hypotheses.extend((0..size).map(|_| format!("b{j}")));
-            hypotheses.extend((0..3).map(|_| format!("t{j}")));
-        }
-        for (i, &a) in items.iter().enumerate() {
-            let clauses: Vec<String> = (1..=bins)
-                .map(|j| {
-                    let units = vec![format!("b{j}"); a].join(" * ");
-                    format!("({units} * t{j} -o d{i})")
-                })
-                .collect();
-            hypotheses.push(clauses.join(" & "));
-        }
-        let goal: Vec<String> = (0..items.len()).map(|i| format!("d{i}")).collect();
-        format!("{} |- {}", hypotheses.join(", "), goal.join(" * "))
-    }
-
-    /// The counter program of the Horn tests: `n` tokens `a`, two `a`
-    /// make a `b`, two `b` a `c`, and so on, as reusable clauses.
-    fn counter(n: usize, extra: &str) -> String {
-        let names = ["a", "b", "c", "d", "e", "f"];
-        let levels = n.trailing_zeros() as usize;
-        let mut hypotheses: Vec<String> = (0..levels)
-            .map(|i| format!("!({0} * {0} -o {1})", names[i], names[i + 1]))
-            .collect();
-        hypotheses.extend((0..n).map(|_| "a".to_owned()));
-        format!("{} |- {}{extra}", hypotheses.join(", "), names[levels])
-    }
-
     /// A 3-Partition instance without a solution, whose refutation takes
     /// seconds: the caller's stop condition, polled on the calling thread,
     /// stops every worker.
     #[test]
     fn stops() {
-        let text = three_partition(&[1, 1, 1, 3, 1, 1], 2, 4);
-        let sequent: Sequent = text.parse().unwrap();
+        let sequent = crate::families::three_partition(&[1, 1, 1, 3, 1, 1], 2, 4);
         let options = Options::default().jobs(4);
         let mut polls = 0;
         let outcome = prove_until(&sequent, Mode::CLASSICAL, &options, || {
@@ -723,76 +690,5 @@ mod tests {
             outcome.verdict
         );
         assert!(outcome.statistics.nodes > 0);
-    }
-
-    /// Times the hard families on one, two, four and eight threads, with
-    /// and without the portfolio: run in release mode and read the table.
-    #[test]
-    #[ignore = "minutes in release mode; run with --release -- --ignored --nocapture"]
-    fn speedups() {
-        let instances = [
-            (
-                "3-partition, solved",
-                three_partition(&[1, 2, 3, 1, 2, 3], 2, 6),
-                Mode::CLASSICAL,
-                3,
-            ),
-            (
-                "3-partition, refuted",
-                three_partition(&[1, 1, 1, 3, 1, 1], 2, 4),
-                Mode::CLASSICAL,
-                3,
-            ),
-            ("counter 8, proved", counter(8, ""), Mode::CLASSICAL, 3),
-            (
-                "counter 8 with a token over, unknown",
-                counter(8, " * a"),
-                Mode::CLASSICAL,
-                3,
-            ),
-            (
-                "counter 8 with a token over, affine",
-                counter(8, " * a"),
-                Mode::CLASSICAL.affine(),
-                3,
-            ),
-        ];
-        println!("instance | verdict | 1 | 2 | 4 | 8 | 4 portfolio | 8 portfolio");
-        for (name, text, mode, copies) in instances {
-            let sequent: Sequent = text.parse().unwrap();
-            let mut row = format!("{name} | ");
-            for (i, (jobs, portfolio)) in [
-                (1, false),
-                (2, false),
-                (4, false),
-                (8, false),
-                (4, true),
-                (8, true),
-            ]
-            .into_iter()
-            .enumerate()
-            {
-                let options = Options::default()
-                    .copies(copies)
-                    .jobs(jobs)
-                    .portfolio(portfolio);
-                let start = std::time::Instant::now();
-                let outcome = prove(&sequent, mode, &options).unwrap();
-                let elapsed = start.elapsed();
-                if i == 0 {
-                    let verdict = match outcome.verdict {
-                        Verdict::Proved(_) => "proved".to_owned(),
-                        Verdict::Unprovable => "unprovable".to_owned(),
-                        Verdict::Unknown(reason) => format!("unknown ({reason})"),
-                    };
-                    row.push_str(&format!("{verdict} | "));
-                }
-                row.push_str(&format!(
-                    "{elapsed:.2?} ({} nodes) | ",
-                    outcome.statistics.nodes
-                ));
-            }
-            println!("{row}");
-        }
     }
 }

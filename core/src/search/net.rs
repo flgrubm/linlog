@@ -717,29 +717,6 @@ pub(super) mod tests {
         println!("net with the exact test every fourth link: {net_time:.2?}");
     }
 
-    /// Encodes a Partition instance as a Horn sequent, as Matsuoka does:
-    /// every item `a_i` of size `s_i` may be turned into `s_i` units `b`
-    /// or `s_i` units `c`; half the total of each buys the items back
-    /// once, and half the total of each buys the goal `e`. Every clause is
-    /// used exactly once, so the sequent is provable if and only if the
-    /// sizes split into two halves of equal sum.
-    pub(super) fn partition(sizes: &[u32]) -> String {
-        let total: u32 = sizes.iter().sum();
-        assert_eq!(total % 2, 0, "the total is even");
-        let items: Vec<String> = (1..=sizes.len()).map(|i| format!("a{i}")).collect();
-        let units = |unit: &str, n: u32| vec![unit; n as usize].join(" * ");
-        let mut hypotheses = vec![items.join(" * ")];
-        for unit in ["b", "c"] {
-            for (i, &size) in sizes.iter().enumerate() {
-                hypotheses.push(format!("(a{} -o {})", i + 1, units(unit, size)));
-            }
-        }
-        let half = format!("({} * {})", units("b", total / 2), units("c", total / 2));
-        hypotheses.push(format!("({half} -o {})", items.join(" * ")));
-        hypotheses.push(format!("({half} -o e)"));
-        format!("{} |- e", hypotheses.join(", "))
-    }
-
     /// Small Partition instances are decided as the instance says, by both
     /// engines. The equal literals inside `b ⊗ b ⊗ …` and `~b ⅋ ~b` are
     /// interchangeable, so the net engine visits a symmetric subtree for
@@ -752,27 +729,13 @@ pub(super) mod tests {
             (&[2, 1, 1], true),
             (&[1, 1, 4], false),
         ] {
-            let text = partition(sizes);
-            let s: Sequent = text.parse().unwrap();
-            assert_eq!(provable(&text, Mode::CLASSICAL), expected, "{sizes:?}");
-            assert_eq!(focus_verdict(&s, Mode::CLASSICAL), expected, "{sizes:?}");
-        }
-    }
-
-    /// Larger Partition instances: a few seconds each in release mode for
-    /// the net engine, milliseconds for the focused engine.
-    #[test]
-    #[ignore = "seconds in release mode; run with --release -- --ignored --nocapture"]
-    fn partition_instances_slow() {
-        for (sizes, expected) in [(&[2, 3, 2, 1][..], true), (&[1, 2, 5], false)] {
-            let text = partition(sizes);
-            let start = Instant::now();
-            let (verdict, statistics) = run(&text, Mode::CLASSICAL, &Options::default());
-            assert_eq!(verdict.proof().is_some(), expected, "{sizes:?}");
-            println!(
-                "{sizes:?}: {verdict:?} in {:.2?}, {statistics:?}",
-                start.elapsed()
+            let s = crate::families::partition(sizes);
+            assert_eq!(
+                provable(&s.to_string(), Mode::CLASSICAL),
+                expected,
+                "{sizes:?}"
             );
+            assert_eq!(focus_verdict(&s, Mode::CLASSICAL), expected, "{sizes:?}");
         }
     }
 
@@ -942,7 +905,7 @@ pub(crate) mod parallel {
 
 #[cfg(all(test, feature = "parse", feature = "parallel"))]
 mod parallel_tests {
-    use super::tests::{partition, sample};
+    use super::tests::sample;
     use crate::fragment::Mode;
     use crate::search::{Engine, Options, Reason, Verdict, prove, prove_until};
     use crate::sequents::Sequent;
@@ -989,7 +952,7 @@ mod parallel_tests {
     /// thread, half a second on eight).
     #[test]
     fn stops() {
-        let sequent: Sequent = partition(&[1, 2, 5]).parse().unwrap();
+        let sequent = crate::families::partition(&[1, 2, 5]);
         let options = Options::default().engine(Some(Engine::Net)).jobs(2);
         let outcome = prove_until(&sequent, Mode::CLASSICAL, &options, || true).unwrap();
         assert!(
@@ -997,39 +960,5 @@ mod parallel_tests {
             "{:?}",
             outcome.verdict
         );
-    }
-
-    /// Times the Partition instances on one, two, four and eight threads:
-    /// run in release mode and read the table.
-    #[test]
-    #[ignore = "seconds in release mode; run with --release -- --ignored --nocapture"]
-    fn speedups() {
-        println!("instance | verdict | 1 | 2 | 4 | 8");
-        for (name, sizes) in [
-            ("partition 2 3 2 1, solved", &[2, 3, 2, 1][..]),
-            ("partition 1 2 5, refuted", &[1, 2, 5][..]),
-        ] {
-            let sequent: Sequent = partition(sizes).parse().unwrap();
-            let mut row = format!("{name} | ");
-            for (i, jobs) in [1, 2, 4, 8].into_iter().enumerate() {
-                let options = Options::default().engine(Some(Engine::Net)).jobs(jobs);
-                let start = std::time::Instant::now();
-                let outcome = prove(&sequent, Mode::CLASSICAL, &options).unwrap();
-                let elapsed = start.elapsed();
-                if i == 0 {
-                    let verdict = match outcome.verdict {
-                        Verdict::Proved(_) => "proved",
-                        Verdict::Unprovable => "unprovable",
-                        Verdict::Unknown(_) => "unknown",
-                    };
-                    row.push_str(&format!("{verdict} | "));
-                }
-                row.push_str(&format!(
-                    "{elapsed:.2?} ({} nodes) | ",
-                    outcome.statistics.nodes
-                ));
-            }
-            println!("{row}");
-        }
     }
 }

@@ -2129,49 +2129,6 @@ mod tests {
         );
     }
 
-    /// Problems in the style of the ILLTP library, two-sided: the counter
-    /// program as Petri-net reachability (`a^8 ⊢ d` through three doubling
-    /// clauses), its unreachable marking, and a chain of implications with
-    /// additive choice. Run in release mode and read the timings.
-    #[test]
-    #[ignore = "slow; run with --release -- --ignored --nocapture"]
-    fn illtp_style_slow() {
-        let i = Mode::INTUITIONISTIC;
-        let counter = |tokens: usize, goal: &str| {
-            format!(
-                "!(a * a -o b), !(b * b -o c), !(c * c -o d), {} |- {goal}",
-                vec!["a"; tokens].join(", ")
-            )
-        };
-        let chain = (0..12)
-            .map(|k| format!("!(p{k} -o p{} & p{})", k + 1, k + 2))
-            .collect::<Vec<_>>()
-            .join(", ");
-        for (input, options) in [
-            (counter(8, "d"), Options::default()),
-            (counter(8, "d * a"), Options::default()),
-            (format!("{chain}, p0 |- p13"), Options::default().copies(14)),
-            (
-                format!("{chain}, p0 |- p13 * p1"),
-                Options::default().copies(3),
-            ),
-        ] {
-            let start = std::time::Instant::now();
-            let (verdict, statistics) = run(&input, i, &options);
-            let word = match &verdict {
-                Verdict::Proved(_) => "proved",
-                Verdict::Unprovable => "unprovable",
-                Verdict::Unknown(_) => "unknown",
-            };
-            println!(
-                "{input}: {word} in {:.2?}, {} stable sequents, {} memo hits",
-                start.elapsed(),
-                statistics.nodes,
-                statistics.memo_hits
-            );
-        }
-    }
-
     /// The same on a larger sample of larger proofs, without exponentials:
     /// with them, a few sequents of a sample this size take minutes at the
     /// bound their derelictions give. Run it in release mode and read the
@@ -2272,86 +2229,11 @@ mod tests {
         assert!(provable(&horn(&clauses, &five, &[goal]), m.affine()));
     }
 
-    /// A larger counter program, timed: run in release mode and read the
-    /// numbers. Sixteen tokens do not finish within a quarter of an hour:
-    /// the tokens are distinct occurrences, so every choice of the two a
-    /// clause consumes is a stable sequent of its own.
-    #[test]
-    #[ignore = "under a second in release mode; run with --release -- --ignored --nocapture"]
-    fn horn_programs_slow() {
-        // A branch to a token of the goal fires one clause per level of
-        // the counter, so the bound is the number of levels.
-        for (n, copies) in [(8, 3)] {
-            let (clauses, marking, goal) = counter(n);
-            let clauses: Vec<(&str, &str)> = clauses.iter().map(|(b, h)| (&**b, &**h)).collect();
-            for (goal, mode, copies) in [
-                (vec![goal], Mode::CLASSICAL, copies),
-                (vec![goal, "a"], Mode::CLASSICAL, copies),
-                (vec![goal, "a"], Mode::CLASSICAL.affine(), copies),
-            ] {
-                let text = horn(&clauses, &marking, &goal);
-                let start = std::time::Instant::now();
-                let (verdict, statistics) = run(&text, mode, &Options::default().copies(copies));
-                let verdict = match verdict {
-                    Verdict::Proved(_) => "proved".to_string(),
-                    Verdict::Unprovable => "unprovable".to_string(),
-                    Verdict::Unknown(reason) => format!("unknown ({reason})"),
-                };
-                println!(
-                    "counter {n} ⊢ {} in {mode} mode with {copies} copies: {verdict} in {:.2?}, \
-                     {} stable sequents, {} memo hits, {} memo entries at most",
-                    goal.join(" ⊗ "),
-                    start.elapsed(),
-                    statistics.nodes,
-                    statistics.memo_hits,
-                    statistics.memo_entries
-                );
-            }
-        }
-    }
-
-    /// Encodes a 3-Partition instance as a linear Horn program in the style
-    /// of Kanovich's encodings: bin `j` offers `size` units `bj` and three
-    /// slots `tj`; item `i` is a `&` over the bins of a clause taking its
-    /// units and a slot from that bin and producing `di`; the goal is the
-    /// tensor of every `di`. Every resource must be used exactly once, so
-    /// the sequent is provable if and only if the items split into triples
-    /// of sum `size`, one per bin.
-    fn three_partition(items: &[u32], bins: usize, size: u32) -> String {
-        let mut hypotheses = Vec::new();
-        for j in 1..=bins {
-            hypotheses.extend((0..size).map(|_| format!("b{j}")));
-            hypotheses.extend((0..3).map(|_| format!("t{j}")));
-        }
-        for (i, &a) in items.iter().enumerate() {
-            let clauses: Vec<String> = (1..=bins)
-                .map(|j| {
-                    let units = vec![format!("b{j}"); a as usize].join(" * ");
-                    format!("({units} * t{j} -o d{i})")
-                })
-                .collect();
-            hypotheses.push(clauses.join(" & "));
-        }
-        let goal: Vec<String> = (0..items.len()).map(|i| format!("d{i}")).collect();
-        format!("{} |- {}", hypotheses.join(", "), goal.join(" * "))
-    }
-
     /// A 3-Partition instance with a solution is proved: the first bin
     /// choices work out, so the search is short.
     #[test]
     fn three_partition_solved() {
-        let yes = three_partition(&[1, 2, 3, 1, 2, 3], 2, 6);
+        let yes = crate::families::three_partition(&[1, 2, 3, 1, 2, 3], 2, 6).to_string();
         assert!(provable(&yes, Mode::CLASSICAL), "{yes}");
-    }
-
-    /// A 3-Partition instance without a solution is refuted. The atom bias
-    /// makes the clause bodies' literals negative, so every clause's `⊗`
-    /// split is enumerated rather than forced, and the refutation walks
-    /// billions of splits: about a minute in release mode.
-    #[test]
-    #[ignore = "about a minute in release mode; run with --release -- --ignored"]
-    fn three_partition_refuted() {
-        let no = three_partition(&[1, 1, 1, 3, 1, 1], 2, 4);
-        assert!(!provable(&no, Mode::CLASSICAL), "{no}");
     }
 }
