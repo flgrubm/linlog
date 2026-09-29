@@ -15,11 +15,12 @@ serde = { version = "1.0.228", features = ["derive"], optional = true }
 thiserror = "2.0.17"
 
 [features]
-default = ["interactive", "latex", "parse", "serialize", "typst"]
+default = ["interactive", "latex", "parse", "serialize", "svg", "typst"]
 interactive = []
 latex = []
 parse = ["dep:chumsky"]
 serialize = ["dep:serde"]
+svg = []
 typst = []
 
 [lints]

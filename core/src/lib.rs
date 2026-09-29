@@ -71,7 +71,8 @@
 
 /// The error types of this crate.
 mod errors;
-/// Export of sequents and derivations to LaTeX and Typst.
+/// Export of sequents and derivations to LaTeX, Typst and SVG, and of
+/// proof nets to SVG.
 pub mod export;
 /// Fragments of linear logic, modes of proof search, and fragment detection.
 pub mod fragment;
