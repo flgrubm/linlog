@@ -3,6 +3,8 @@
 
 # nix
 result*
+# The LLTP library, `nix build .#lltp -o bench/lltp`
+/bench/lltp
 .direnv/
 
 # Tracked even where a global ignore excludes .envrc files.
@@ -19,3 +21,5 @@ scratchpad*.md
 # Claude Code: personal, per-machine overrides
 .claude/settings.local.json
 CLAUDE.local.md
+# Progress logs of bench/baseline.sh
+/bench/results/*.log

@@ -302,6 +302,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "linlog-bench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "linlog",
+]
+
+[[package]]
 name = "linlog-cli"
 version = "0.1.0"
 dependencies = [

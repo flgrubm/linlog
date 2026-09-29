@@ -1,0 +1,27 @@
+# linlog © Fabian Lukas Grubmüller 2026
+# Licensed under the EUPL
+
+[package]
+name = "linlog-bench"
+description = "The benchmark harness of linlog: problem families, the LLTP library, timings as CSV."
+version = "0.1.0"
+edition = "2024"
+license = "EUPL-1.2"
+publish = false
+
+# A command, not an API: rustdoc documents the two library crates only.
+[[bin]]
+name = "linlog-bench"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+anyhow = "1.0.100"
+clap = { version = "4.5.54", features = ["derive"] }
+linlog = { version = "0.1.0", path = "../core", default-features = false, features = [
+  "parallel",
+  "parse",
+] }
+
+[lints]
+workspace = true
