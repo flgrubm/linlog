@@ -104,7 +104,7 @@ pub enum Error {
     NetGoal,
     /// A rule does not apply to a goal of an interactive proof as asked.
     #[cfg(feature = "interactive")]
-    #[error("{0}")]
+    #[error(transparent)]
     Refused(#[from] crate::proofs::Refusal),
     /// The parts of an interactive proof read back do not fit together, as
     /// the message says.

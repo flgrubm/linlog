@@ -137,8 +137,12 @@ pub struct InteractArgs {
     #[command(flatten)]
     pub input: SequentInput,
     /// Resume a session saved with `save` instead of starting from a
-    /// sequent; the mode is the file's
-    #[arg(long, value_name = "PATH", conflicts_with_all = ["sequent", "file"])]
+    /// sequent; the mode is the file's, so the mode flags are refused
+    #[arg(
+        long,
+        value_name = "PATH",
+        conflicts_with_all = ["sequent", "file", "intuitionistic", "affine", "mix"]
+    )]
     pub state: Option<PathBuf>,
     /// The logic.
     #[command(flatten)]
