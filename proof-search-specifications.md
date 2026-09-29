@@ -16,6 +16,35 @@ This is an implementation brief for a Rust proof-search engine covering proposit
 
 **How to read each fragment section.** Each has: (1) complexity and decidability, (2) survey of algorithm families with the evidence for ranking them, (3) the recommended algorithm as a specification (inputs, state, rules, termination, output), (4) pitfalls, (5) data layout, (6) parallelization. Recommendations are ranked on published worst-case bounds, published benchmark comparisons where they exist, and engineering simplicity; where no head-to-head benchmark exists this is said explicitly rather than guessed.
 
+## Errata found during implementation
+
+Corrections established while implementing the engines, each confirmed by an
+independent reference implementation; the original text below is left as
+written.
+
+- **MALL-Seq, immediate failure (a `0` in a stable sequent).** Not fatal
+  when some member has a `⊤` below it: `⊢ 0, ⊤ ⊕ b` is provable by focusing
+  on the `⊕` and letting the `⊤` absorb the `0`. Focusing on `0` itself
+  still fails. The interval row of `⊤` is therefore not `(0, 0)`: a member
+  with a `⊤` below it passes any count.
+- **MALL-Seq, immediate failure (no positive non-literal formula and not a
+  dual pair).** Sound only without Mix: `⊢ a, ~a, b, ~b` is provable with
+  Mix. With Mix the sequent falls through to the Mix step.
+- **MLL-Seq, forced splits.** Only a positive literal (its dual alone),
+  `1` (the empty context) and `0` (no split at all) force a side of a `⊗`
+  split; `⊥` and `⊤` do not (`⊢ ⊥ ⊗ b, a, ~a, ~b` needs `{a, ~a}` on the
+  `⊥` side, and a `⊤` side accepts any subset while the other side's
+  provability is not monotone).
+- **MLL-Net, sequentialization.** "Delete the `⊗` conclusion and count
+  components under one arbitrary switching (exactly two ⇒ splitting)"
+  cannot distinguish: a correct net without Mix is a tree under every
+  switching, so deleting any `⊗` conclusion leaves exactly two components
+  whether it is splitting or not (`⊢ A ⊗ B, C ⊗ (~A ⅋ ~B), ~C`: only the
+  second tensor is splitting, both leave two components). The splitting
+  lemma concerns the plain graph: a `⊗` conclusion is splitting iff its
+  premise edge is a bridge there. One bridge search per stage keeps the
+  O(n²) total.
+
 ## Overview: fragment, complexity, what to implement
 
 The literature contains no head-to-head benchmark across algorithm families for any fragment; the only cross-prover comparison found is Chaudhuri–Pfenning (CADE 2005), where a focused inverse method beat Gandalf, linTAP and llprover on their MALL/ILL suite. The rankings below therefore rest on worst-case bounds, the structure of each search space, and the published internal benchmarks (Lygon: lazy splitting 3–15× over naive; Chaudhuri: focusing 1.3×–600× over unfocused). Every recommendation is a focused system; the differences are in how the ⊗-split and the exponentials are managed.
