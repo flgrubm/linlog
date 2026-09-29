@@ -20,12 +20,14 @@ data structures are designed to be compact and cache-friendly.
 
 Workspace crates:
 - `core/` is package **`linlog`**: all logic.
-  It has two optional default features, `parse` (chumsky) and `serialize` (serde).
+  It has three optional default features, `parse` (chumsky), `serialize`
+  (serde) and `interactive` (step-by-step proving, which the CLI enables).
 - `cli/` is package **`linlog-cli`**, library **`linlog_cli`** and binary
   **`linlog`** (one call into the library; `doc = false` because it shares
-  the core crate's name): a clap front end with `prove`, `check` and
-  `seq print|json|fragment`, and the output formats `text`, `json` and
-  `net`. The tree and its
+  the core crate's name): a clap front end with `prove`, `check`,
+  `interact` (a line-based session that reads commands from standard
+  input, `interact.rs`) and `seq print|json|fragment`, and the output
+  formats `text`, `json` and `net`. The tree and its
   `--help` text are the doc comments in `argument_parsing.rs`; `prove.rs`
   runs the search on a thread sized from `--recursion-limit` and owns the
   output; `--copies` bounds the copies of `?` formulas per branch; exit
@@ -59,7 +61,15 @@ weakening at the leaves; and, given the reading, the two-sided search of
 intuitionistic mode, `Engine::TwoSided`, the same engine keeping the goal
 on the consequent's side of every `⊸L` split) and `search::additive` (two
 additive-only formulas, by a memoized recursion on subformula pairs, in
-every mode); `Options::engine` forces one.
+every mode); `Options::engine` forces one. `prove_goal(&forest, goal, mode,
+&options, stop)` decides any multiset of occurrences of a forest, the
+roots being the sequent itself. `Interactive` (`proofs::interactive`,
+feature `interactive`) is a proof in progress: `new(&sequent, mode)`,
+`goals()`, `rules(goal, position)`, `apply(goal, position, rule, left)`,
+`undo()`, `close(goal, …)`/`close_all`, `derivation()` with open goals as
+`Rule::Open` leaves, `proof()` translating the finished derivation into a
+checked `Proof`, serde behind `serialize`, and `Refusal` saying why a rule
+does not apply.
 `ProofStructure` (`nets`) is a proof net of unit-free MLL over the forest:
 `from_links`, `link`/`unlink`, `is_correct()` (the Danos–Regnier criterion
 through Yeo's deletion test, independent of the search and the checker),

@@ -273,18 +273,128 @@ height, and a DAG with heavy sharing unfolds to a tree exponentially
 larger than the arena. `Derivation::new` checks the term first (any mode)
 and fails as the checker would.
 
+`Rule::Open` is the rule of an open goal in the derivation of a proof in
+progress (below) and appears nowhere else; `Rule::classical` maps every
+two-sided name back to the classical rule it is on the one-sided sequent,
+and `Rule::from_str` reads a rule from its name or an ASCII spelling.
+`Derivation::from_parts` wraps inferences that already have the
+derivation's shape, and `Derivation::of_goal` unfolds a proof whose root
+concludes a goal rather than the roots (as `prove_goal` returns it) into
+inferences, for grafting.
+
 `proofs/fmt.rs` draws the tree: premises side by side, bottom-aligned, three
 columns apart; a bar of `─` spanning their conclusions or the conclusion,
 whichever is wider, with the rule name after it; the conclusion centred
-under the bar. Widths are character counts (every symbol used is one column
-in a monospace font), lines are trimmed on the right, and there is no
-trailing newline. The renderings are pinned in tests, so a layout change is
-a test change.
+under the bar; an open goal is its sequent alone, with no bar, which is
+how a leaf without a rule is told from a closed one. Widths are character
+counts (every symbol used is one column in a monospace font), lines are
+trimmed on the right, and there is no trailing newline. The renderings are
+pinned in tests, so a layout change is a test change.
+
+## Interactive proving
+
+`proofs/interactive.rs` (feature `interactive`) is the state a client
+holds for step-by-step proving: the forest, the mode, the inferences of a
+derivation of the standard calculus with open goals as leaves, and the
+steps taken. It reuses `Inference` and `Rule` and shares no second
+representation with anything. What the code relies on:
+
+- **The arena is top-down.** Inference 0 concludes the sequent; a step
+  closes one open goal in place (its rule, principal and premises are
+  filled in) and appends the goals it opens at the end, so a premise has a
+  larger index than its conclusion, the reverse of `Derivation`'s order;
+  `derivation()` renumbers into postorder, so its ids are not the state's.
+  Since steps only append, the inferences a step added are a suffix of the
+  arena as long as no later step exists, which is why `undo` is "truncate
+  to the smallest index in the closed goal's subtree, reopen the goal" and
+  why the history is just the list of goals closed, in order. A search
+  graft is one step (its whole subtree is the suffix).
+- **Positions, not ids, address formulas**: `position` indexes the goal's
+  sequent (ascending ids with repeats), as Click & coLLecT's
+  `formulaPosition` does; the split of a `⊗` or Mix is the positions of
+  the context formulas going left. Equal ids at different positions are
+  interchangeable (the sequent is a multiset), so which copy the client
+  picks does not matter.
+- **Validation at application time is complete for the checker**, so that
+  a derivation built through `apply` always translates into a term the
+  checker accepts: `expand` checks the connective, the mode (`wk` only
+  affine, Mix only with Mix), the context (`ax` exactly the dual, `1`
+  alone, `!` with a `?`-only context, since the term's `Bang` needs the
+  linear zone empty), the split, and in intuitionistic mode R1 (every
+  premise has exactly one occurrence in output position) and R3 (never
+  weaken the output). R2 of the checker (an absent output child absorbed
+  by a `⊤` only if the premise has no output already) is implied: the
+  linear zone the term derives for an inference is a sub-multiset of the
+  inference's non-`?` formulas, so where the child is absent the zone's
+  outputs are among the sequent's other formulas, of which R1 leaves none
+  (`Θ` members are inputs, so a `Copy` never triggers R2 either). A
+  fresh-context review confirmed this on about 2 500 random derivations
+  in every mode, each translated and checked. In intuitionistic mode a rule is accepted under its
+  classical or its two-sided name and recorded under the two-sided one,
+  so a two-sided state's inferences look like `Derivation::two_sided`'s.
+- **The standard-to-dyadic translation** (`Terms`, in `proof()`) is the
+  view's table read upwards: every rule is its node; `?d` is `Copy(A)`;
+  `?c` and `?w` are nothing; and every `?` formula gets its `Quest` node
+  *where it enters the derivation*: below the rule that introduces it as
+  a subformula (`Terms::premise`) or below the root for a `?` root. So a
+  `?` formula is in `Θ` from its entry upwards, a contraction's second
+  instance is the same `Θ` member, and a weakened instance is simply not
+  copied (the unused `Quest` is what the view shows as `?w`). This keeps
+  the dyadic linear zone free of `?` formulas above their entry, which is
+  what `Bang` needs, and makes every `Copy` sit above its `Quest`, which
+  is what the checker's empty root `Θ` needs. The term's own derivation
+  view may place structural rules elsewhere than the user did (it
+  contracts below a `⊗`, the user contracted above the root, say); the
+  state's derivation is the user's tree, the term's is the checker's.
+  `proof()` runs the checker on the term, always: the layer is not trusted
+  more than an engine.
+- **Search from a goal**: `close` calls `prove_goal` on the goal's
+  sequent, and grafts `Derivation::of_goal` of the proof found; the goal's
+  fragment is its own (`search::goal_fragment`), so the prunes are those
+  of the goal, and the net engine never runs off the roots. The outcome
+  returned is the search's, its proof the proof of the goal alone.
+  `split_passes` lends the client the focused engine's count prunes
+  (`focus::split_passes`, which builds the engine's `Rules` and tallies
+  for the two sides) as a "this split cannot close" test; a split that
+  passes may still fail.
+- **Reading a state back** (`from_parts`, used by deserialization) checks
+  the shape (root 0 concludes the sequent, every other inference is the
+  premise of exactly one earlier one, sequents ascending and within the
+  forest, a principal position exactly for the rules that have one),
+  replays every closed inference (`replay` recovers the split of a `⊗`
+  from the left premise less the subformula, and of a Mix from the left
+  premise alone, whose first formula stands for the position; then
+  `expand`'s premises must equal the recorded ones) and checks the history
+  from the last step back: its entries are distinct closed inferences, and
+  the inferences a step added, which are those of its subtree that exist
+  at that point (the later ones belong to later steps), are the suffix of
+  the arena then. So a loaded state is as trustworthy as one built through
+  the API; the checker at the end is the final word anyway. A history that
+  does not cover every closed inference is allowed (those steps are just
+  not undoable). A review fed hundreds of API-built states through JSON
+  and found the first version of these checks rejecting chains of steps,
+  every Mix and every graft (`graft` now appends a found derivation in
+  reverse so that premises keep larger indices); keep the round trip of
+  such states in `core/tests/serialize.rs`.
+- **The reading is recomputed** (`Interactive::reading`, O(n)) whenever
+  intuitionistic mode needs positions, since `Reading` borrows the forest
+  and the state owns it; `new` guarantees it exists.
 
 ## Proof search: the front door
 
 `search/mod.rs` is what a front end calls: `prove(&sequent, mode,
-&options)` and `prove_until(…, stop)` return `Result<Outcome, Error>`, where
+&options)` and `prove_until(…, stop)` return `Result<Outcome, Error>`, and
+`prove_goal(&forest, goal, mode, &options, stop)` decides any multiset of
+occurrences of a forest, given in any order, `prove_until` being that on
+the roots: the goal's own fragment (`goal_fragment`, over the subtrees)
+picks the prunes and the engine, the net engine only for the roots
+(`Error::NetGoal` when forced elsewhere, since a structure's conclusions
+are the forest's roots), the additive path for any two additive-only
+occurrences (`additive::search_goal`), the focused engine otherwise; in
+intuitionistic mode a goal must have exactly one occurrence in output
+position (`Error::GoalOutputs`). The proof of a goal other than the roots
+has a root that concludes the goal, so `Proof::check` rejects it; only
+`Interactive` consumes such proofs, by grafting their derivation. Where
 `Outcome` carries the `Verdict` (`Proved(Box<Proof>)`, `Unprovable` only
 after an exhaustive search, which with exponentials means a deepening
 level that never hit the copy bound, `Unknown(Reason)`, with
@@ -514,6 +624,9 @@ relies on:
   takes the empty context; a factor `0` fails the candidate, not the
   sequent. `⊤`, `⊥` and negative literals force nothing: `⊢ ⊥ ⊗ b, a, ~a,
   ~b` needs `{a, ~a}` on the `⊥` side.
+- **`split_passes`** is the count test of a split as a function (the
+  engine's `Rules::new` and two tallies), for the interactive state's
+  helper; keep it equal to `sides_pass`.
 - **Free splits** enumerate the submasks of the compacted members in
   Gray-code order (`submasks`), the empty submask first, two tallies moved
   per flip, and both sides must pass the counts before either premise is
@@ -771,7 +884,8 @@ memo's.
 `sequents` (arena, printing), `parse`, `serialize`, `fragment`, `occurrences`
 (forest, sets, and the intuitionistic `reading`), `proofs` (terms in
 `mod.rs`, `check`, `derivation`, the renderer `fmt`, the crate-private
-`multiset`), `search` (the front door in `mod.rs`, the focused engine in
+`multiset`, and `interactive` behind the feature of that name), `search`
+(the front door in `mod.rs`, the focused engine in
 `focus/` with `counts` and `memo`, the net engine in `net`, the additive
 path in `additive`, the test-only `generate` with its classical and
 intuitionistic proof generators), `nets` (structures and the criterion's front door
@@ -834,6 +948,17 @@ same test file:
   `Outcome::net` is not serialized (the proof's keys are, and the net is
   `from_proof` of them).
 - `Forest` has no serde; it is rebuilt from the sequent.
+
+`serialize/interactive.rs` writes an `Interactive` as `{"sequent": …,
+"mode": …, "inferences": [{"sequent": [0, 1, 4], "rule": "⊸L",
+"principal": 1, "premises": [1, 2]}, {"sequent": [3, 4]}, …], "history":
+[0]}`: the inferences in the state's own top-down order, an open goal as
+its sequent alone (`rule`, `principal` and `premises` absent), rule names
+as `Rule::name` (`Rule` itself serializes as its name, in
+`serialize/proofs.rs`), and the history as the inferences the steps
+closed. Reading it back goes through `Interactive::from_parts`, which
+replays every closed inference. It is the form a web client holds between
+requests, so it is pinned in `core/tests/serialize.rs`.
 
 `serialize/nets.rs` writes a `ProofStructure` as `{"sequent": …, "mix":
 false, "links": [[0, 2], [3, 4]]}`, the links as occurrence id pairs in

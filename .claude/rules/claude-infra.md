@@ -29,12 +29,13 @@ stripped before injection, so they are free notes for maintainers.
 Current contents:
 - `rules/core.md` (`core/**`): the arena/NNF data model, fragments, the
   occurrence forest and its intuitionistic reading, proof terms, the
-  checker and the derivation view, the search front door, the focused
-  engine (one- and two-sided), the additive path, proof nets and their
-  criterion, and their invariants.
+  checker and the derivation view, interactive proving and its
+  translation back to terms, the search front door (sequents and goals),
+  the focused engine (one- and two-sided), the additive path, proof nets
+  and their criterion, and their invariants.
 - `rules/cli.md` (`cli/**`): the `linlog` command's layout, exit statuses,
-  search thread, stop polling, and where a new engine or output format
-  plugs in.
+  search thread, stop polling, the interactive session, and where a new
+  engine, output format or session command plugs in.
 - `rules/ci.md` (`.github/**`): how the GitHub workflows are written and pinned.
 - `agents/crate-source-explorer.md`: read-only, answers dependency-API questions
   against the Cargo.lock-pinned sources in `~/.cargo/registry`, never the web.

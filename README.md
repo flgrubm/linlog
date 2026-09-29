@@ -223,6 +223,50 @@ $ linlog prove --format json "A |- A" | linlog check --quiet
 valid proof of ⊢ ~A, A (classical)
 ```
 
+`linlog interact` proves a sequent step by step, reading commands from
+standard input: the open goals are listed with the position of every
+formula, `rules` names the rules that act on a formula, `apply` applies one
+(a `⊗` or Mix takes the positions of the formulas that go to its left
+premise), `undo` retracts the last step, `close` lets the search close one
+goal or all of them, `show` draws the derivation so far with the open
+goals as bare sequents, `save` and `load` keep a session as JSON, and
+`proof` checks the finished proof independently and prints it or writes
+it for `check`. In intuitionistic mode the goals are two-sided and the
+rules carry the names of ILL:
+
+```console
+$ linlog interact -i "A, A -o B |- B"
+> goals
+goal 0: 0: A, 1: A ⊸ B ⊢ 2: B
+> rules 0 1
+⊸L (with a split)
+> apply 0 1 -oL 2
+error: a premise would have 2 formulas on the right of ⊢ instead of one
+> apply 0 1 -oL 0
+opened goal 1: 0: A ⊢ 1: A
+opened goal 2: 0: B ⊢ 1: B
+> apply 1 0 ax
+closed
+> show
+───── ax
+A ⊢ A      B ⊢ B
+──────────────── ⊸L
+  A, A ⊸ B ⊢ B
+> close
+goal 2: proved (IMLL, intuitionistic, two-sided engine)
+no goal is open: `proof` checks the proof
+> proof
+valid proof (intuitionistic)
+───── ax   ───── ax
+A ⊢ A      B ⊢ B
+──────────────── ⊸L
+  A, A ⊸ B ⊢ B
+```
+
+The exit status is 0 when the session ends with a finished proof that
+checks, 1 otherwise. The same operations are the library's `Interactive`
+type, whose JSON form is what a web client will hold between requests.
+
 `linlog seq` prints a sequent one-sided in negation normal form, or
 two-sided as intuitionistic linear logic reads it, converts it to JSON
 (which `--json-input` reads back), or names its fragment:
@@ -283,13 +327,17 @@ Built:
   disconnection named when it fails), sequentialization into a checked
   proof and desequentialization of a proof into its net, a text form and
   a JSON form.
-- The `linlog` command: `prove`, `check` and `seq`, with time limits,
-  Ctrl-C, statistics, JSON output and proof nets.
+- Interactive proving: a proof in progress as a derivation with open
+  goals, rules applied to a formula of a goal and validated (the
+  connective, the mode, the context a promotion or an axiom needs, one
+  goal per premise in intuitionistic mode), undo, the search closing any
+  goal, translation of the finished derivation into a term the checker
+  validates, and a JSON form of the session.
+- The `linlog` command: `prove`, `check`, `interact` and `seq`, with time
+  limits, Ctrl-C, statistics, JSON output and proof nets.
 
 Planned, in roughly this order:
 
-- Interactive proving: partial derivations, rule application, search from
-  a goal.
 - Export of sequents, derivations and proof nets to LaTeX, Typst and SVG,
   and proof certificates for Rocq.
 - Parallel search, a benchmark harness with the standard problem
@@ -321,6 +369,9 @@ whether it proves its sequent, and a derivation view unfolds it into the
 tree of explicit sequents of the standard sequent calculus, one-sided or
 two-sided. A proof net is the same forest with axiom links, checked by its
 own criterion and convertible to and from a proof term. Proof search
-decides a sequent with the engine its fragment and mode call for, sequent
-search, net search or the additive recursion, and returns a checked proof,
-that there is none, or why it could not tell.
+decides a sequent, or any goal within one, with the engine its fragment
+and mode call for, sequent search, net search or the additive recursion,
+and returns a checked proof, that there is none, or why it could not tell.
+Interactive proving holds a derivation with open goals over the same
+forest, with the same inferences as the derivation view, and turns it back
+into a term for the checker once it is finished.

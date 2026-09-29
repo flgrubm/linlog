@@ -26,6 +26,15 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
 - `io.rs`: input from the argument, `--file` (`-` is standard input) or
   standard input, refused when standard input is a terminal; output to
   `--output` or standard output.
+- `interact.rs`: `interact`, a line-based session over `Interactive`:
+  the state comes from the sequent argument or `--state FILE` (a session
+  `save` wrote; the mode is then the file's), the commands from standard
+  input (`goals`, `rules`, `apply`, `undo`, `close`, `show`, `proof`,
+  `save`, `load`, `help`, `quit`; `HELP` is the list), every command's
+  output or `error: …` goes to standard output and the session goes on,
+  and the whole loop runs inside `on_large_stack` so that `close` and the
+  derivation drawing have the stack `prove` has. `goal_line` prints a goal
+  with the position of every formula, two-sided under the reading.
 - `prove.rs`: `prove` and `check`, and the `net` format's refusal of
   sequents outside unit-free MLL and of affine mode (`nets_exist`), before
   the search runs; in intuitionistic mode the net printed is the one of
@@ -63,6 +72,15 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   The time is not in the JSON (core has no clock, and the output stays
   reproducible); `--stats` prints it as text.
 - `check` takes the mode from its flags, never from the file's `mode` key.
+- **`interact` needs the sequent as an argument or `--file`**: standard
+  input carries the commands, so the fallback to standard input that
+  `SequentInput` gives the other commands is refused with a message. Its
+  exit status is 0 only when the session ends with a finished proof that
+  checks (`Interactive::proof`), 1 otherwise; a refused command is not an
+  error of the session. Rule names on the command line are what
+  `Rule::from_str` accepts: the usual spellings and ASCII ones (`*`,
+  `par`, `+1`, `-oL`, `&L1`, …). `close` clears the Ctrl-C flag first
+  (`clear_interrupt`), since a stopped search must not stop the next one.
 - **Intuitionistic mode is a matter of presentation in the CLI**: the
   verdict line and the JSON name the fragment through
   `Fragment::name_in(mode)` (`IMLL`, `ILL`, …); `prove -i` and `check -i`
@@ -80,6 +98,9 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   line prints `Engine`'s `Display`; `statistics` in `prove.rs` gets an arm
   only if the engine has counters of its own, as the net and additive
   engines have (`two-sided` shares the focus engine's).
+- **An `interact` command**: an arm in `Session::command`, a line in
+  `HELP`, and the session test in `cli/tests/cli.rs`, which pins the
+  exact output of a scripted session.
 - **An output format** (`latex`, `typst`, `svg`, `rocq`): a variant of
   `Format` and its arm in `prove`'s and `check_text`'s `match format`, as
   `net` has. A format that renders the derivation builds it inside the
