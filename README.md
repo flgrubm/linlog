@@ -39,10 +39,11 @@ $ linlog prove "|- A par B, ~A, ~B"
 unprovable (MLL, classical, net engine): the search was exhaustive
 ```
 
-Two engines exist: for MLL without units the *net engine* searches for an
-axiom linking that makes the sequent's formula trees a proof net, and for
-everything else the *focus engine* runs a focused sequent search over
-bitsets. `--mix`, `--affine` and `--intuitionistic` choose the logic,
+Two engines exist: for MLL without units whose literals occur at most twice
+each, the *net engine* searches for an axiom linking that makes the
+sequent's formula trees a proof net, and for everything else the *focus
+engine* runs a focused sequent search over bitsets (on repeated literals
+its count-based pruning beats the linking search by orders of magnitude). `--mix`, `--affine` and `--intuitionistic` choose the logic,
 `--fragment` and `--engine focus|net` override what detection picks,
 `--timeout 10s` bounds the search, `--quiet` prints the verdict line only and
 `--stats` what the search cost, in the counters of the engine that ran:

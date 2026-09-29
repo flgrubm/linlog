@@ -105,20 +105,23 @@ pub fn prove_until(
         Some(asserted) => asserted,
         None => detected,
     };
-    // The dispatch: unit-free MLL goes to the net engine, every other
-    // classical fragment up to MALL to the focused engine; intuitionistic
-    // and affine modes and the exponentials have no engine yet.
+    // The dispatch: unit-free MLL with mostly distinct atoms goes to the net
+    // engine, every other classical fragment up to MALL to the focused
+    // engine; intuitionistic and affine modes and the exponentials have no
+    // engine yet.
     if mode.intuitionistic || mode.affine || fragment.has_exponentials() {
         return Err(Error::NoEngine { fragment, mode });
     }
     let is_mll = Fragment::MLL.contains(fragment);
-    let engine = options
-        .engine
-        .unwrap_or(if is_mll { Engine::Net } else { Engine::Focus });
+    let forest = Forest::new(sequent)?;
+    let engine = options.engine.unwrap_or(if is_mll && prefers_net(&forest) {
+        Engine::Net
+    } else {
+        Engine::Focus
+    });
     if engine == Engine::Net && !is_mll {
         return Err(Error::NetFragment(fragment));
     }
-    let forest = Forest::new(sequent)?;
     let (verdict, statistics, net) = match engine {
         Engine::Focus => {
             let (verdict, statistics) = focus::search(&forest, fragment, mode, options, &mut stop);
@@ -133,6 +136,28 @@ pub fn prove_until(
         engine,
         statistics,
         net,
+    })
+}
+
+/// The most occurrences of one literal, `a` or `~a`, a sequent may have for
+/// the net engine to be the default on it.
+const NET_MULTIPLICITY: usize = 2;
+
+/// Whether the net engine is the better default for an MLL sequent: when
+/// no literal occurs more than [`NET_MULTIPLICITY`] times. Equal literals
+/// under one connective are interchangeable partners, so the linking
+/// search explores every permutation of a wrong choice before a cycle
+/// shows, and the focused engine, whose count prunes see the mistake at
+/// once, wins by orders of magnitude on such sequents; with distinct atoms
+/// the linking is nearly forced and the net engine is linear where the
+/// focused engine enumerates context splits.
+fn prefers_net(forest: &Forest) -> bool {
+    use crate::occurrences::Sign;
+    let atoms = forest.sequent().atom_names().len() as u32;
+    (0..atoms).all(|a| {
+        let atom = crate::sequents::Atom::new(a);
+        forest.literals(atom, Sign::Var).len() <= NET_MULTIPLICITY
+            && forest.literals(atom, Sign::DualVar).len() <= NET_MULTIPLICITY
     })
 }
 
@@ -366,14 +391,17 @@ mod tests {
         input.parse().unwrap_or_else(|e| panic!("{input:?}: {e}"))
     }
 
-    /// Unit-free MLL reaches the net engine, every other classical input
-    /// without exponentials the focused engine, and the outcome says which
-    /// fragment it was searched in.
+    /// Unit-free MLL reaches the net engine unless a literal occurs more
+    /// than twice, every other classical input without exponentials the
+    /// focused engine, and the outcome says which fragment it was searched
+    /// in.
     #[test]
     fn dispatch() {
         for (input, fragment, engine) in [
             ("|- a, ~a", Fragment::EMPTY, Engine::Net),
             ("a, a -o b |- b", Fragment::MLL, Engine::Net),
+            ("a * a |- a * a", Fragment::MLL, Engine::Net),
+            ("a * a * a |- a * a * a", Fragment::MLL, Engine::Focus),
             ("|- 1, bot", Fragment::MULTIPLICATIVE_UNITS, Engine::Focus),
             ("|- a & b, ~a + ~b", Fragment::ADDITIVES, Engine::Focus),
             ("|- top, 0", Fragment::ADDITIVE_UNITS, Engine::Focus),

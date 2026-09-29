@@ -42,7 +42,8 @@ tree; and `prove(&sequent, mode, &options)` (or `prove_until` with a stop
 closure) for proof search, which dispatches on the fragment and returns an
 `Outcome` with a three-valued `Verdict`. Two engines exist: `search::net`
 (axiom-linking search over a proof structure, the default for unit-free MLL
-with or without Mix, whose `Outcome` also carries the net found) and
+with or without Mix when no literal occurs more than twice, whose
+`Outcome` also carries the net found) and
 `search::focus` (the focused sequent engine for everything else up to MALL,
 with or without Mix); `Options::engine` forces one, and the other rows of
 the dispatch table are refused with `Error::NoEngine`.

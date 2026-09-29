@@ -232,8 +232,12 @@ sequents for `focus` and literals chosen for `net`; `memo_hits`,
 the net engine's, and the others stay zero.
 
 - The dispatch is plan decision D8. Unit-free MLL (the empty fragment
-  included) goes to `net`, every other classical input without
-  exponentials to `focus`; intuitionistic and affine modes and
+  included) goes to `net` when no literal occurs more than
+  `NET_MULTIPLICITY` (2) times (`prefers_net`: equal literals are
+  interchangeable partners, and the linking search pays a permutation's
+  worth of nodes for every wrong choice among them, which the focused
+  engine's counts refute at once), else to `focus`; every other classical
+  input without exponentials to `focus`; intuitionistic and affine modes and
   exponentials are `Error::NoEngine`, an error and not an `Unknown`, until
   steps 7 and 8 fill the rows. `Options::engine` forces an engine;
   `Engine::Net` on a fragment outside unit-free MLL, asserted or detected,
@@ -517,7 +521,8 @@ What the code relies on:
   the leaves of a pure `⊗` or `⅋` tree of equal literals (sound: the
   leaves of a `⊗` tree share every switching's component, and a `⅋` tree
   opens to interchangeable conclusions) is the follow-up the plan's step
-  14 should measure before the default for unit-free MLL is settled.
+  14 should measure; until then the dispatch routes MLL with a literal of
+  multiplicity above 2 to the focused engine (`prefers_net`).
 - **Every proof passes the checker** (`debug_assert!` in `search`, every
   test), and every net is the net of its proof (`from_proof` in the tests'
   `run`). The differential test against the focused engine
