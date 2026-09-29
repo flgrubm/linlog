@@ -8,6 +8,7 @@ mod parse;
 #[cfg(feature = "parse")]
 pub use parse::ParseError;
 
+use crate::proofs::CheckError;
 use thiserror::Error;
 
 /// Everything that can go wrong in this crate.
@@ -47,4 +48,7 @@ pub enum Error {
         "Occurrence index out of bounds: a proof node refers to occurrence {0} while the forest has {1}"
     )]
     OccurrenceIndexOutOfBounds(usize, usize),
+    /// A proof does not prove its sequent.
+    #[error("Invalid proof: {0}")]
+    InvalidProof(#[from] CheckError),
 }

@@ -15,11 +15,15 @@
 //! record the sequent it proves: the checker derives that from the premises,
 //! and the derivation view shows it.
 
+/// The checker.
+pub mod check;
 /// Multisets of occurrence ids.
 mod multiset;
 
+pub use check::{CheckError, Dyadic, Problem};
 
 use crate::Error;
+use crate::fragment::Mode;
 use crate::occurrences::{Forest, OccId};
 use crate::sequents::Sequent;
 use std::fmt::{Display, Formatter, Result as FmtResult};
@@ -92,7 +96,9 @@ pub enum Node {
     /// which stays in `Θ`. The only rule that can repeat an occurrence in a
     /// branch, which is why the linear zone is a multiset.
     Copy(OccId, NodeId),
-    /// Weakening, in affine mode only: `⊢ Θ ; Γ, A` from `⊢ Θ ; Γ`.
+    /// Weakening: `⊢ Θ ; Γ, A` from `⊢ Θ ; Γ`, in affine mode, or in any
+    /// mode when `A` is a `?` formula (the standard `?w`; the dyadic form of
+    /// it is a [`Quest`](Self::Quest) whose formula goes unused).
     Weaken(OccId, NodeId),
     /// Mix, when the mode allows it: `⊢ Θ ; Γ, Δ` from `⊢ Θ ; Γ` and
     /// `⊢ Θ ; Δ`.
@@ -205,13 +211,13 @@ impl Display for Node {
 ///
 /// A proof is built bottom-up, premises before conclusions, and is what a
 /// search engine returns. Whether it proves its sequent is a separate
-/// question, for the checker.
+/// question, answered by [`check`](Self::check).
 ///
 /// # Examples
 ///
 #[cfg_attr(feature = "parse", doc = "```")]
 #[cfg_attr(not(feature = "parse"), doc = "```ignore")]
-/// use linlog::{Forest, Node, NodeId, OccId, Proof, Sequent};
+/// use linlog::{Forest, Mode, Node, NodeId, OccId, Proof, Sequent};
 ///
 /// // ⊢ ~A, A ⊗ ~B, B, with the occurrences 0: ~A, 1: A ⊗ ~B, 2: A,
 /// // 3: ~B, 4: B.
@@ -224,7 +230,7 @@ impl Display for Node {
 ///     Node::Tensor(o(1), n(0), n(1)),
 /// ];
 /// let proof = Proof::new(forest, nodes, n(2))?;
-/// assert_eq!(proof.root(), n(2));
+/// proof.check(Mode::CLASSICAL)?;
 /// # Ok::<(), linlog::Error>(())
 /// ```
 #[derive(Clone, Debug)]
@@ -308,6 +314,12 @@ impl Proof {
     /// Returns the root: the node that concludes the sequent, the last one.
     pub fn root(&self) -> NodeId {
         NodeId::new(self.nodes.len() as u32 - 1)
+    }
+
+    /// Checks that the proof proves its sequent under the rules the mode
+    /// allows; see [`check::check`].
+    pub fn check(&self, mode: Mode) -> Result<(), CheckError> {
+        check::check(self, mode)
     }
 }
 
