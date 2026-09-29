@@ -13,6 +13,8 @@ mod errors;
 mod hash;
 /// Export to LaTeX, Typst, SVG and Rocq.
 pub mod export;
+/// Fragments of linear logic, modes of proof search, and fragment detection.
+pub mod fragment;
 /// Proof nets.
 pub mod nets;
 /// Parsing sequents from text.
@@ -32,4 +34,5 @@ mod serialize;
 pub use errors::ParseError;
 
 pub use errors::Error;
+pub use fragment::{Fragment, Mode};
 pub use sequents::{Atom, Formula, Kind, Sequent, Term, TermId};
