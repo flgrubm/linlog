@@ -87,27 +87,21 @@ file as one string; the step's prompt comes first and `conduct.md` is
 appended; `--name` labels the session in `claude --resume`.
 
 ```nu
-def step [n: string, model: string, effort: string, file: string] {
-  claude --model $model --effort $effort --name $"step-($n)" ((open --raw $"plan/($file)") + "\n" + (open --raw plan/conduct.md))
-}
-step 01 claude-fable-5-1 xhigh 01-core-refactor.md
-step 02 claude-fable-5-1 xhigh 02-proofs.md
-step 03 claude-fable-5-1 xhigh 03-focused-engine.md
-step 04 claude-opus-5-5  high  04-api-and-cli.md
-step 05 claude-fable-5-1 xhigh 05-proof-nets.md
-step 06 claude-fable-5-1 xhigh 06-net-search.md
-step 07 claude-fable-5-1 xhigh 07-exponentials.md
-step 08 claude-fable-5-1 xhigh 08-intuitionistic.md
-step 09 claude-opus-5-5  high  09-latex-typst.md
-step 10 claude-opus-5-5  high  10-svg.md
-step 11 claude-fable-5-1 high  11-certificates.md
-step 12 claude-fable-5-1 xhigh 12-parallel.md
-step 13 claude-opus-5-5  high  13-benchmarks.md
+claude --model claude-fable-5-1 --effort xhigh --name step-01 ((open --raw plan/01-core-refactor.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-02 ((open --raw plan/02-proofs.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-03 ((open --raw plan/03-focused-engine.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort high --name step-04 ((open --raw plan/04-api-and-cli.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-05 ((open --raw plan/05-proof-nets.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-06 ((open --raw plan/06-net-search.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-07 ((open --raw plan/07-exponentials.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-08 ((open --raw plan/08-intuitionistic.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort high --name step-09 ((open --raw plan/09-latex-typst.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort high --name step-10 ((open --raw plan/10-svg.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort high --name step-11 ((open --raw plan/11-certificates.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-12 ((open --raw plan/12-parallel.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort high --name step-13 ((open --raw plan/13-benchmarks.md) + "\n" + (open --raw plan/conduct.md))
 ```
 
-Define `step` once per shell (or put it in `config.nu`), then run one line
-per step. Without the function, a single command reads
-`claude --model claude-fable-5-1 --effort xhigh --name step-02 ((open --raw plan/02-proofs.md) + "\n" + (open --raw plan/conduct.md))`.
 The aliases `fable` and `opus` also work for `--model`. The flags are
 documented at code.claude.com/docs/en/cli-reference.
 
