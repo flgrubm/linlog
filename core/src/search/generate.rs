@@ -49,27 +49,42 @@ pub(crate) struct Rules {
     pub(crate) additives: bool,
     /// Mix.
     pub(crate) mix: bool,
+    /// `!` and `?`: promotion, dereliction, contraction and weakening.
+    pub(crate) exponentials: bool,
 }
 
 impl Rules {
-    /// Every combination of the three switches.
-    pub(crate) const ALL: [Rules; 8] = {
+    /// Every combination of the four switches.
+    pub(crate) const ALL: [Rules; 16] = {
         let mut all = [Rules {
             units: false,
             additives: false,
             mix: false,
-        }; 8];
+            exponentials: false,
+        }; 16];
         let mut i = 0;
-        while i < 8 {
+        while i < 16 {
             all[i] = Rules {
                 units: i & 1 != 0,
                 additives: i & 2 != 0,
                 mix: i & 4 != 0,
+                exponentials: i & 8 != 0,
             };
             i += 1;
         }
         all
     };
+}
+
+/// A generated provable sequent: its formulas, and the most derelictions
+/// on one branch of the proof it was read off, which bounds the copies a
+/// dyadic proof of it needs per branch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Provable {
+    /// The formulas.
+    pub(crate) formulas: Vec<Tree>,
+    /// The most derelictions on one branch.
+    pub(crate) copies: u32,
 }
 
 /// A formula as a tree, printed in the parser's syntax with every binary
@@ -96,6 +111,10 @@ pub(crate) enum Tree {
     With(Box<Tree>, Box<Tree>),
     /// `A ⊕ B`
     Plus(Box<Tree>, Box<Tree>),
+    /// `!A`
+    Bang(Box<Tree>),
+    /// `?A`
+    Quest(Box<Tree>),
 }
 
 impl Tree {
@@ -110,7 +129,13 @@ impl Tree {
                 all.extend(r.literals());
                 all
             }
+            Bang(a) | Quest(a) => a.literals(),
         }
+    }
+
+    /// Whether the formula is a `?` formula.
+    fn is_quest(&self) -> bool {
+        matches!(self, Tree::Quest(_))
     }
 }
 
@@ -131,6 +156,8 @@ impl Display for Tree {
             Par(l, r) => binary(f, l, "par", r),
             With(l, r) => binary(f, l, "&", r),
             Plus(l, r) => binary(f, l, "+", r),
+            Bang(a) => write!(f, "!{a}"),
+            Quest(a) => write!(f, "?{a}"),
         }
     }
 }
@@ -147,10 +174,12 @@ pub(crate) fn sequent(formulas: &[Tree]) -> String {
 
 /// Builds a random provable sequent: a cut-free proof of about `budget`
 /// rule applications over `atoms` atom names, using the rules allowed, and
-/// returns its conclusion.
-pub(crate) fn provable(rng: &mut Rng, rules: Rules, atoms: u8, budget: usize) -> Vec<Tree> {
+/// returns its conclusion with the most derelictions on one of its
+/// branches.
+pub(crate) fn provable(rng: &mut Rng, rules: Rules, atoms: u8, budget: usize) -> Provable {
     let mut generator = Generator { rng, rules, atoms };
-    generator.proof(budget)
+    let (formulas, copies) = generator.proof(budget);
+    Provable { formulas, copies }
 }
 
 /// Mutates a sequent by giving one literal another atom name, and returns
@@ -179,10 +208,11 @@ struct Generator<'a> {
 }
 
 impl Generator<'_> {
-    /// Builds the conclusion of a random proof of about `budget` rules.
-    fn proof(&mut self, budget: usize) -> Vec<Tree> {
+    /// Builds the conclusion of a random proof of about `budget` rules,
+    /// with the most derelictions on one of its branches.
+    fn proof(&mut self, budget: usize) -> (Vec<Tree>, u32) {
         if budget <= 1 {
-            return self.leaf();
+            return (self.leaf(), 0);
         }
         // Weighted choice among the rules the switches allow.
         let mut choices: Vec<u8> = vec![b'a', b'a', b't', b't', b'p', b'p'];
@@ -195,51 +225,54 @@ impl Generator<'_> {
         if self.rules.mix {
             choices.push(b'm');
         }
+        if self.rules.exponentials {
+            choices.extend(*b"dwc!");
+        }
         match choices[self.rng.below(choices.len())] {
-            b'a' => self.leaf(),
+            b'a' => (self.leaf(), 0),
             b't' => {
                 // ⊢ Γ, A and ⊢ Δ, B give ⊢ Γ, Δ, A ⊗ B.
                 let left_budget = 1 + self.rng.below(budget - 1);
-                let mut left = self.proof(left_budget);
-                let mut right = self.proof(budget - left_budget);
+                let (mut left, lc) = self.proof(left_budget);
+                let (mut right, rc) = self.proof(budget - left_budget);
                 let a = left.swap_remove(self.rng.below(left.len()));
                 let b = right.swap_remove(self.rng.below(right.len()));
                 left.append(&mut right);
                 left.push(Tree::Tensor(Box::new(a), Box::new(b)));
-                left
+                (left, lc.max(rc))
             }
             b'p' => {
                 // ⊢ Γ, A, B gives ⊢ Γ, A ⅋ B; with one formula only, `⊥`
                 // serves as the other when units are allowed.
-                let mut premise = self.proof(budget - 1);
+                let (mut premise, copies) = self.proof(budget - 1);
                 if premise.len() < 2 {
                     if !self.rules.units {
-                        return premise;
+                        return (premise, copies);
                     }
                     premise.push(Tree::Bot);
                 }
                 let a = premise.swap_remove(self.rng.below(premise.len()));
                 let b = premise.swap_remove(self.rng.below(premise.len()));
                 premise.push(Tree::Par(Box::new(a), Box::new(b)));
-                premise
+                (premise, copies)
             }
-            b'1' => vec![Tree::One],
+            b'1' => (vec![Tree::One], 0),
             b'b' => {
-                let mut premise = self.proof(budget - 1);
+                let (mut premise, copies) = self.proof(budget - 1);
                 premise.push(Tree::Bot);
-                premise
+                (premise, copies)
             }
             b'&' => {
                 // ⊢ Γ, A and ⊢ Γ, B give ⊢ Γ, A & B: B is a twin of A that
                 // the same context proves.
-                let mut premise = self.proof(budget - 1);
+                let (mut premise, copies) = self.proof(budget - 1);
                 let a = premise.swap_remove(self.rng.below(premise.len()));
                 let b = self.twin(&a, 2);
                 premise.push(Tree::With(Box::new(a), Box::new(b)));
-                premise
+                (premise, copies)
             }
             b'+' => {
-                let mut premise = self.proof(budget - 1);
+                let (mut premise, copies) = self.proof(budget - 1);
                 let a = premise.swap_remove(self.rng.below(premise.len()));
                 let junk = self.junk(3);
                 premise.push(if self.rng.one_in(2) {
@@ -247,7 +280,7 @@ impl Generator<'_> {
                 } else {
                     Tree::Plus(Box::new(junk), Box::new(a))
                 });
-                premise
+                (premise, copies)
             }
             b'T' => {
                 // ⊢ ⊤, Γ for any Γ.
@@ -255,13 +288,65 @@ impl Generator<'_> {
                 for _ in 0..self.rng.below(3) {
                     sequent.push(self.junk(3));
                 }
-                sequent
+                (sequent, 0)
             }
             b'm' => {
                 let left_budget = 1 + self.rng.below(budget - 1);
-                let mut left = self.proof(left_budget);
-                left.append(&mut self.proof(budget - left_budget));
-                left
+                let (mut left, lc) = self.proof(left_budget);
+                let (mut right, rc) = self.proof(budget - left_budget);
+                left.append(&mut right);
+                (left, lc.max(rc))
+            }
+            b'd' => {
+                // Dereliction: ⊢ Γ, A gives ⊢ Γ, ?A, one more copy on every
+                // branch.
+                let (mut premise, copies) = self.proof(budget - 1);
+                let a = premise.swap_remove(self.rng.below(premise.len()));
+                premise.push(Tree::Quest(Box::new(a)));
+                (premise, copies + 1)
+            }
+            b'w' => {
+                // Weakening: ⊢ Γ gives ⊢ Γ, ?A for any A.
+                let (mut premise, copies) = self.proof(budget - 1);
+                let junk = self.junk(3);
+                premise.push(Tree::Quest(Box::new(junk)));
+                (premise, copies)
+            }
+            b'c' => {
+                // Contraction, on a `?` formula both copies of a premise
+                // hold: ⊢ Γ, A twice gives ⊢ Γ, Γ, A ⊗ A by `⊗`, and each
+                // `?B` of Γ appears twice, which contracts to once.
+                let (mut premise, copies) = self.proof(budget - 1);
+                if !premise.iter().any(Tree::is_quest) {
+                    let i = self.rng.below(premise.len());
+                    let b = premise.swap_remove(i);
+                    premise.push(Tree::Quest(Box::new(b)));
+                    return (premise, copies + 1);
+                }
+                let a = premise.swap_remove(self.rng.below(premise.len()));
+                let (quests, rest): (Vec<Tree>, Vec<Tree>) =
+                    premise.into_iter().partition(Tree::is_quest);
+                let mut sequent = rest.clone();
+                sequent.extend(rest);
+                sequent.extend(quests);
+                sequent.push(Tree::Tensor(Box::new(a.clone()), Box::new(a)));
+                (sequent, copies)
+            }
+            b'!' => {
+                // Promotion: ⊢ ?Γ, A gives ⊢ ?Γ, !A; whatever of Γ is not a
+                // `?` formula is derelicted first.
+                let (mut premise, copies) = self.proof(budget - 1);
+                let a = premise.swap_remove(self.rng.below(premise.len()));
+                let mut derelicted = 0;
+                for f in premise.iter_mut() {
+                    if !f.is_quest() {
+                        let inner = std::mem::replace(f, Tree::One);
+                        *f = Tree::Quest(Box::new(inner));
+                        derelicted += 1;
+                    }
+                }
+                premise.push(Tree::Bang(Box::new(a)));
+                (premise, copies + derelicted)
             }
             _ => unreachable!(),
         }
@@ -330,6 +415,9 @@ impl Generator<'_> {
             if self.rules.additives {
                 choices.extend(*b"&+");
             }
+            if self.rules.exponentials {
+                choices.extend(*b"!?");
+            }
         }
         let a = self.rng.below(self.atoms as usize) as u8;
         let sub = |this: &mut Self| Box::new(this.junk(size - 1));
@@ -344,6 +432,8 @@ impl Generator<'_> {
             b'p' => Tree::Par(sub(self), sub(self)),
             b'&' => Tree::With(sub(self), sub(self)),
             b'+' => Tree::Plus(sub(self), sub(self)),
+            b'!' => Tree::Bang(sub(self)),
+            b'?' => Tree::Quest(sub(self)),
             _ => unreachable!(),
         }
     }

@@ -574,9 +574,10 @@ mod tests {
                     units: false,
                     additives: false,
                     mix: i % 3 == 2,
+                    exponentials: false,
                 };
                 let budget = 2 + rng.below(9);
-                let mut formulas = generate::provable(&mut rng, rules, 3, budget);
+                let mut formulas = generate::provable(&mut rng, rules, 3, budget).formulas;
                 if i % 2 == 1 {
                     generate::mutate(&mut rng, &mut formulas, 3);
                 }

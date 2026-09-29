@@ -604,11 +604,12 @@ mod tests {
                 units: false,
                 additives: false,
                 mix,
+                exponentials: false,
             };
             let mut rng = Rng::new(u64::from(mix) + 10);
             for _ in 0..samples {
                 let budget = 2 + rng.below(budget - 1);
-                let mut formulas = generate::provable(&mut rng, rules, 3, budget);
+                let mut formulas = generate::provable(&mut rng, rules, 3, budget).formulas;
                 texts.push((generate::sequent(&formulas), mode));
                 let doubled: Vec<_> = formulas.iter().chain(&formulas).cloned().collect();
                 texts.push((generate::sequent(&doubled), mode));

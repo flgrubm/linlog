@@ -1616,33 +1616,42 @@ mod tests {
         }
     }
 
-    /// Whether `input` is provable under `mode` with `options`, panicking on
-    /// `Unknown`.
-    fn decided(input: &str, mode: Mode, options: &Options) -> bool {
+    /// The verdict of `input` under `mode` with `options`, as a three-way
+    /// value: provable, unprovable, or undecided within the copy bound.
+    fn decided(input: &str, mode: Mode, options: &Options) -> Option<bool> {
         match run(input, mode, options).0 {
-            Verdict::Proved(_) => true,
-            Verdict::Unprovable => false,
+            Verdict::Proved(_) => Some(true),
+            Verdict::Unprovable => Some(false),
+            Verdict::Unknown(Reason::CopyBound(_)) => None,
             Verdict::Unknown(reason) => panic!("{input:?}: {reason}"),
         }
     }
 
     /// Proves `samples` generated sequents of up to `budget` rules per rule
-    /// set, and decides one mutant of each with and without the memo.
-    /// Returns how many sequents and mutants were decided, how many mutants
-    /// were provable, and the most stable sequents one search visited.
-    fn generated(samples: u64, budget: usize) -> (u64, u64, u64, u64) {
-        let (mut sequents, mut mutants, mut provable_mutants, mut most_nodes) = (0, 0, 0, 0);
+    /// set, each within the copies its proof took, and decides one mutant
+    /// of each with and without the memo. Returns how many sequents and
+    /// mutants were decided, how many mutants were provable, how many were
+    /// undecided within the copy bound, and the most stable sequents one
+    /// search visited.
+    fn generated(samples: u64, budget: usize) -> (u64, u64, u64, u64, u64) {
+        let (mut sequents, mut mutants, mut provable_mutants, mut undecided, mut most_nodes) =
+            (0, 0, 0, 0, 0);
         for (i, rules) in Rules::ALL.into_iter().enumerate() {
             let mode = mode_for(rules);
             let mut rng = Rng::new(i as u64);
             for _ in 0..samples {
                 let budget = 2 + rng.below(budget - 1);
-                let mut formulas = generate::provable(&mut rng, rules, 3, budget);
+                let generate::Provable {
+                    mut formulas,
+                    copies,
+                } = generate::provable(&mut rng, rules, 3, budget);
                 let text = generate::sequent(&formulas);
-                let (verdict, statistics) = run(&text, mode, &Options::default());
+                let options = Options::default().copies(copies);
+                let (verdict, statistics) = run(&text, mode, &options);
                 assert!(
                     verdict.proof().is_some(),
-                    "{text:?} is provable in {mode} mode, but the engine says {verdict:?}"
+                    "{text:?} is provable in {mode} mode within {copies} copies, but the engine \
+                     says {verdict:?}"
                 );
                 sequents += 1;
                 most_nodes = most_nodes.max(statistics.nodes);
@@ -1650,26 +1659,37 @@ mod tests {
                     let text = generate::sequent(&formulas);
                     let with_memo = decided(&text, mode, &Options::default());
                     let without = decided(&text, mode, &Options::default().memo_limit(0));
-                    assert_eq!(
-                        with_memo, without,
-                        "{text:?} in {mode} mode, with and without the memo"
+                    // The memo never contradicts the memo-free search; it
+                    // may decide where the other is undecided within the
+                    // bound and the other way round, since an entry cut by
+                    // the budget is a fact about the sequent alone while
+                    // the loop check is a fact about the branch.
+                    assert!(
+                        with_memo.is_none() || without.is_none() || with_memo == without,
+                        "{text:?} in {mode} mode: {with_memo:?} with the memo, {without:?} without"
                     );
                     mutants += 1;
-                    provable_mutants += u64::from(with_memo);
+                    provable_mutants += u64::from(with_memo == Some(true));
+                    undecided += u64::from(with_memo.is_none());
                 }
             }
         }
-        (sequents, mutants, provable_mutants, most_nodes)
+        (sequents, mutants, provable_mutants, undecided, most_nodes)
     }
 
-    /// Every generated provable sequent is proved with a checked proof, in
-    /// every fragment with and without Mix, and its mutant is decided the
-    /// same way with and without the memo.
+    /// Every generated provable sequent is proved with a checked proof
+    /// within the copies its proof took, in every fragment with and
+    /// without Mix, and its mutant is decided the same way with and
+    /// without the memo.
     #[test]
     fn generated_sequents() {
-        let (sequents, mutants, _, _) = generated(40, 10);
-        assert_eq!(sequents, 320);
-        assert!(mutants > 200, "{mutants} mutants");
+        let (sequents, mutants, _, undecided, _) = generated(40, 10);
+        assert_eq!(sequents, 640);
+        assert!(mutants > 400, "{mutants} mutants");
+        assert!(
+            undecided < mutants / 4,
+            "{undecided} of {mutants} mutants undecided"
+        );
     }
 
     /// The same on a larger sample of larger proofs; run it in release
@@ -1677,10 +1697,11 @@ mod tests {
     #[test]
     #[ignore = "a larger sample; run with --release -- --ignored --nocapture"]
     fn generated_large_sample() {
-        let (sequents, mutants, provable_mutants, most_nodes) = generated(500, 24);
+        let (sequents, mutants, provable_mutants, undecided, most_nodes) = generated(500, 24);
         println!(
             "{sequents} generated sequents proved, {mutants} mutants decided consistently \
-             ({provable_mutants} of them provable), at most {most_nodes} stable sequents per search"
+             ({provable_mutants} of them provable, {undecided} undecided within the copy \
+             bound), at most {most_nodes} stable sequents per search"
         );
     }
 

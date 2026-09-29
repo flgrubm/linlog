@@ -557,6 +557,7 @@ mod tests {
                 units: false,
                 additives: false,
                 mix,
+                exponentials: false,
             };
             let mode = if mix {
                 Mode::CLASSICAL.with_mix()
@@ -566,7 +567,7 @@ mod tests {
             let mut rng = Rng::new(seed);
             for _ in 0..60 {
                 let budget = 2 + rng.below(14);
-                let formulas = generate::provable(&mut rng, rules, 3, budget);
+                let formulas = generate::provable(&mut rng, rules, 3, budget).formulas;
                 let text = generate::sequent(&formulas);
                 let s: Sequent = text.parse().unwrap();
                 let outcome = prove(&s, mode, &Options::default()).unwrap();
