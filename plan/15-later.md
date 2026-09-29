@@ -23,6 +23,16 @@ closure bit-matrix and an undo log (Moot 2008). Compare against the
 embedding route of step 8 on the benchmarks of step 14 before making it the
 default for IMLL. Fable 5.1, xhigh.
 
+## 15b'. Net-engine pruning for repeated literals
+
+Part of the performance pass (14b) if step 14's numbers ask for it: leaf
+symmetry breaking for pure `⊗` and `⅋` trees of equal literals, a per-atom
+balance over the `⊗`-skeleton components of a partial structure (the net
+engine's analogue of the focused engine's split counts), and the sound
+variant of symmetry breaking for equal compound conclusions (keys under
+roots no symmetry moves; the spec's first-literal key is unsound across
+groups, as step 6's report shows). Fable 5.1, xhigh.
+
 ## 15c. The focused inverse method
 
 The spec's second engine for MALL and the semi-decision alternative for

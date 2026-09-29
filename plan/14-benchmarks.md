@@ -41,7 +41,20 @@ change shows its effect.
    (license permitting; LLTP's license must allow redistribution, else
    fetch on demand and document), the generated families at a few sizes,
    and the sequents from the earlier steps' slow tests.
-5. **The known slow cases as benchmark families.** Step 3's report
+5. **The engine routing and its knobs.** The net engine wins on distinct
+   atoms and wide contexts (linear where the focused engine enumerates
+   splits) and loses by orders of magnitude on Horn encodings with
+   repeated literals (step 6's report, "Timings"), so the dispatch routes
+   unit-free MLL to it only when no literal occurs more than twice
+   (`NET_MULTIPLICITY` in `core/src/search/mod.rs`). Measure that
+   threshold on the harness, and `Options::test_period` (the exact test's
+   cadence; expose it in the CLI if the numbers want it), and record what
+   the performance pass should try first: leaf symmetry breaking for pure
+   `⊗`/`⅋` trees of equal literals (sound by the argument in
+   `.claude/rules/core.md`; the spec forbade it), a per-atom balance over
+   the `⊗`-skeleton components of a partial structure, and a portfolio
+   once threads exist.
+6. **The known slow cases as benchmark families.** Step 3's report
    ("Performance observations", "Open questions and follow-ups") names
    them: refuting a wide sequent under Mix costs about `3^k`; refuting an
    unsolvable 3-Partition instance takes 55 s for bins of size 4 (3.9
@@ -51,11 +64,11 @@ change shows its effect.
    step (branch-and-bound splitting instead of Gray-code enumeration, a
    per-problem atom bias, the tighter counts the report lists, memo keys in
    an arena) has numbers to beat. Measure, do not fix here.
-6. **Tracking**: a `bench/RESULTS.md` (or CSV) with the current numbers per
+7. **Tracking**: a `bench/RESULTS.md` (or CSV) with the current numbers per
    family and engine, and the command that regenerates it; not a CI job
    (timings on shared runners are noise), but a `nix flake check` entry
    that runs the harness on a tiny set to keep it building.
-7. **Documentation**: README (how to run the benchmarks), CLAUDE.md
+8. **Documentation**: README (how to run the benchmarks), CLAUDE.md
    (commands, the bench crate), `.claude/rules/core.md` if formats were
    added.
 

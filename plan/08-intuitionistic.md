@@ -66,6 +66,13 @@ fast path of D8.
    with a goal side or a sibling module sharing its building blocks; avoid
    duplicating the memo, the deepening and the count machinery.
 4. **IMLL by embedding**: for `⊗ ⊸ 1` sequents in intuitionistic mode,
+   the net engine as it is (its report, "For step 8": the lowered sequent is
+   unit-free MLL, the dispatch's multiplicity rule applies, and the only
+   place for an extra condition on complete linkings is the `complete`
+   branch of `run`). Settle whether a classical net of an IMLL sequent
+   always sequentializes into a proof that passes the one-succedent check,
+   or whether the essential-net condition must be tested there; state the
+   argument in the report. Then,
    run the net engine on the one-sided sequent (it is the same arena) and
    convert the proof to a two-sided derivation; the spec says this
    embedding is conservative for this fragment only. Test agreement with

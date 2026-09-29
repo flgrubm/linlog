@@ -40,7 +40,10 @@ pools, so one engine per worker; there is no global.
    or-choices (decide, `⊕`, `⊗`-split), and-parallel `&` premises when the
    pool has idle workers, a portfolio option (different focus orderings and
    atom biases per worker) as the cheapest first win.
-3. **Net engine**: cubes from the first `d` link choices with `d` chosen for
+3. **Net engine** (its report, "For step 13": everything is in `Engine`,
+   `ProofStructure` and `Scratch` are `Clone`, the choice order is
+   deterministic, so a worker is a clone after a prefix of links; add a
+   `seed` entry that takes a list of links): cubes from the first `d` link choices with `d` chosen for
    8–32× more cubes than cores, smallest-multiplicity atoms first, no shared
    state beyond the stop flag.
 4. **Exponentials**: one deepening level at a time; parallelism within a

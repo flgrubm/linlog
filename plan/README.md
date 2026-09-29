@@ -219,7 +219,8 @@ whether it is a parameter or a sibling module). Proof-net search is
 | Mode | Detected fragment | Engine |
 |---|---|---|
 | classical | additives only, two roots | additive (step 8) |
-| classical | MLL without units, with or without Mix | net search (step 6) |
+| classical | MLL without units, with or without Mix, no literal more than twice | net search (step 6) |
+| classical | MLL without units, some literal three or more times | focus (step 3); threshold tuned in step 14 |
 | classical | MLL with units, MALL | focus (step 3) |
 | classical | MELL, LL | focus with exponentials and copy bound (step 7) |
 | affine | anything | focus with weakening and the supermultiset prune (step 7) |
@@ -368,3 +369,23 @@ full powerset; the step that adds the fifth feature makes that change in
   interactive state and the exporters; prompts 7, 8, 10, 11, 12 and 15
   amended for both. The CLI's code became the library `linlog_cli` with a
   one-line binary so that rustdoc lists both crates in one tree.
+- 2026-09-29: step 6 reviewed and accepted. Four commits, "Search axiom
+  linkings with incremental pruning" to "Document the net engine"; all
+  checks pass including `nix flake check`; the engine was exercised by
+  hand. Minimum-remaining-values choice with forward checking, both O(1)
+  rejections, the exact test at the spec's cadence (`Options::test_period`),
+  symmetry breaking for equal literal conclusions (the spec's key for
+  compound copies is unsound across groups and was not implemented), an
+  explicit stack, `Engine::Net`, `Outcome::net`, per-engine statistics. A
+  fresh-context reviewer compared it with brute-force enumeration of all
+  linkings on about 54 000 cases with no disagreement. The timings decide
+  a routing question the plan had left to D8: the net engine is linear on
+  distinct atoms and wide contexts (13 999 occurrences in half a second
+  where the focused engine gives up) and loses by orders of magnitude on
+  Horn encodings with repeated literals. The planning session changed the
+  dispatch ("Route MLL with repeated literals to the focused engine"):
+  unit-free MLL goes to `net` only when no literal occurs more than twice;
+  D8 updated, step 14 tunes the threshold and measures the follow-ups
+  (leaf symmetry breaking, a per-atom balance over skeleton components, a
+  portfolio), now listed as 15b' for the performance pass. Prompts 8, 13
+  and 14 amended.
