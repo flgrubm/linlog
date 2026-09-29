@@ -67,6 +67,10 @@ const MAX_SPLIT: usize = 63;
 /// ancestor".
 const NO_DEPENDENCY: u32 = u32::MAX;
 
+/// How many splits of a `⊗` or a Mix the engine examines between two polls
+/// of the stop condition inside one enumeration.
+const SPLITS_PER_POLL: u64 = 4096;
+
 /// Runs the focused engine on the forest of a sequent of `fragment` under
 /// `mode`, two-sided when the sequent's intuitionistic reading is given,
 /// polling `stop` at every stable sequent, and returns the verdict with the
@@ -1126,6 +1130,7 @@ impl<'a> Engine<'a> {
         for flip in submasks(members.len() - start) {
             let m = members[start + flip.position as usize];
             self.statistics.splits += 1;
+            self.poll_splits()?;
             if flip.mask >> flip.position & 1 == 1 {
                 right.remove(m);
                 left.insert(m);
@@ -1145,6 +1150,18 @@ impl<'a> Engine<'a> {
             }
         }
         Ok(None)
+    }
+
+    /// Polls the stop condition once every [`SPLITS_PER_POLL`] splits: an
+    /// enumeration whose splits the counts reject, or whose premises fail
+    /// in focus, visits no stable sequent, where the condition is polled
+    /// otherwise, and may run for minutes.
+    fn poll_splits(&mut self) -> Result<(), Reason> {
+        if self.statistics.splits.is_multiple_of(SPLITS_PER_POLL) && self.stop.fired() {
+            Err(Reason::Stopped)
+        } else {
+            Ok(())
+        }
     }
 
     /// Whether both sides of a split pass the counts.
@@ -1221,6 +1238,7 @@ impl<'a> Engine<'a> {
             }
             let m = rest[flip.position as usize];
             self.statistics.splits += 1;
+            self.poll_splits()?;
             if flip.mask >> flip.position & 1 == 1 {
                 right.remove(m);
                 left.insert(m);
