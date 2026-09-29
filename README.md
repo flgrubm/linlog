@@ -29,4 +29,6 @@ Planned features:
 
 ## Architecture
 
-There will be three units: the CLI program (`linlog-cli`), the web version (`linlog-web`) as well as a library (`linlog-core`) for the common logic shared between the CLI and web application. The code is written using Rust, due to its high performance and great compatibiliy with WebAssembly (for the website).
+There will be three units: the CLI program (`linlog-cli`, in `cli/`), the web version (`linlog-web`, not started) as well as a library (`linlog`, in `core/`) for the common logic shared between the CLI and web application. The code is written using Rust, due to its high performance and great compatibility with WebAssembly (for the website).
+
+The library keeps a sequent as a compact arena of subformulas in negation normal form, one-sided (`Γ ⊢ Δ` becomes `⊢ Γ^⊥, Δ`). On top of that it detects the fragment a sequent lives in (MLL, MALL, MELL, LL, …) and builds the occurrence forest, the numbering of subformula occurrences that every proof-search engine, proof checker and proof net works on. Proof search itself, proofs, nets and the export formats follow the plan in `plan/README.md`.

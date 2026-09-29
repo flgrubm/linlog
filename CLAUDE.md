@@ -19,16 +19,20 @@ roadmap). It is written in Rust with WebAssembly in mind for a planned
 data structures are designed to be compact and cache-friendly.
 
 Workspace crates:
-- `core/` is package **`linlog`** (the README calls it `linlog-core`): all logic.
+- `core/` is package **`linlog`**: all logic.
   It has two optional default features, `parse` (chumsky) and `serialize` (serde).
 - `cli/` is package **`linlog-cli`**: a clap front end. The subcommand tree
   (`seq pretty|serialize prose|json`) is declared in `argument_parsing.rs`, but
   `main.rs` does not dispatch to it yet.
 
-The core API the CLI builds on: `"…".parse::<Sequent<usize, LL>>()`, `Display`
-for pretty-printing, and serde behind `serialize`. Sequents are one-sided
-arena DAGs in negation normal form. The invariants live in
-`.claude/rules/core.md`, which loads when a file under `core/` is read.
+The core API the CLI builds on: `"…".parse::<Sequent>()`, `Display` for
+pretty-printing, serde behind `serialize`, `Sequent::fragment()` for the
+fragment a sequent lives in, and `Forest::new(&sequent)` for the occurrence
+forest that proof search works on. Sequents are one-sided arena DAGs in
+negation normal form; fragments and modes are runtime values, and indices
+are `u32` newtypes. The invariants live in `.claude/rules/core.md`, which
+loads when a file under `core/` is read. `plan/README.md` is the proof-search
+plan the code follows, `plan/reports/` what each step of it did.
 
 ## Commands
 

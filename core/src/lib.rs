@@ -1,20 +1,23 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-//! Sequents of classical linear logic, stored as compact arena DAGs in
-//! negation normal form, with parsing, printing and serialization.
+//! Sequents of linear logic, stored as compact arena DAGs in negation normal
+//! form, with parsing, printing and serialization; the fragment a sequent
+//! lives in and the mode proof search runs in; and the occurrence forest of a
+//! sequent, the numbering of its subformula occurrences that proof search,
+//! proof checking and proof nets are built on.
 
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
 /// The error types of this crate.
 mod errors;
-/// The hash tables of this crate.
-mod hash;
 /// Export to LaTeX, Typst, SVG and Rocq.
 pub mod export;
 /// Fragments of linear logic, modes of proof search, and fragment detection.
 pub mod fragment;
+/// The hash tables of this crate.
+mod hash;
 /// Proof nets.
 pub mod nets;
 /// The occurrence forest of a sequent and sets over it.
