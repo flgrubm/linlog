@@ -5,17 +5,109 @@
 
 /// The command line arguments.
 mod argument_parsing;
+/// Reading input and writing output.
+mod io;
+/// The `prove` and `check` commands.
+mod prove;
 
-use argument_parsing::Cli;
+use anyhow::Result;
+use argument_parsing::{Cli, Command, SeqCommand};
 use clap::Parser;
+use linlog::Error;
+use std::fmt::Write;
+use std::process::ExitCode;
 
-/// Parses the command line arguments and runs the CLI.
-fn main() {
+/// What a command found, which decides the exit status.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Status {
+    /// Provable, a valid proof, or a command that has no verdict: 0.
+    Yes,
+    /// Unprovable, or an invalid proof: 1.
+    No,
+    /// The search stopped before deciding: 3.
+    Unknown,
+}
+
+/// The exit status of an error: bad arguments (as clap reports them),
+/// unreadable input, a sequent no engine handles.
+const ERROR: u8 = 2;
+
+impl From<Status> for ExitCode {
+    /// Returns the exit status for a verdict.
+    fn from(s: Status) -> Self {
+        ExitCode::from(match s {
+            Status::Yes => 0,
+            Status::No => 1,
+            Status::Unknown => 3,
+        })
+    }
+}
+
+/// Whether the user asked the search to stop; nothing sets it yet.
+pub(crate) fn interrupted() -> bool {
+    false
+}
+
+/// Returns a parse error as a message that points at the place in the input
+/// where parsing failed.
+pub(crate) fn parse_error(input: &str, error: Error) -> anyhow::Error {
+    let Error::SequentParsing(errors) = &error else {
+        return error.into();
+    };
+    if input.is_empty() {
+        return anyhow::Error::msg("the input is empty; the empty sequent is written |-");
+    }
+    let mut message = String::from("cannot parse the sequent");
+    for e in errors {
+        let column = input[..e.span.start].chars().count();
+        let found = match &e.found {
+            Some(token) => format!("unexpected {token:?}"),
+            None => "unexpected end of input".into(),
+        };
+        write!(message, "\n  {input}\n  {:column$}^ {found}", "").unwrap();
+    }
+    anyhow::Error::msg(message)
+}
+
+/// Runs the command the arguments name.
+fn run(cli: &Cli) -> Result<Status> {
+    match &cli.command {
+        Command::Prove(args) => prove::prove(args),
+        Command::Check(args) => prove::check(args),
+        Command::Seq { command } => {
+            match command {
+                SeqCommand::Print { input, output } => {
+                    io::write(output.as_deref(), &input.sequent()?.to_string())?;
+                }
+                SeqCommand::Json {
+                    input,
+                    optimize,
+                    output,
+                } => {
+                    let mut sequent = input.sequent()?;
+                    if *optimize {
+                        sequent.optimize()?;
+                    }
+                    io::write(output.as_deref(), &serde_json::to_string(&sequent)?)?;
+                }
+                SeqCommand::Fragment { input } => {
+                    io::write(None, input.sequent()?.fragment().name())?;
+                }
+            }
+            Ok(Status::Yes)
+        }
+    }
+}
+
+/// Parses the command line arguments, runs the command, and exits with the
+/// status of its verdict, or with 2 after printing an error.
+fn main() -> ExitCode {
     let cli = Cli::parse();
-
-    if cli.bb {
-        println!("bb is true")
-    } else {
-        println!("bb is false")
+    match run(&cli) {
+        Ok(status) => status.into(),
+        Err(e) => {
+            eprintln!("error: {e:#}");
+            ExitCode::from(ERROR)
+        }
     }
 }

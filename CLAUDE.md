@@ -21,9 +21,12 @@ data structures are designed to be compact and cache-friendly.
 Workspace crates:
 - `core/` is package **`linlog`**: all logic.
   It has two optional default features, `parse` (chumsky) and `serialize` (serde).
-- `cli/` is package **`linlog-cli`**: a clap front end. The subcommand tree
-  (`seq pretty|serialize prose|json`) is declared in `argument_parsing.rs`, but
-  `main.rs` does not dispatch to it yet.
+- `cli/` is package **`linlog-cli`**, binary **`linlog`**: a clap front end
+  with `prove`, `check` and `seq print|json|fragment`. The tree and its
+  `--help` text are the doc comments in `argument_parsing.rs`; `prove.rs`
+  runs the search on a thread sized from `--recursion-limit` and owns the
+  output; exit status 0 proved/valid, 1 unprovable/invalid, 2 error,
+  3 unknown.
 
 The core API the CLI builds on: `"…".parse::<Sequent>()`, `Display` for
 pretty-printing, serde behind `serialize`, `Sequent::fragment()` for the
@@ -61,7 +64,7 @@ cargo run -p linlog-cli -- <args>
 
 nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), deadnix, actionlint, treefmt, claude-hooks
 nix fmt           # nixfmt, rustfmt, taplo, shfmt, shellcheck (a hook runs it on each edited file)
-nix build         # linlog-cli
+nix build         # linlog-cli, whose binary is result/bin/linlog
 nix build .#doc   # the rustdoc site, as the Docs workflow publishes it
 ```
 

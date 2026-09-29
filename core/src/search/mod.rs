@@ -167,12 +167,14 @@ pub struct Options {
 }
 
 impl Default for Options {
-    /// A memo of at most 2²⁰ stable sequents, a recursion limit of 2048, and
-    /// the engine and fragment chosen by detection.
+    /// A memo of at most [`DEFAULT_MEMO_LIMIT`](Self::DEFAULT_MEMO_LIMIT)
+    /// stable sequents, a recursion limit of
+    /// [`DEFAULT_RECURSION_LIMIT`](Self::DEFAULT_RECURSION_LIMIT), and the
+    /// engine and fragment chosen by detection.
     fn default() -> Self {
         Self {
-            memo_limit: 1 << 20,
-            recursion_limit: 2048,
+            memo_limit: Self::DEFAULT_MEMO_LIMIT,
+            recursion_limit: Self::DEFAULT_RECURSION_LIMIT,
             engine: None,
             fragment: None,
         }
@@ -180,6 +182,13 @@ impl Default for Options {
 }
 
 impl Options {
+    /// The memo limit of the default options: 2²⁰ stable sequents.
+    pub const DEFAULT_MEMO_LIMIT: usize = 1 << 20;
+
+    /// The recursion limit of the default options, which fits the 8 MiB
+    /// stack of a main thread.
+    pub const DEFAULT_RECURSION_LIMIT: u32 = 2048;
+
     /// Sets the engine to use, or `None` for the one the detected fragment
     /// and the mode call for.
     pub fn engine(self, engine: Option<Engine>) -> Self {

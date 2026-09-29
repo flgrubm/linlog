@@ -42,6 +42,8 @@
             cargoExtraArgs = "--locked --package linlog-cli";
             # The `test' check runs them, once, for the whole workspace.
             doCheck = false;
+            # The binary is `linlog', not the package name `nix run' assumes.
+            meta.mainProgram = "linlog";
           }
         );
 
