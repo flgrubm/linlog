@@ -42,9 +42,52 @@ the crate build arenas as struct literals.
 When parsing, terms on the left of `⊢` get negative polarity. Negation is
 pushed down to atoms with `Term::dual()`, so there is no general negation
 node, only `DualVar`. `A ⊸ B` becomes `A^⊥ ⅋ B`. Printing therefore gives
-`A |- A` as `⊢ ~A, A`. Intuitionistic sequents will use the same model (plan
+`A |- A` as `⊢ ~A, A`. Intuitionistic sequents use the same model (plan
 decision D1): an ILL sequent is a one-sided sequent of a particular shape,
-which step 8 of the plan tests on the forest; there is no second data model.
+read back by `Reading` (below); there is no second data model.
+
+## The intuitionistic reading
+
+`occurrences/reading.rs` reads a one-sided sequent as a two-sided
+intuitionistic one: `Reading::new(&forest)` gives every occurrence a
+`Position`, `Input` (a hypothesis, or the antecedent of a goal) or
+`Output` (the goal, or the antecedent of a hypothesis), and names the
+`goal` root, or fails with a `ShapeError` (`describe(&forest)` for
+formulas). This is Lamarche's polarization, and what the two-sided engine,
+the checker, the two-sided derivation and the future essential nets read.
+
+- **The grammar.** In output position `⊗ ⊕ & ! 1 ⊤ 0`, atoms `a`, and
+  `A ⊸ B` stored as `A⊥ ⅋ B`; in input position the duals: `⅋ & ⊕ ? ⊥ 0
+  ⊤`, `~a`, and `A ⊗ B⊥` for a hypothesis `A ⊸ B`. The position flips at
+  the antecedent of an implication (an output `⅋` or an input `⊗`) and
+  nowhere else. `Reading::implication(o)` returns (antecedent, consequent)
+  for exactly those occurrences; `formula(o)` prints an occurrence as the
+  intuitionistic formula its position makes it (`⊥` as `1`, an input `⊤`
+  as `0`, an input `⊗` as `⊸`); `Display` prints `Γ ⊢ A`.
+- **The choices, made deterministically.** A bottom-up pass computes which
+  positions each occurrence can take (`⊤` and `0` both, `Var` output
+  only, and so on); the first occurrence with neither, in descending id
+  order, is `ShapeError::Formula` (a minimal offending subformula). The
+  goal is the root that can only be output (two such roots:
+  `SeveralGoals`; none that can be output: `NoGoal`), else the *last*
+  root, by id, that can be output. Inside an implication the left factor
+  is the antecedent when that reading works and the right one otherwise,
+  so `b ⅋ ~a` reads as `a ⊸ b` too (the symmetric reading).
+- **Ambiguity is real and cannot be resolved from the arena.** Only
+  formulas built from `⊤` and `0` alone can stand on either side, and for
+  those the written succedent is lost: `Sequent::optimize` sorts the roots
+  by term and hash-conses, so a `⊤`-built succedent equal to a hypothesis
+  subterm gets an early id and another root becomes the goal (`0, ⊤ ⊢ ⊤`
+  prints as `0, 0 ⊢ 0`). A review brute-forced 607 464 such sequents and
+  found no pair of readings that differ in provability, so the verdict is
+  unaffected; only the two-sided print and derivation show the other
+  reading. Engine, checker and view all call `Reading::new` on the same
+  forest, which is what keeps them consistent; never hand one of them a
+  reading of a different forest.
+- **`Fragment::name_in(mode)`** is the mode-aware name (`IMLL`, `IMLL with
+  units`, `IALL`, `IMALL`, `IMELL`, `ILL`; the classical `Display` is
+  unchanged), and the JSON of an `Outcome` uses it; a `Fragment` reads
+  back from either spelling.
 
 ## Terms, kinds, fragments
 
@@ -162,12 +205,23 @@ that cannot repeat the engine's mistakes. Engines only call `Proof::check`.
   after its subformula and resets the flag, because `⊢ !A, Δ` holds only for
   `?` contexts, which `Θ` already covers. The derivation view instantiates
   the absorbed context top-down.
-- Intuitionistic mode is refused (`Problem::Intuitionistic`) rather than
-  checked as classical: the one-succedent condition needs the input/output
-  side of every occurrence, which depends on which root is the succedent,
-  and the same term can be ILL-valid under one reading of an ambiguous
-  sequent and not under another (`⊢ ⊤, ⊤ ⊗ ⊤` read as `⊤ ⊸ 0 ⊢ ⊤` or as
-  `0 ⊢ ⊤ ⊗ ⊤`). Step 8 owns that choice and replaces the refusal.
+- **Intuitionistic mode is the classical check plus the one-succedent
+  condition** against the sequent's `Reading` (`Problem::Shape` when there
+  is none). Every ILL rule is a classical node, so what is checked is only
+  that every sequent of the proof has one goal: (R1) every derived `gamma`
+  holds at most one occurrence in output position, and exactly one unless
+  `any` (a `⊤` above supplies the goal); (R2) in `take`, an absent child in
+  output position may be absorbed by `any` only if the premise's zone has
+  no output already (else the premise's sequent would have two goals);
+  (R3) `Weaken` never weakens an output; Mix is `Forbidden`. Any failure
+  is `Problem::Succedents(n)`. These are sound and complete for "some
+  top-down instantiation of the absorbed contexts is an ILL derivation":
+  `Ax` has one output by construction, `Bang` resets `any`, `Θ` holds only
+  input occurrences (subformulas of `?`), and at a `⊗` the fixed output
+  counts of the two premises sum to two, so the side with none must
+  absorb, which R1 guarantees. The derivation view builds that
+  instantiation. A review compared the checker with an independent
+  two-sided prover on 8 000 classical proofs of ILL-shaped sequents.
 - The rule interpretation was reviewed against an independent top-down
   reference checker with random proofs, mutants and random terms (step 2's
   report); the intricate cases that review named are pinned in
@@ -185,8 +239,22 @@ one-sided inferences (`Inference { sequent, rule, principal, premises }`,
 premises before conclusions, root last, `Rule` with the usual spellings).
 The sequent is the ids in ascending order with repeats; `principal` is a
 position in it, `None` for `ax` (its sequent is the two literals) and Mix.
-Step 8 extends this to two-sided sequents; step 5 reads axiom links off the
-`ax` inferences (or the `Ax` nodes).
+Step 5 reads axiom links off the `ax` inferences (or the `Ax` nodes).
+
+`Derivation::two_sided` (`Proof::two_sided_derivation`) is the same tree
+read two-sided: it checks the proof in intuitionistic affine mode (so
+`wk` shows where used), keeps the `Reading` (`Derivation::reading`), names
+each rule by the position of its principal formula
+(`Rule::intuitionistic`: `⊗` on a hypothesis is `⊸L`, `⅋` on one `⊗L`,
+`⊕₁` on one `&L₁`, `&` on one `⊕L`, `⊥` is `1L`, an input `⊤` is `0L`, a
+dereliction `!L`, a promotion `!R`, `?c`/`?w` are `!c`/`!w`; the axiom and
+`wk` keep their names), and the renderer prints `Γ ⊢ A` with the
+hypotheses in id order. The one place the reading changes the tree: at a
+`⊗` where both premises absorb, the goal among the absorbed formulas goes
+to the premise that has none (the classical rule gives everything to the
+left one), which is what makes the instantiation an ILL derivation. The
+`Inference` sequents are the same ids as one-sided; only the rule names
+and the rendering differ.
 
 The dyadic-to-standard translation is *not* Andreoli's (which contracts all
 of `Θ` at every `⊗` and weakens all of it at every leaf): the standard
@@ -240,14 +308,31 @@ the net engine's, and the others stay zero.
   interchangeable partners, and the linking search pays a permutation's
   worth of nodes for every wrong choice among them, which the focused
   engine's counts refute at once), else to `focus`; every other classical
-  input, exponentials included, and everything in affine mode to `focus`;
-  intuitionistic mode is `Error::NoEngine`, an error and not an `Unknown`,
-  until step 8 fills the rows. `Options::engine` forces an engine;
-  `Engine::Net` on a fragment outside unit-free MLL, asserted or detected,
-  is `Error::NetFragment`, and in affine mode `Error::NetMode`. A new
+  input, exponentials included, and everything in affine mode to `focus`.
+  Before both: exactly two roots in the additive fragment with at least
+  one additive connective go to `additive` (atoms alone stay with `net`).
+  Intuitionistic mode first computes the `Reading`
+  (`Error::NotIntuitionistic`, whose message has ids; the CLI describes it
+  with formulas) and refuses Mix (`Error::IntuitionisticMix`: a Mix premise
+  would have no goal); then the same rows, with `two_sided` in place of
+  `focus`, and `net` on unit-free IMLL by the embedding (below).
+  `Options::engine` forces an engine; `Engine::Net` on a fragment outside
+  unit-free MLL, asserted or detected, is `Error::NetFragment`, and in
+  affine mode `Error::NetMode`; `Focus` in intuitionistic mode and
+  `TwoSided` in classical mode are `Error::EngineMode`; `Additive` on
+  anything but two additive-only formulas is `Error::NotAdditive`. A new
   engine gets an `Engine` variant (its `Display` is its name in text and
   JSON), a row in `prove_until`, and a value of `--engine` in the CLI
   (`.claude/rules/cli.md`).
+- **IMLL by embedding.** In intuitionistic mode the net engine runs on the
+  one-sided sequent unchanged and its proof is returned as it is: every
+  cut-free MLL proof of a sequent with one output-shaped root keeps
+  exactly one output on every sequent (an all-input MLL sequent without
+  units is unprovable, since every leaf has an output, so the split of a
+  hypothesis `A ⊸ B` can never take the goal to the antecedent's side),
+  hence any sequentialization of a classical net of an IMLL sequent passes
+  the intuitionistic checker and no essential-net condition is needed for
+  the verdict. With `1` the lowered sequent has units and goes two-sided.
 - `Options::fragment` asserts a fragment: a sequent outside it is
   `Error::FragmentMismatch`, and the search runs in the asserted fragment,
   which switches off the prunes that only hold in the smaller one and
@@ -266,11 +351,34 @@ the net engine's, and the others stay zero.
 
 `search/focus/mod.rs` is the spec's MALL-Seq and MELL-Seq in one engine, for
 every classical fragment up to full LL, with units, Mix, the exponentials
-and affine mode as rule switches (`Rules`, from `Fragment` and `Mode`). Its
+and affine mode as rule switches (`Rules`, from `Fragment` and `Mode`), and
+the spec's two-sided engine for every intuitionistic fragment when given
+the sequent's `Reading` (`Engine::TwoSided` is that configuration). Its
 functions are the spec's rules: `asynchronous` (the phase `⊢ Θ ; Γ ⇑ L`),
 `quest` (`?` into `Θ`), `prove` (a stable sequent), `focus` (`⊢ Θ ; Γ ⇓ F`),
 `initial` (the two initial rules), `split` (the `⊗` rule), `mix`. What it
 relies on:
+
+- **Two-sided is one constraint.** Every rule of the two-sided focused
+  calculus is a rule of this engine on the lowered sequent (`⊸R` and `⊗L`
+  are `⅋`, `⊸L` is a `⊗` in input position, `!L` is `quest` plus a copy,
+  and so on), and starting from one output-shaped root every rule keeps
+  exactly one output on each premise by itself, except the split of a
+  hypothesis `A ⊸ B`, where the goal must go with the consequent `B⊥`.
+  So `split`, in its free enumeration, fixes the one output member of `Γ`
+  on the consequent's side (`Reading::implication`) and enumerates the
+  rest; the forced splits need no change (the dual of an output positive
+  literal is a hypothesis in `Γ` or `Θ`, the dual of an input positive
+  literal is the goal itself or nothing, `1` and `!` are output-only, a
+  `0` factor fails), `Θ` holds only input occurrences, a leaf's `weakened`
+  never sees an output (debug-asserted), promotion needs `Γ` empty as
+  before, and the count prunes are necessary conditions on the lowered
+  sequent, hence sound. Mix is refused before the engine runs. The memo,
+  the copy budget, the loop check and the pools are indifferent to
+  positions: the key `(Θ, Γ)` determines the two-sided sequent. A
+  fresh-context review compared the engine with an independent unfocused
+  two-sided prover on about 60 000 sequents over every ILL connective,
+  linear and affine, with no disagreement.
 
 - **Dyadic sequents.** `Θ`, the unrestricted zone, is an `OccSet` of the
   subformulas of the `?` formulas decomposed on the branch; it only grows
@@ -454,8 +562,9 @@ relies on:
 
 `nets/mod.rs` is the proof-net model for unit-free MLL, with or without
 Mix; `ProofStructure::new` refuses any other fragment
-(`Error::NetFragment`), and there is no net for affine or intuitionistic
-mode (the CLI refuses those before searching). A structure is the forest
+(`Error::NetFragment`), and there is no net for affine mode (the CLI
+refuses it before searching); in intuitionistic mode the net is the one of
+the one-sided sequent. A structure is the forest
 plus `partner` (one `u32` per occurrence, `NONE` for unlinked literals and
 connectives), the stack of links in the order they were made, the coloured
 graph (`graph.rs`) and the `⅋`-free skeleton (`skeleton.rs`); `mix` says
@@ -639,13 +748,33 @@ What the code relies on:
   balanced sequents from `generate::balanced`, which pass the counts and
   are mostly unprovable; extend it rather than pinning verdicts by hand.
 
+## The additive fast path
+
+`search/additive.rs` decides a sequent of exactly two additive-only
+formulas by a recursion on pairs of subformula occurrences, one below each
+root, memoized on the pair: `⊤` closes, `&` on either side needs both
+subformulas against the other, two dual literals are an axiom, `⊕` on
+either side tries one subformula at a time, and nothing else proves
+anything. `&` is invertible and goes first; **which `⊕` to decompose is a
+real choice** (a `&` below the other formula's `⊕` may need both sides of
+this one: `⊢ ~c ⊕ ~a, b ⊕ (c & a)`), so both formulas' `⊕` are tried and
+the memo is what bounds the work by `|A|·|B|`; a first version that
+returned after the first formula's `⊕` was caught by the review. The
+procedure is the same in every mode: additive rules keep one output by
+themselves, and neither weakening nor Mix can help a two-formula sequent
+(a proof of one formula alone ends in `⊤` leaves, which absorb the other).
+`Statistics::nodes` is pairs visited, `memo_hits` and `memo_entries` the
+memo's.
+
 ## Layout
 
 `sequents` (arena, printing), `parse`, `serialize`, `fragment`, `occurrences`
-(forest and sets), `proofs` (terms in `mod.rs`, `check`, `derivation`, the
-renderer `fmt`, the crate-private `multiset`), `search` (the front door in
-`mod.rs`, the focused engine in `focus/` with `counts` and `memo`, the net
-engine in `net`, the test-only `generate`), `nets` (structures and the criterion's front door
+(forest, sets, and the intuitionistic `reading`), `proofs` (terms in
+`mod.rs`, `check`, `derivation`, the renderer `fmt`, the crate-private
+`multiset`), `search` (the front door in `mod.rs`, the focused engine in
+`focus/` with `counts` and `memo`, the net engine in `net`, the additive
+path in `additive`, the test-only `generate` with its classical and
+intuitionistic proof generators), `nets` (structures and the criterion's front door
 in `mod.rs`, the graph and the Yeo test in `graph`, the union-find in
 `skeleton`, `sequentialize`), and the empty `export` module that the plan
 fills in. `lib.rs` re-exports the public types, so users write

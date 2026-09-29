@@ -27,8 +27,9 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   standard input, refused when standard input is a terminal; output to
   `--output` or standard output.
 - `prove.rs`: `prove` and `check`, and the `net` format's refusal of
-  sequents outside unit-free MLL and of affine or intuitionistic mode
-  (`nets_exist`), before the search runs. `--copies` (default
+  sequents outside unit-free MLL and of affine mode (`nets_exist`), before
+  the search runs; in intuitionistic mode the net printed is the one of
+  the one-sided sequent. `--copies` (default
   `Options::DEFAULT_COPIES`) is the per-branch copy bound of the focused
   engine's iterative deepening; `unknown … the copy bound of N was reached`
   is exit status 3 like every other unknown. `--format net` prints the net the
@@ -62,16 +63,23 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   The time is not in the JSON (core has no clock, and the output stays
   reproducible); `--stats` prints it as text.
 - `check` takes the mode from its flags, never from the file's `mode` key.
-  A mode the checker refuses (`Problem::Intuitionistic`) is an error, exit
-  2, not an invalid proof; drop that refusal once the checker handles the
-  mode.
+- **Intuitionistic mode is a matter of presentation in the CLI**: the
+  verdict line and the JSON name the fragment through
+  `Fragment::name_in(mode)` (`IMLL`, `ILL`, …); `prove -i` and `check -i`
+  print the two-sided derivation (`Proof::two_sided_derivation`) and
+  `check -i` the sequent two-sided (`sequent_text`); `seq print -i` and
+  `seq fragment -i` do the same for a bare sequent. A sequent with no
+  intuitionistic reading is exit 2 with core's `ShapeError` described with
+  formulas (`describe` in `prove.rs`, which rebuilds the forest for that);
+  a classical proof file checked with `-i` is an invalid proof, exit 1.
 
 ## Extension points
 
 - **An engine**: a variant of `EngineArg` with a doc comment (its `--help`
   line) and its arm in `From<EngineArg> for Option<Engine>`. The verdict
   line prints `Engine`'s `Display`; `statistics` in `prove.rs` gets an arm
-  only if the engine has counters of its own, as the net engine has.
+  only if the engine has counters of its own, as the net and additive
+  engines have (`two-sided` shares the focus engine's).
 - **An output format** (`latex`, `typst`, `svg`, `rocq`): a variant of
   `Format` and its arm in `prove`'s and `check_text`'s `match format`, as
   `net` has. A format that renders the derivation builds it inside the

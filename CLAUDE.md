@@ -35,23 +35,31 @@ Workspace crates:
 
 The core API the CLI builds on: `"…".parse::<Sequent>()`, `Display` for
 pretty-printing, serde behind `serialize`, `Sequent::fragment()` for the
-fragment a sequent lives in, `Forest::new(&sequent)` for the occurrence
-forest that proof search works on, and `Proof` for a proof term over it:
-`Proof::new(forest, nodes, root)`, `check(mode)` for the independent checker,
-`derivation()` for the standard-calculus view, whose `Display` draws the
-tree; and `prove(&sequent, mode, &options)` (or `prove_until` with a stop
-closure) for proof search, which dispatches on the fragment and returns an
-`Outcome` with a three-valued `Verdict`. Two engines exist: `search::net`
-(axiom-linking search over a proof structure, the default for unit-free MLL
-with or without Mix when no literal occurs more than twice, whose
-`Outcome` also carries the net found) and
+fragment a sequent lives in (`Fragment::name_in(mode)` for its
+intuitionistic name), `Forest::new(&sequent)` for the occurrence forest
+that proof search works on, `Reading::new(&forest)` for the intuitionistic
+reading of a sequent (the `Position` of every occurrence, the goal, and
+two-sided printing `Γ ⊢ A`, or a `ShapeError`), and `Proof` for a proof
+term over the forest: `Proof::new(forest, nodes, root)`, `check(mode)` for
+the independent checker (in intuitionistic mode also the one-succedent
+condition), `derivation()` for the standard-calculus view and
+`two_sided_derivation()` for the intuitionistic one with the ILL rule
+names, whose `Display` draws the tree; and `prove(&sequent, mode,
+&options)` (or `prove_until` with a stop closure) for proof search, which
+dispatches on the fragment and the mode and returns an `Outcome` with a
+three-valued `Verdict`. The engines: `search::net` (axiom-linking search
+over a proof structure, the default for unit-free MLL with or without Mix
+when no literal occurs more than twice, in intuitionistic mode by the
+embedding of IMLL into MLL, whose `Outcome` also carries the net found),
 `search::focus` (the focused sequent engine for everything else: MLL with
 units, MALL, MELL and full LL on dyadic sequents with a per-branch copy
 bound that deepens iteratively, `Options::copies`, answering
-`Reason::CopyBound` when it binds, and affine mode, the same search with
-weakening at the leaves);
-`Options::engine` forces one, and intuitionistic mode is refused with
-`Error::NoEngine`.
+`Reason::CopyBound` when it binds; affine mode, the same search with
+weakening at the leaves; and, given the reading, the two-sided search of
+intuitionistic mode, `Engine::TwoSided`, the same engine keeping the goal
+on the consequent's side of every `⊸L` split) and `search::additive` (two
+additive-only formulas, by a memoized recursion on subformula pairs, in
+every mode); `Options::engine` forces one.
 `ProofStructure` (`nets`) is a proof net of unit-free MLL over the forest:
 `from_links`, `link`/`unlink`, `is_correct()` (the Danos–Regnier criterion
 through Yeo's deletion test, independent of the search and the checker),

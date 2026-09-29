@@ -28,8 +28,9 @@ stripped before injection, so they are free notes for maintainers.
 
 Current contents:
 - `rules/core.md` (`core/**`): the arena/NNF data model, fragments, the
-  occurrence forest, proof terms, the checker and the derivation view, the
-  search front door and the focused engine, proof nets and their
+  occurrence forest and its intuitionistic reading, proof terms, the
+  checker and the derivation view, the search front door, the focused
+  engine (one- and two-sided), the additive path, proof nets and their
   criterion, and their invariants.
 - `rules/cli.md` (`cli/**`): the `linlog` command's layout, exit statuses,
   search thread, stop polling, and where a new engine or output format
