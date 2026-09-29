@@ -117,12 +117,15 @@ even to read.** Every operation goes through `jj`, including lock updates:
 
 ## Conventions
 
-- Every source file starts with the license header, in the file's comment syntax:
+- Every source file starts with the license header, in the file's comment
+  syntax: `//` in Rust, `#` in Nix, TOML, shell, Python and YAML.
   ```
   // linlog © Fabian Lukas Grubmüller 2026
   // Licensed under the EUPL
   ```
-  The project is EUPL-1.2.
+  Prose and configuration carry none: Markdown (CLAUDE.md, `.claude/`,
+  `plan/`, README), JSON, `.gitignore`, `LICENSE` and the lock files. The
+  project is EUPL-1.2.
 - Comments are short and targeted: they say why, or what the code cannot.
   Types and names carry the rest.
 - Comments are self-contained: they make sense from inside this repository,

@@ -1,3 +1,6 @@
+# linlog © Fabian Lukas Grubmüller 2026
+# Licensed under the EUPL
+
 # Read by rustup and by modules/toolchain.nix. rust-src lets rust-analyzer
 # see the standard library.
 [toolchain]
