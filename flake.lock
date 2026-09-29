@@ -70,6 +70,23 @@
         "type": "github"
       }
     },
+    "nanoyalla": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1744023336,
+        "narHash": "sha256-r8VqJAoVCmRkHopZHC8NmANna9LFqZ4d/N3gQL+fTj4=",
+        "owner": "ComputerAidedLL",
+        "repo": "click-and-collect",
+        "rev": "6b1c25ff30a1c1dbfccdc0c1cebc272a67ab0137",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ComputerAidedLL",
+        "repo": "click-and-collect",
+        "rev": "6b1c25ff30a1c1dbfccdc0c1cebc272a67ab0137",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1790570722,
@@ -89,6 +106,7 @@
         "devshell": "devshell",
         "flake-parts": "flake-parts",
         "import-tree": "import-tree",
+        "nanoyalla": "nanoyalla",
         "nixpkgs": "nixpkgs",
         "rust-overlay": "rust-overlay",
         "treefmt-nix": "treefmt-nix"

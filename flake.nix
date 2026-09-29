@@ -35,6 +35,15 @@
     };
 
     crane.url = "github:ipetkov/crane";
+
+    # NanoYalla, the Rocq kernel the certificates are checked against: the
+    # `nanoyalla' directory of Click & coLLecT, pinned to a commit since it
+    # has no release of its own; `export::rocq::NANOYALLA' names the
+    # version those files declare.
+    nanoyalla = {
+      url = "github:ComputerAidedLL/click-and-collect/6b1c25ff30a1c1dbfccdc0c1cebc272a67ab0137";
+      flake = false;
+    };
   };
 
   outputs = inputs: inputs.flake-parts.lib.mkFlake { inherit inputs; } (inputs.import-tree ./modules);
