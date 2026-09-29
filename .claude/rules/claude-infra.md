@@ -28,7 +28,8 @@ stripped before injection, so they are free notes for maintainers.
 
 Current contents:
 - `rules/core.md` (`core/**`): the arena/NNF data model, fragments, the
-  occurrence forest and their invariants.
+  occurrence forest, proof terms, the checker and the derivation view, and
+  their invariants.
 - `rules/ci.md` (`.github/**`): how the GitHub workflows are written and pinned.
 - `agents/crate-source-explorer.md`: read-only, answers dependency-API questions
   against the Cargo.lock-pinned sources in `~/.cargo/registry`, never the web.

@@ -27,12 +27,15 @@ Workspace crates:
 
 The core API the CLI builds on: `"…".parse::<Sequent>()`, `Display` for
 pretty-printing, serde behind `serialize`, `Sequent::fragment()` for the
-fragment a sequent lives in, and `Forest::new(&sequent)` for the occurrence
-forest that proof search works on. Sequents are one-sided arena DAGs in
-negation normal form; fragments and modes are runtime values, and indices
-are `u32` newtypes. The invariants live in `.claude/rules/core.md`, which
-loads when a file under `core/` is read. `plan/README.md` is the proof-search
-plan the code follows, `plan/reports/` what each step of it did.
+fragment a sequent lives in, `Forest::new(&sequent)` for the occurrence
+forest that proof search works on, and `Proof` for a proof term over it:
+`Proof::new(forest, nodes, root)`, `check(mode)` for the independent checker,
+`derivation()` for the standard-calculus view, whose `Display` draws the
+tree. Sequents are one-sided arena DAGs in negation normal form; fragments
+and modes are runtime values, and indices are `u32` newtypes. The invariants
+live in `.claude/rules/core.md`, which loads when a file under `core/` is
+read. `plan/README.md` is the proof-search plan the code follows,
+`plan/reports/` what each step of it did.
 
 ## Commands
 
