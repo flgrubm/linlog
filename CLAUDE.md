@@ -40,9 +40,12 @@ forest that proof search works on, and `Proof` for a proof term over it:
 `derivation()` for the standard-calculus view, whose `Display` draws the
 tree; and `prove(&sequent, mode, &options)` (or `prove_until` with a stop
 closure) for proof search, which dispatches on the fragment and returns an
-`Outcome` with a three-valued `Verdict`. Only the focused engine exists
-(`search::focus`, classical MLL, units, MALL, with or without Mix); the other
-rows of the dispatch table are refused with `Error::NoEngine`.
+`Outcome` with a three-valued `Verdict`. Two engines exist: `search::net`
+(axiom-linking search over a proof structure, the default for unit-free MLL
+with or without Mix, whose `Outcome` also carries the net found) and
+`search::focus` (the focused sequent engine for everything else up to MALL,
+with or without Mix); `Options::engine` forces one, and the other rows of
+the dispatch table are refused with `Error::NoEngine`.
 `ProofStructure` (`nets`) is a proof net of unit-free MLL over the forest:
 `from_links`, `link`/`unlink`, `is_correct()` (the Danos–Regnier criterion
 through Yeo's deletion test, independent of the search and the checker),

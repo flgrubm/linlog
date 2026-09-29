@@ -219,29 +219,40 @@ a test change.
 &options)` and `prove_until(…, stop)` return `Result<Outcome, Error>`, where
 `Outcome` carries the `Verdict` (`Proved(Box<Proof>)`, `Unprovable` only
 after an exhaustive search, `Unknown(Reason)`), the `Fragment` searched in,
-the `Mode`, the `Engine` that ran and the `Statistics`. `Options` has
-private fields and setters (`memo_limit`, `recursion_limit`, `engine`,
-`fragment`) and the constants `DEFAULT_MEMO_LIMIT` and
-`DEFAULT_RECURSION_LIMIT`, which the CLI shows as its defaults;
+the `Mode`, the `Engine` that ran, the `Statistics`, and `net`, the
+`ProofStructure` the net engine found (`None` from the focused engine).
+`Options` has private fields and setters (`memo_limit`, `recursion_limit`,
+`engine`, `fragment`, `test_period`) and the constants `DEFAULT_MEMO_LIMIT`
+and `DEFAULT_RECURSION_LIMIT`, which the CLI shows as its defaults;
 `Reason`, `Statistics`, `Engine` and `Outcome` are `#[non_exhaustive]` so
 later steps add variants and fields without a breaking change.
+`Statistics` has one set of counters for both engines: `nodes` is stable
+sequents for `focus` and literals chosen for `net`; `memo_hits`,
+`memo_entries` and `splits` are the focused engine's, `links` and `tests`
+the net engine's, and the others stay zero.
 
-- The dispatch is plan decision D8. Today every classical input without
-  exponentials goes to `focus`; intuitionistic and affine modes and
+- The dispatch is plan decision D8. Unit-free MLL (the empty fragment
+  included) goes to `net`, every other classical input without
+  exponentials to `focus`; intuitionistic and affine modes and
   exponentials are `Error::NoEngine`, an error and not an `Unknown`, until
-  steps 7 and 8 fill the rows. A new engine gets an `Engine` variant (its
+  steps 7 and 8 fill the rows. `Options::engine` forces an engine;
+  `Engine::Net` on a fragment outside unit-free MLL, asserted or detected,
+  is `Error::NetFragment`. A new engine gets an `Engine` variant (its
   `Display` is its name in text and JSON), a row in `prove_until`, and a
   value of `--engine` in the CLI (`.claude/rules/cli.md`).
 - `Options::fragment` asserts a fragment: a sequent outside it is
   `Error::FragmentMismatch`, and the search runs in the asserted fragment,
-  which switches off the prunes that only hold in the smaller one.
+  which switches off the prunes that only hold in the smaller one and
+  picks the engine (`--fragment mall` on an MLL input runs `focus`).
 - The crate has no clock (D11): a time limit is a closure the caller gives
-  `prove_until`, polled once per stable sequent; it answers `Unknown
-  (Reason::Stopped)`. The crate docs in `lib.rs` show the common path
-  (parse, fragment, prove, derivation, JSON) as a doc test; keep it the
-  shortest correct program when the API moves. The engine recurses on the caller's stack, bounded by
-  `Options::recursion_limit`; a caller that raises the limit runs the
-  search on a thread with a larger stack.
+  `prove_until`, polled once per node (a stable sequent, or a literal
+  chosen); it answers `Unknown (Reason::Stopped)`. The crate docs in
+  `lib.rs` show the common path (parse, fragment, prove, derivation, JSON)
+  as a doc test; keep it the shortest correct program when the API moves.
+  The focused engine recurses on the caller's stack, bounded by
+  `Options::recursion_limit`, and the net engine's sequentialization
+  recurses to the derivation's height; a caller that raises the limit or
+  proves a huge net runs the search on a thread with a larger stack.
 
 ## The focused engine
 
@@ -420,8 +431,8 @@ What the code relies on:
   same one, and `sequentialize` gives one proof per net, so the net is the
   canonical form of an MLL proof. The net of a term is meaningful only over
   the term's forest, like the term itself.
-- What a net search (step 6 of the plan) keeps outside the structure:
-  candidate counts, the choice order, the explicit stack, statistics, and
+- What the net engine keeps outside the structure: the per-atom counts,
+  the copies of literal conclusions, the explicit stack, statistics, and
   one `Scratch`. The structure offers `partner`, `unlinked`, `link`,
   `unlink`, `same_component` (the skeleton's rejection), `is_acyclic`, and
   `Forest::lca` is the other O(1) rejection.
@@ -429,13 +440,99 @@ What the code relies on:
   by first id, then `proof net`, `proof net with Mix` or `not a proof net:
   ` with the reason in formulas) and the JSON form are pinned in tests.
 
+## The net engine
+
+`search/net.rs` is the spec's MLL-Net: axiom-linking search over a
+`ProofStructure`, for unit-free MLL with or without Mix. A cut-free proof
+of MLL is its linking, so the only choices are which dual literals to pair.
+What the code relies on:
+
+- **Preprocessing** (`counts_admit`): `c = t − p + 2` (`≥` with Mix) and
+  as many `a` as `~a` per atom, else `Unprovable` at once. Both are
+  necessary (induction on cut-free proofs; Mix only raises `c`). The
+  equation is also sufficient for connectedness once a complete linking
+  is acyclic: every switching keeps `2t + p + k` edges, the forest has
+  `c = 2k − t − p` formulas (every connective is binary), so
+  `c = t − p + 2` is `k = t + 1` is "`V − 1` edges", a tree. That is why
+  `run` calls a complete linking that passed the exact test a proof net
+  without another connectedness test, and why `search` then `expect`s
+  `sequentialize` (which re-runs `is_correct`) to succeed. Do not relax
+  the preprocessing or move it after the search. The empty sequent fails
+  the equation in both modes.
+- **Two constant-time rejections** of a candidate link, sound in every
+  partial linking because a switching cycle survives every extension:
+  the lowest common ancestor of two literals of one conclusion is a `⊗`
+  (the tree path plus the link is a cycle kept by the switchings that
+  keep the path's `⅋` premises: *some* switching, which is all the
+  criterion needs; it is not kept by every switching when a `⅋` lies on
+  the path, so no stronger rule follows from it), and the `⅋`-free
+  skeleton already joins them (`same_component`: a cycle with no `⅋`
+  premise edge, kept by every switching). `Forest::lca` is `None` across
+  roots, and the rule is only valid within one root.
+- **Symmetry breaking for equal literal conclusions only.** Conclusions
+  that are the same literal (same atom and sign, both roots) are chained
+  in id order (`copy_before`, `copy_after`), and a link is admissible only
+  if the partners of the chain ascend with the conclusions. Sound because
+  swapping two such conclusions is an automorphism of the structure, so it
+  maps nets to nets, and the lexicographically least member of an orbit
+  (partners listed by literal id) has ascending partners: if consecutive
+  copies `x_i < x_{i+1}` had partners `p > q`, the swap differs at
+  `{x_i, x_{i+1}, p, q}` and is smaller at `min(x_i, q)`. The argument
+  covers every group at once, however the partners lie. It does **not**
+  extend to equal compound conclusions with a first-literal key: two
+  copies of `F` and two of `G` whose first literals link into each other's
+  copies at non-first positions have an orbit in which no member sorts
+  both groups; a compound extension needs keys under roots that no
+  symmetry moves, and is a follow-up. The spec forbids symmetry breaking
+  inside formulas, which is the loss on Horn encodings (below).
+- **Choice order** (`choose`): the unlinked literal with the fewest
+  admissible partners, ties to the first in atom order, `a` before `~a`,
+  then id; every unlinked literal is inspected, so a literal without an
+  admissible partner is a dead end found now (forward checking). The
+  counting of one literal stops at the best count so far, which never
+  hides a zero. Partners are then enumerated in id order over
+  `forest.literals(atom, !sign)`. All of this makes the run deterministic.
+- **The exact test** (`is_acyclic`) runs after every link on a structure
+  of at most 200 occurrences and after every fourth link above that
+  (`Options::test_period` overrides; zero counts as one), and always on a
+  complete linking. Between tests a doomed branch is followed for at most
+  `period − 1` links. `is_correct` (witnesses, allocation) is never called
+  in the loop; `sequentialize` calls it once at the end.
+- **The stack** (`Frame { literal, next }`): every frame but the top has
+  its current link made, the top is looking for one; `next_partner`
+  moves `next` past the partner it returns, so a linking is tried at most
+  once; a dead end, a failed test or an exhausted frame takes the last
+  link back, always in stack order, which the structure's undo log
+  requires. `remaining[atom]` (unlinked pairs per atom) follows every
+  link and unlink. The stop condition is polled once per node, in
+  `decide`, so a frame's candidates run between two polls.
+- **Where it loses.** Horn encodings (Matsuoka's Partition and Lincoln's
+  two-literal 3-Partition, see `partition` in the tests) have few atoms
+  with many occurrences, and the equal literals inside `b ⊗ b ⊗ b` and
+  `~b ⅋ ~b` are interchangeable, so a wrong early choice costs a whole
+  symmetric subtree before a cycle appears; the focused engine refutes the
+  same sequents through the counts of each `⊗` split in milliseconds
+  where the net engine needs seconds or does not finish. Distinct atoms
+  and wide contexts are where the net engine wins. Symmetry breaking for
+  the leaves of a pure `⊗` or `⅋` tree of equal literals (sound: the
+  leaves of a `⊗` tree share every switching's component, and a `⅋` tree
+  opens to interchangeable conclusions) is the follow-up the plan's step
+  14 should measure before the default for unit-free MLL is settled.
+- **Every proof passes the checker** (`debug_assert!` in `search`, every
+  test), and every net is the net of its proof (`from_proof` in the tests'
+  `run`). The differential test against the focused engine
+  (`agrees_with_the_focused_engine`) covers generated provable sequents,
+  their mutants, doubled sequents (equal conclusions) and random
+  balanced sequents from `generate::balanced`, which pass the counts and
+  are mostly unprovable; extend it rather than pinning verdicts by hand.
+
 ## Layout
 
 `sequents` (arena, printing), `parse`, `serialize`, `fragment`, `occurrences`
 (forest and sets), `proofs` (terms in `mod.rs`, `check`, `derivation`, the
 renderer `fmt`, the crate-private `multiset`), `search` (the front door in
-`mod.rs`, the focused engine in `focus/` with `counts` and `memo`, the
-test-only `generate`), `nets` (structures and the criterion's front door
+`mod.rs`, the focused engine in `focus/` with `counts` and `memo`, the net
+engine in `net`, the test-only `generate`), `nets` (structures and the criterion's front door
 in `mod.rs`, the graph and the Yeo test in `graph`, the union-find in
 `skeleton`, `sequentialize`), and the empty `export` module that the plan
 fills in. `lib.rs` re-exports the public types, so users write
@@ -491,7 +588,9 @@ same test file:
   and for `proved` the proof's own `sequent` and `proof` keys, flattened, so
   that the whole outcome deserializes as a `Proof` (serde ignores the other
   keys) and `linlog check` reads the output of `linlog prove --format json`.
-  A new `Reason` variant or `Statistics` field needs its line in the proxy.
+  A new `Reason` variant or `Statistics` field needs its line in the proxy;
+  `Outcome::net` is not serialized (the proof's keys are, and the net is
+  `from_proof` of them).
 - `Forest` has no serde; it is rebuilt from the sequent.
 
 `serialize/nets.rs` writes a `ProofStructure` as `{"sequent": …, "mix":

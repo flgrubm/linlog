@@ -28,7 +28,10 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   `--output` or standard output.
 - `prove.rs`: `prove` and `check`, and the `net` format's refusal of
   sequents outside unit-free MLL and of affine or intuitionistic mode
-  (`nets_exist`), before the search runs.
+  (`nets_exist`), before the search runs. `--format net` prints the net the
+  net engine found (`Outcome::net`) and otherwise the net read off the
+  proof; `--stats` prints the counters of the engine that ran
+  (`statistics`, one arm per engine with its own counters).
 
 ## Invariants
 
@@ -64,7 +67,8 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
 
 - **An engine**: a variant of `EngineArg` with a doc comment (its `--help`
   line) and its arm in `From<EngineArg> for Option<Engine>`. The verdict
-  line prints `Engine`'s `Display`, so nothing else changes.
+  line prints `Engine`'s `Display`; `statistics` in `prove.rs` gets an arm
+  only if the engine has counters of its own, as the net engine has.
 - **An output format** (`latex`, `typst`, `svg`, `rocq`): a variant of
   `Format` and its arm in `prove`'s and `check_text`'s `match format`, as
   `net` has. A format that renders the derivation builds it inside the
