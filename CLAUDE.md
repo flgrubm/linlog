@@ -20,16 +20,16 @@ data structures are designed to be compact and cache-friendly.
 
 Workspace crates:
 - `core/` is package **`linlog`**: all logic.
-  It has five optional default features, `parse` (chumsky), `serialize`
-  (serde), `interactive` (step-by-step proving), and `latex` and `typst`
-  (the exports); the CLI enables the last three.
+  It has six optional default features, `parse` (chumsky), `serialize`
+  (serde), `interactive` (step-by-step proving), and `latex`, `typst` and
+  `svg` (the exports); the CLI enables the last four.
 - `cli/` is package **`linlog-cli`**, library **`linlog_cli`** and binary
   **`linlog`** (one call into the library; `doc = false` because it shares
   the core crate's name): a clap front end with `prove`, `check`,
   `interact` (a line-based session that reads commands from standard
   input, `interact.rs`) and `seq print|json|fragment`, and the output
-  formats `text`, `json`, `net`, `latex` and `typst` (with
-  `--standalone` for a document). The tree and its
+  formats `text`, `json`, `net`, `latex`, `typst` (with
+  `--standalone` for a document), `svg` and `net-svg`. The tree and its
   `--help` text are the doc comments in `argument_parsing.rs`; `prove.rs`
   runs the search on a thread sized from `--recursion-limit` and owns the
   output; `--copies` bounds the copies of `?` formulas per branch; exit
@@ -76,8 +76,13 @@ does not apply.
 `sequent(&sequent, form)`, `two_sided(&reading, form)` and
 `derivation(&derivation, form)` (finished or with open goals) as LaTeX for
 ebproof and Typst for curryst, each as a `Form::Fragment` or a
-`Form::Standalone` document; `core/tests/snapshots/` pins the derivations
-(`BLESS=1 cargo test -p linlog --test export` rewrites them).
+`Form::Standalone` document (set in Euler); `export::svg` (feature `svg`)
+draws `sequent(&sequent, &style)`, `two_sided(&reading, &style)`,
+`derivation(&derivation, &style)` and `net(&structure, &style)` as SVG
+documents, laid out from a committed table of Euler Math's advances, with
+`Style` for the sizes, gaps and colours; `core/tests/snapshots/` pins the
+derivations and nets (`BLESS=1 cargo test -p linlog --test export`
+rewrites them).
 `ProofStructure` (`nets`) is a proof net of unit-free MLL over the forest:
 `from_links`, `link`/`unlink`, `is_correct()` (the Danos–Regnier criterion
 through Yeo's deletion test, independent of the search and the checker),
@@ -107,7 +112,7 @@ cargo hack check --feature-powerset --depth 2 -p linlog    # and every pair
 cargo deny check                                           # licenses, bans, sources + advisories (online)
 cargo run -p linlog-cli -- <args>
 
-nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), export (the LaTeX and Typst output compiles), deadnix, actionlint, treefmt, claude-hooks
+nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), export (the LaTeX and Typst output compiles, the SVG renders), deadnix, actionlint, treefmt, claude-hooks
 nix fmt           # nixfmt, rustfmt, taplo, shfmt, shellcheck (a hook runs it on each edited file)
 nix build         # linlog-cli, whose binary is result/bin/linlog
 nix build .#doc   # the rustdoc site, as the Docs workflow publishes it
@@ -135,7 +140,8 @@ plus `core/tests/snapshots`). `checks.nix`, `devshell.nix`, `treefmt.nix`
 and `systems.nix` are what their names say; `export.nix` is the `export`
 check, which compiles the snapshots and a CLI proof with pdfLaTeX and with
 Typst and the curryst of nixpkgs (the version `export::typst::CURRYST`
-names), offline.
+names), and renders the SVG snapshots and CLI drawings with resvg, both
+with only the Euler Math font of nixpkgs' TeX Live, offline.
 
 ## CI
 

@@ -229,7 +229,7 @@ formula, `rules` names the rules that act on a formula, `apply` applies one
 (a `⊗` or Mix takes the positions of the formulas that go to its left
 premise), `undo` retracts the last step, `close` lets the search close one
 goal or all of them, `show` draws the derivation so far with the open
-goals as bare sequents (`show latex` and `show typst` as proof trees), `save` and `load` keep a session as JSON, and
+goals as bare sequents (`show latex`, `show typst` and `show svg` as proof trees), `save` and `load` keep a session as JSON, and
 `proof` checks the finished proof independently and prints it or writes
 it for `check`. In intuitionistic mode the goals are two-sided and the
 rules carry the names of ILL:
@@ -320,8 +320,10 @@ $⊢ (A ⊗ B) ⊗ C^⊥, C ⅋ (A^⊥ ⅋ B^⊥)$
 ```
 
 `--standalone` writes a document that compiles on its own instead, cropped
-to the tree: `pdflatex` needs the ebproof, cmll, amsfonts and standalone
-packages, `typst compile` fetches curryst 0.6.0 on first use. Typst
+to the tree and set in the Euler math font: `pdflatex` needs the
+ebproof, cmll, eulervm, amsfonts and standalone packages, `typst compile`
+fetches curryst 0.6.0 on first use and needs the
+[Euler Math](https://ctan.org/pkg/euler-math) font (`--font-path`). Typst
 refuses a curryst tree more than about eleven inferences high; the LaTeX
 tree has no such limit.
 
@@ -334,6 +336,37 @@ Names of more than one letter are set in italics (`\mathit{foo}`,
 `italic("foo")`), with the characters LaTeX or Typst treat specially
 escaped. In `interact`, `show latex` and `show typst` draw the derivation
 so far, an open goal as its sequent under vertical dots.
+
+`--format svg` draws the derivation as an SVG image instead, and `--format
+net-svg` the proof net of the proof, for the sequents `--format net`
+takes: the conclusions at the bottom, every `⊗` and `⅋` a circle (the
+premise edges of a `⅋` dashed and blue, since a switching keeps one of
+them), and every axiom link an arc over the literals it joins. The
+verdict becomes an XML comment. `seq print --format svg` and `show svg` in
+`interact` draw a sequent and the derivation so far. The drawings ask for
+the Euler Math font without embedding it; every text is stretched to the
+width Euler Math gives it, so a viewer without the font keeps the layout.
+The text stays selectable, and `--standalone` is refused, since an SVG is
+always a document.
+
+```console
+$ linlog prove -i --format svg --output proof.svg "1, A & B, B -o C |- C"
+$ linlog prove --format net-svg --output net.svg "A * B |- B * A"
+$ linlog seq print --format svg "A |- A"
+<svg xmlns="http://www.w3.org/2000/svg" width="70.272" height="27.2" viewBox="0 0 4392 1700" font-family="'Euler Math', 'Neo Euler', serif" font-size="1000" fill="black">
+<title>⊢ A⊥, A</title>
+<g>
+<text x="300" y="1190" textLength="1801" lengthAdjust="spacing">⊢ 𝐴</text>
+<text x="2101" y="790" textLength="611" lengthAdjust="spacing" font-size="700">⊥</text>
+<text x="2712" y="1190" textLength="1380" lengthAdjust="spacing">, 𝐴</text>
+</g>
+</svg>
+```
+
+The first two draw these:
+
+![The derivation of 1, A & B, B ⊸ C ⊢ C](core/tests/snapshots/ill.svg)
+![The proof net of ⊢ A⊥ ⅋ B⊥, B ⊗ A](core/tests/snapshots/net.svg)
 
 The syntax: `*`/`⊗` tensor, `|`/`par`/`⅋` par, `&` with, `+`/`⊕` plus,
 `-o`/`⊸` linear implication, `~A` or `A^` negation, `!` and `?`, and the
@@ -386,15 +419,17 @@ Built:
   validates, and a JSON form of the session.
 - Export of sequents and derivations, finished or in progress, to LaTeX
   (ebproof proof trees) and Typst (curryst proof trees), as fragments or
-  standalone documents.
+  standalone documents set in Euler, and drawings of sequents,
+  derivations and proof nets as SVG, laid out with the character widths
+  of the Euler Math font, a switching cycle of an incorrect net
+  highlighted.
 - The `linlog` command: `prove`, `check`, `interact` and `seq`, with time
-  limits, Ctrl-C, statistics, JSON output, proof nets, and LaTeX and Typst
-  output.
+  limits, Ctrl-C, statistics, JSON output, proof nets, and LaTeX, Typst
+  and SVG output.
 
 Planned, in roughly this order:
 
-- Drawings of derivations and proof nets as SVG, and proof certificates
-  for Rocq.
+- Proof certificates for Rocq.
 - Parallel search, a benchmark harness with the standard problem
   libraries, and performance work driven by its numbers.
 - Later: proof nets with exponential boxes, essential nets for
@@ -431,4 +466,6 @@ Interactive proving holds a derivation with open goals over the same
 forest, with the same inferences as the derivation view, and turns it back
 into a term for the checker once it is finished. The exports write
 sequents and derivations, finished or not, as LaTeX and Typst source, one
-inference at a time.
+inference at a time, and draw them and proof nets as SVG from layouts of
+their own: a tree by subtree widths, a net by its formula trees under the
+axiom links.

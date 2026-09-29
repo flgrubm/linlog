@@ -883,7 +883,8 @@ memo's.
 
 `export/` writes sequents and derivations as LaTeX (ebproof trees, cmll and
 amssymb symbols) and Typst (curryst trees), pure functions to `String`,
-each in a `Form` (`Fragment` or `Standalone`). What the code relies on:
+each in a `Form` (`Fragment` or `Standalone`), and draws them and proof
+structures as SVG documents (no `Form`: an SVG is always a document). What the code relies on:
 - **One table per target, one printer.** `notation::Notation` is the
   symbol table (connectives, units, dual mark, turnstile, the alignment
   mark, the atom escaper); `Notation::term` and `Notation::ill` are the
@@ -923,6 +924,32 @@ each in a `Form` (`Fragment` or `Standalone`). What the code relies on:
   (`modules/workspace.nix`), since `cleanCargoSource` alone drops it.
   `typst::CURRYST` and the nixpkgs curryst in `modules/export.nix` move
   together.
+- **Euler everywhere.** The standalone LaTeX loads `eulervm` and the Typst
+  page sets math in `"Euler Math"`; fragments stay font-neutral. The
+  export check runs Typst and resvg with `--ignore-system-fonts` /
+  `--skip-system-fonts` and fails on any output, so a font they cannot
+  find fails instead of falling back silently.
+- **SVG** (`export/svg/`): a third table (`NOTATION`, with the atom
+  letters as mathematical italic codepoints, which a math font sets as
+  math italic, and `\u{1}` standing for the raised `⊥`; `PLAIN` for the
+  `<title>`), and layouts of its own: `tree.rs` (a post-order pass over
+  `walk`'s exits for box widths, a pre-order pass over its enters for
+  positions; uniform rows of `line_height`), `net.rs` (literals in id
+  order, which is left to right; connectives by height; links as
+  half-ellipses whose height is proportional to their width, so nested
+  links never cross). Widths are integer thousandths of an em from
+  `font.rs`'s advance table of Euler Math 0.75 (a fixed fallback outside
+  it); all coordinates are integers, so the output is byte-stable.
+- **A superscript or subscript is its own `<text>`**, never a `<tspan>`
+  with `dy`: resvg (which Typst uses to draw SVG images) spreads
+  `textLength` wrongly across such a tspan, while every renderer agrees
+  on separate positioned texts. Spaces separate pieces instead of
+  starting or ending one. The font has no `₁`/`₂`, so rule names'
+  subscripts are lowered digits.
+- The text bounds are `font::HEIGHT` (a raised `⊥`) above and
+  `font::DEPTH` (a comma) below every baseline; the layouts reserve
+  them for every line, and the structural test in `core/tests/export.rs`
+  checks every element against the view box with the same bounds.
 
 ## Layout
 
@@ -936,7 +963,7 @@ path in `additive`, the test-only `generate` with its classical and
 intuitionistic proof generators), `nets` (structures and the criterion's front door
 in `mod.rs`, the graph and the Yeo test in `graph`, the union-find in
 `skeleton`, `sequentialize`), and `export` (the shared `notation`, and
-`latex` and `typst` behind the features of those names). `lib.rs`
+`latex`, `typst` and `svg` behind the features of those names). `lib.rs`
 re-exports the public types, so users write
 `linlog::Sequent`, `linlog::Proof`, `linlog::prove`, and so on. `hash` is
 crate-private.
