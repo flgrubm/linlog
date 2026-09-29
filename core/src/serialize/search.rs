@@ -99,6 +99,10 @@ struct StatisticsDef {
     memo_entries: usize,
     /// Context splits examined.
     splits: u64,
+    /// Axiom links the net engine tried.
+    links: u64,
+    /// Exact acyclicity tests the net engine ran.
+    tests: u64,
 }
 
 /// The serialized form of an outcome: the verdict as a word, the reason for

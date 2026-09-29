@@ -348,3 +348,35 @@ impl Generator<'_> {
         }
     }
 }
+
+/// Builds a random sequent of unit-free MLL over `atoms` atom names with
+/// `pairs` dual pairs of literals that passes the count checks of the net
+/// engine, provable or not: exactly `pairs − 1` tensors without Mix and at
+/// most that many with it, any number of pars that leaves a conclusion,
+/// joined in random order. Most such sequents are unprovable, so they test
+/// the negative side beyond what the counts reject.
+pub(crate) fn balanced(rng: &mut Rng, atoms: u8, pairs: usize, mix: bool) -> Vec<Tree> {
+    let mut formulas: Vec<Tree> = Vec::with_capacity(2 * pairs);
+    for _ in 0..pairs {
+        let a = rng.below(atoms as usize) as u8;
+        formulas.push(Tree::Var(a));
+        formulas.push(Tree::Dual(a));
+    }
+    let tensors = if mix { rng.below(pairs) } else { pairs - 1 };
+    let pars = rng.below(2 * pairs - tensors);
+    let mut joins: Vec<bool> = vec![true; tensors];
+    joins.extend(vec![false; pars]);
+    for k in (1..joins.len()).rev() {
+        joins.swap(k, rng.below(k + 1));
+    }
+    for tensor in joins {
+        let a = formulas.swap_remove(rng.below(formulas.len()));
+        let b = formulas.swap_remove(rng.below(formulas.len()));
+        formulas.push(if tensor {
+            Tree::Tensor(Box::new(a), Box::new(b))
+        } else {
+            Tree::Par(Box::new(a), Box::new(b))
+        });
+    }
+    formulas
+}

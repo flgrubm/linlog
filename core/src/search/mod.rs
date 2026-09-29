@@ -2,18 +2,21 @@
 // Licensed under the EUPL
 
 //! Proof search: the front door `prove` with its options and outcome, the
-//! dispatch on fragment and mode, and one submodule per engine (the focused
-//! sequent engine, proof-net search, the additive fast path). Only the
-//! focused engine exists so far.
+//! dispatch on fragment and mode, and one submodule per engine: proof-net
+//! search for unit-free MLL, the focused sequent engine for everything else
+//! up to MALL, and later the additive fast path.
 
 /// The focused sequent engine.
 pub mod focus;
 /// Random provable sequents for the tests.
 #[cfg(test)]
 pub(crate) mod generate;
+/// The proof-net engine.
+pub mod net;
 
 use crate::Error;
 use crate::fragment::{Fragment, Mode};
+use crate::nets::ProofStructure;
 use crate::occurrences::Forest;
 use crate::proofs::Proof;
 use crate::sequents::Sequent;
@@ -28,7 +31,8 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 ///
 /// No engine handles intuitionistic or affine mode or exponentials yet
 /// ([`Error::NoEngine`]); a sequent outside the fragment the options assert
-/// is refused ([`Error::FragmentMismatch`]); and a sequent with more
+/// is refused ([`Error::FragmentMismatch`]); the net engine is refused
+/// outside unit-free MLL ([`Error::NetFragment`]); and a sequent with more
 /// subformula occurrences than a forest can index is refused
 /// ([`Error::TooManyOccurrences`]).
 ///
@@ -42,7 +46,8 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 /// let sequent: Sequent = "A, A -o B |- B".parse()?;
 /// let outcome = prove(&sequent, Mode::CLASSICAL, &Options::default())?;
 /// assert_eq!(outcome.fragment, Fragment::MLL);
-/// assert_eq!(outcome.engine, Engine::Focus);
+/// assert_eq!(outcome.engine, Engine::Net);
+/// assert!(outcome.net.is_some(), "the net engine returns the net it found");
 /// let Verdict::Proved(proof) = outcome.verdict else {
 ///     panic!("provable");
 /// };
@@ -100,16 +105,26 @@ pub fn prove_until(
         Some(asserted) => asserted,
         None => detected,
     };
-    // The dispatch: every classical fragment up to MALL goes to the focused
-    // engine; intuitionistic and affine modes and the exponentials have no
-    // engine yet.
+    // The dispatch: unit-free MLL goes to the net engine, every other
+    // classical fragment up to MALL to the focused engine; intuitionistic
+    // and affine modes and the exponentials have no engine yet.
     if mode.intuitionistic || mode.affine || fragment.has_exponentials() {
         return Err(Error::NoEngine { fragment, mode });
     }
-    let engine = options.engine.unwrap_or(Engine::Focus);
+    let is_mll = Fragment::MLL.contains(fragment);
+    let engine = options
+        .engine
+        .unwrap_or(if is_mll { Engine::Net } else { Engine::Focus });
+    if engine == Engine::Net && !is_mll {
+        return Err(Error::NetFragment(fragment));
+    }
     let forest = Forest::new(sequent)?;
-    let (verdict, statistics) = match engine {
-        Engine::Focus => focus::search(&forest, fragment, mode, options, &mut stop),
+    let (verdict, statistics, net) = match engine {
+        Engine::Focus => {
+            let (verdict, statistics) = focus::search(&forest, fragment, mode, options, &mut stop);
+            (verdict, statistics, None)
+        }
+        Engine::Net => net::search(&forest, mode, options, &mut stop),
     };
     Ok(Outcome {
         verdict,
@@ -117,6 +132,7 @@ pub fn prove_until(
         mode,
         engine,
         statistics,
+        net,
     })
 }
 
@@ -127,13 +143,16 @@ pub fn prove_until(
 pub enum Engine {
     /// The focused sequent engine of [`focus`].
     Focus,
+    /// The proof-net engine of [`net`], for unit-free MLL only.
+    Net,
 }
 
 impl Display for Engine {
-    /// Writes the engine's name: `focus`.
+    /// Writes the engine's name: `focus` or `net`.
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Engine::Focus => f.write_str("focus"),
+            Engine::Net => f.write_str("net"),
         }
     }
 }
@@ -164,19 +183,25 @@ pub struct Options {
     engine: Option<Engine>,
     /// The fragment to search in, or `None` for the detected one.
     fragment: Option<Fragment>,
+    /// How many links the net engine makes between two exact acyclicity
+    /// tests, or `None` for the default that depends on the size of the
+    /// structure.
+    test_period: Option<u32>,
 }
 
 impl Default for Options {
     /// A memo of at most [`DEFAULT_MEMO_LIMIT`](Self::DEFAULT_MEMO_LIMIT)
     /// stable sequents, a recursion limit of
-    /// [`DEFAULT_RECURSION_LIMIT`](Self::DEFAULT_RECURSION_LIMIT), and the
-    /// engine and fragment chosen by detection.
+    /// [`DEFAULT_RECURSION_LIMIT`](Self::DEFAULT_RECURSION_LIMIT), the
+    /// engine and fragment chosen by detection, and the net engine's
+    /// exact test at its default cadence.
     fn default() -> Self {
         Self {
             memo_limit: Self::DEFAULT_MEMO_LIMIT,
             recursion_limit: Self::DEFAULT_RECURSION_LIMIT,
             engine: None,
             fragment: None,
+            test_period: None,
         }
     }
 }
@@ -224,6 +249,19 @@ impl Options {
             ..self
         }
     }
+
+    /// Sets how many links the net engine makes between two exact
+    /// acyclicity tests, or `None` for the default: every link on a
+    /// structure of at most 200 occurrences, every fourth link on a larger
+    /// one. The test also runs on every complete linking, so the period
+    /// trades time per link against how long a doomed branch is followed.
+    /// Zero counts as one.
+    pub fn test_period(self, period: Option<u32>) -> Self {
+        Self {
+            test_period: period,
+            ..self
+        }
+    }
 }
 
 /// What a search returned: the verdict, and how it was reached.
@@ -241,6 +279,9 @@ pub struct Outcome {
     pub engine: Engine,
     /// What the search cost.
     pub statistics: Statistics,
+    /// The proof net the proof was read off, when the net engine found
+    /// one; `None` for the other engines and for any other verdict.
+    pub net: Option<ProofStructure>,
 }
 
 /// What a search found: a proof, that there is none, or that it could not
@@ -292,11 +333,15 @@ impl Display for Reason {
     }
 }
 
-/// What a search cost.
+/// What a search cost. The focused engine counts stable sequents, memo use
+/// and splits; the net engine counts literals chosen, links and exact
+/// tests; the other counters stay zero.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Statistics {
-    /// The stable sequents visited, memo hits included.
+    /// The nodes of the search: the stable sequents the focused engine
+    /// visited, memo hits included, or the literals the net engine chose a
+    /// partner for.
     pub nodes: u64,
     /// The visits answered from the memo.
     pub memo_hits: u64,
@@ -305,6 +350,11 @@ pub struct Statistics {
     /// The context splits examined for `⊗` and Mix, most of them rejected by
     /// the counts.
     pub splits: u64,
+    /// The axiom links the net engine tried: each was made, and taken back
+    /// again unless it is part of the net found.
+    pub links: u64,
+    /// The exact acyclicity tests the net engine ran.
+    pub tests: u64,
 }
 
 #[cfg(all(test, feature = "parse"))]
@@ -316,27 +366,65 @@ mod tests {
         input.parse().unwrap_or_else(|e| panic!("{input:?}: {e}"))
     }
 
-    /// Every classical input without exponentials reaches the focused
-    /// engine, and the outcome says which fragment it was searched in.
+    /// Unit-free MLL reaches the net engine, every other classical input
+    /// without exponentials the focused engine, and the outcome says which
+    /// fragment it was searched in.
     #[test]
     fn dispatch() {
-        for (input, fragment) in [
-            ("|- a, ~a", Fragment::EMPTY),
-            ("a, a -o b |- b", Fragment::MLL),
-            ("|- 1, bot", Fragment::MULTIPLICATIVE_UNITS),
-            ("|- a & b, ~a + ~b", Fragment::ADDITIVES),
-            ("|- top, 0", Fragment::ADDITIVE_UNITS),
-            ("|- (a * top) + 1, ~a, bot", Fragment::MALL),
+        for (input, fragment, engine) in [
+            ("|- a, ~a", Fragment::EMPTY, Engine::Net),
+            ("a, a -o b |- b", Fragment::MLL, Engine::Net),
+            ("|- 1, bot", Fragment::MULTIPLICATIVE_UNITS, Engine::Focus),
+            ("|- a & b, ~a + ~b", Fragment::ADDITIVES, Engine::Focus),
+            ("|- top, 0", Fragment::ADDITIVE_UNITS, Engine::Focus),
+            ("|- (a * top) + 1, ~a, bot", Fragment::MALL, Engine::Focus),
         ] {
             let outcome = prove(&sequent(input), Mode::CLASSICAL, &Options::default()).unwrap();
             assert_eq!(outcome.fragment, fragment, "{input:?}");
-            assert_eq!(outcome.engine, Engine::Focus);
+            assert_eq!(outcome.engine, engine, "{input:?}");
+            assert_eq!(outcome.net.is_some(), engine == Engine::Net, "{input:?}");
             assert!(outcome.verdict.proof().is_some(), "{input:?}");
         }
     }
 
+    /// `Options::engine` forces an engine: the focused engine on MLL, the
+    /// net engine on MLL with Mix, and the net engine outside MLL is an
+    /// error.
+    #[test]
+    fn engine_override() {
+        let s = sequent("|- a * b, ~a par ~b");
+        let focus = Options::default().engine(Some(Engine::Focus));
+        let outcome = prove(&s, Mode::CLASSICAL, &focus).unwrap();
+        assert_eq!(outcome.engine, Engine::Focus);
+        assert!(outcome.verdict.proof().is_some());
+        assert!(outcome.net.is_none());
+        let net = Options::default().engine(Some(Engine::Net));
+        let outcome = prove(
+            &sequent("|- a, ~a, b, ~b"),
+            Mode::CLASSICAL.with_mix(),
+            &net,
+        )
+        .unwrap();
+        assert_eq!(outcome.engine, Engine::Net);
+        assert!(outcome.verdict.proof().is_some());
+        for (input, options) in [
+            ("|- 1", net.clone()),
+            ("|- a & b, ~a", net.clone()),
+            ("|- a, ~a", net.clone().fragment(Some(Fragment::MALL))),
+        ] {
+            let error = prove(&sequent(input), Mode::CLASSICAL, &options).unwrap_err();
+            assert!(matches!(error, Error::NetFragment(_)), "{input:?}: {error}");
+        }
+        assert_eq!(
+            prove(&sequent("|- 1"), Mode::CLASSICAL, &net)
+                .unwrap_err()
+                .to_string(),
+            "proof nets exist for MLL without units only, not for MLL with units"
+        );
+    }
+
     /// The asserted fragment must contain the sequent's, and is what the
-    /// search runs in.
+    /// search runs in, which also picks the engine.
     #[test]
     fn fragment_override() {
         let s = sequent("|- a * b, ~a, ~b");
@@ -347,6 +435,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(outcome.fragment, Fragment::MALL);
+        assert_eq!(outcome.engine, Engine::Focus);
         assert!(outcome.verdict.proof().is_some());
         let error = prove(
             &sequent("|- a & b, ~a"),

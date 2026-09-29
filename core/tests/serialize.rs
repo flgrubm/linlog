@@ -7,7 +7,7 @@
 
 #![cfg(all(feature = "parse", feature = "serialize"))]
 
-use linlog::search::{Options, prove, prove_until};
+use linlog::search::{Engine, Options, prove, prove_until};
 use linlog::{Forest, Fragment, Mode, Node, NodeId, OccId, Proof, ProofStructure, Sequent, Side};
 
 /// Parses `input` and serializes it as compact JSON.
@@ -252,27 +252,36 @@ fn outcome_json_format() {
     let outcome = prove(&s, Mode::CLASSICAL, &Options::default()).unwrap();
     let json = serde_json::to_string(&outcome).unwrap();
     let sequent = serde_json::to_string(&s).unwrap();
-    let head = r#"{"verdict":"proved","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"focus","#;
+    let head = r#"{"verdict":"proved","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"net","#;
     assert_eq!(
         json,
         format!(
-            r#"{head}"statistics":{{"nodes":2,"memo_hits":0,"memo_entries":2,"splits":1}},"sequent":{sequent},"proof":[{{"ax":[3,4]}},{{"ax":[2,0]}},{{"⊗":[1,1,0]}}]}}"#
+            r#"{head}"statistics":{{"nodes":2,"memo_hits":0,"memo_entries":0,"splits":0,"links":2,"tests":2}},"sequent":{sequent},"proof":[{{"ax":[0,2]}},{{"ax":[3,4]}},{{"⊗":[1,0,1]}}]}}"#
         )
     );
     let proof: Proof = serde_json::from_str(&json).unwrap();
     assert_eq!(proof.check(Mode::CLASSICAL), Ok(()));
+    let focus = Options::default().engine(Some(Engine::Focus));
+    let json = serde_json::to_string(&prove(&s, Mode::CLASSICAL, &focus).unwrap()).unwrap();
+    let head = r#"{"verdict":"proved","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"focus","#;
+    assert_eq!(
+        json,
+        format!(
+            r#"{head}"statistics":{{"nodes":2,"memo_hits":0,"memo_entries":2,"splits":1,"links":0,"tests":0}},"sequent":{sequent},"proof":[{{"ax":[3,4]}},{{"ax":[2,0]}},{{"⊗":[1,1,0]}}]}}"#
+        )
+    );
 
     let s: Sequent = "|- A par B, ~A, ~B".parse().unwrap();
     let outcome = prove(&s, Mode::CLASSICAL, &Options::default()).unwrap();
     assert_eq!(
         serde_json::to_string(&outcome).unwrap(),
-        r#"{"verdict":"unprovable","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"focus","statistics":{"nodes":1,"memo_hits":0,"memo_entries":1,"splits":0}}"#
+        r#"{"verdict":"unprovable","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"net","statistics":{"nodes":0,"memo_hits":0,"memo_entries":0,"splits":0,"links":0,"tests":0}}"#
     );
     let outcome =
         prove_until(&s, Mode::CLASSICAL.with_mix(), &Options::default(), || true).unwrap();
     assert_eq!(
         serde_json::to_string(&outcome).unwrap(),
-        r#"{"verdict":"unknown","reason":"stopped","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":true},"engine":"focus","statistics":{"nodes":1,"memo_hits":0,"memo_entries":0,"splits":0}}"#
+        r#"{"verdict":"unknown","reason":"stopped","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":true},"engine":"net","statistics":{"nodes":1,"memo_hits":0,"memo_entries":0,"splits":0,"links":0,"tests":0}}"#
     );
 }
 
