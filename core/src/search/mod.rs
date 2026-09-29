@@ -8,6 +8,9 @@
 
 /// The focused sequent engine.
 pub mod focus;
+/// Random provable sequents for the tests.
+#[cfg(test)]
+pub(crate) mod generate;
 
 use crate::Error;
 use crate::fragment::{Fragment, Mode};

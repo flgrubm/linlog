@@ -694,6 +694,7 @@ enum Forced {
 mod tests {
     use super::*;
     use crate::Sequent;
+    use crate::search::generate::{self, Rng, Rules};
 
     /// Runs the engine on `input` under `mode` with `options`, checks the
     /// proof if there is one, and returns the verdict and the statistics.
@@ -891,5 +892,82 @@ mod tests {
             verdict,
             Verdict::Unknown(Reason::ContextTooWide(126))
         ));
+    }
+
+    /// The mode a generated sequent is proved in.
+    fn mode_for(rules: Rules) -> Mode {
+        if rules.mix {
+            Mode::CLASSICAL.with_mix()
+        } else {
+            Mode::CLASSICAL
+        }
+    }
+
+    /// Whether `input` is provable under `mode` with `options`, panicking on
+    /// `Unknown`.
+    fn decided(input: &str, mode: Mode, options: &Options) -> bool {
+        match run(input, mode, options).0 {
+            Verdict::Proved(_) => true,
+            Verdict::Unprovable => false,
+            Verdict::Unknown(reason) => panic!("{input:?}: {reason}"),
+        }
+    }
+
+    /// Proves `samples` generated sequents of up to `budget` rules per rule
+    /// set, and decides one mutant of each with and without the memo.
+    /// Returns how many sequents and mutants were decided, how many mutants
+    /// were provable, and the most stable sequents one search visited.
+    fn generated(samples: u64, budget: usize) -> (u64, u64, u64, u64) {
+        let (mut sequents, mut mutants, mut provable_mutants, mut most_nodes) = (0, 0, 0, 0);
+        for (i, rules) in Rules::ALL.into_iter().enumerate() {
+            let mode = mode_for(rules);
+            let mut rng = Rng::new(i as u64);
+            for _ in 0..samples {
+                let budget = 2 + rng.below(budget - 1);
+                let mut formulas = generate::provable(&mut rng, rules, 3, budget);
+                let text = generate::sequent(&formulas);
+                let (verdict, statistics) = run(&text, mode, &Options::default());
+                assert!(
+                    verdict.proof().is_some(),
+                    "{text:?} is provable in {mode} mode, but the engine says {verdict:?}"
+                );
+                sequents += 1;
+                most_nodes = most_nodes.max(statistics.nodes);
+                if generate::mutate(&mut rng, &mut formulas, 3) {
+                    let text = generate::sequent(&formulas);
+                    let with_memo = decided(&text, mode, &Options::default());
+                    let without = decided(&text, mode, &Options::default().memo_limit(0));
+                    assert_eq!(
+                        with_memo, without,
+                        "{text:?} in {mode} mode, with and without the memo"
+                    );
+                    mutants += 1;
+                    provable_mutants += u64::from(with_memo);
+                }
+            }
+        }
+        (sequents, mutants, provable_mutants, most_nodes)
+    }
+
+    /// Every generated provable sequent is proved with a checked proof, in
+    /// every fragment with and without Mix, and its mutant is decided the
+    /// same way with and without the memo.
+    #[test]
+    fn generated_sequents() {
+        let (sequents, mutants, _, _) = generated(40, 10);
+        assert_eq!(sequents, 320);
+        assert!(mutants > 200, "{mutants} mutants");
+    }
+
+    /// The same on a larger sample of larger proofs; run it in release
+    /// mode and read the numbers it prints.
+    #[test]
+    #[ignore = "a larger sample; run with --release -- --ignored --nocapture"]
+    fn generated_large_sample() {
+        let (sequents, mutants, provable_mutants, most_nodes) = generated(500, 24);
+        println!(
+            "{sequents} generated sequents proved, {mutants} mutants decided consistently \
+             ({provable_mutants} of them provable), at most {most_nodes} stable sequents per search"
+        );
     }
 }
