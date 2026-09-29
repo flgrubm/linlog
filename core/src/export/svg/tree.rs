@@ -48,7 +48,6 @@ pub(super) fn draw(derivation: &Derivation, style: &Style) -> String {
     let rise = (line_height + HEIGHT - DEPTH) / 2;
     let dots = run("⋮", 1000);
     let dots_rise = line_height - DEPTH;
-    let dots_height = 560;
 
     // Up the tree: sizes, the premises' offsets, and the highest point of
     // the drawing relative to the root's baseline.
@@ -67,7 +66,7 @@ pub(super) fn draw(derivation: &Derivation, style: &Style) -> String {
         top = top.min(baseline - HEIGHT);
         let width = conclusion.width;
         if inference.rule == Rule::Open {
-            top = top.min(baseline - dots_rise - dots_height);
+            top = top.min(baseline - dots_rise - HEIGHT);
             places[id.index()] = Place {
                 width: width.max(dots.width),
                 left: (dots.width - width).max(0) / 2,

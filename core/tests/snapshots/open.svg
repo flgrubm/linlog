@@ -1,13 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="163.856" height="66.56" viewBox="0 0 10241 4160" font-family="'Euler Math', 'Neo Euler', serif" font-size="1000" fill="black">
+<svg xmlns="http://www.w3.org/2000/svg" width="163.856" height="71.84" viewBox="0 0 10241 4490" font-family="'Euler Math', 'Neo Euler', serif" font-size="1000" fill="black">
 <title>A, A ⊸ B ⊢ B</title>
 <g fill="none" stroke="black" stroke-width="40">
-<path d="M300 2560H8486"/>
-<path d="M300 1060H3204"/>
+<path d="M300 2890H8486"/>
+<path d="M300 1390H3204"/>
 </g>
-<text x="1143" y="3650" textLength="6500" lengthAdjust="spacing" id="i2">𝐴, 𝐴 ⊸ 𝐵 ⊢ 𝐵</text>
-<text x="8686" y="2760" textLength="1255" lengthAdjust="spacing" font-size="800">⊸L</text>
-<text x="300" y="2150" textLength="2904" lengthAdjust="spacing" id="i0">𝐴 ⊢ 𝐴</text>
-<text x="3404" y="1260" textLength="908" lengthAdjust="spacing" font-size="800">ax</text>
-<text x="5812" y="2150" textLength="2674" lengthAdjust="spacing" id="i1">𝐵 ⊢ 𝐵</text>
-<text x="6765" y="860" textLength="768" lengthAdjust="spacing">⋮</text>
+<text x="1143" y="3980" textLength="6500" lengthAdjust="spacing" id="i2">𝐴, 𝐴 ⊸ 𝐵 ⊢ 𝐵</text>
+<text x="8686" y="3090" textLength="1255" lengthAdjust="spacing" font-size="800">⊸L</text>
+<text x="300" y="2480" textLength="2904" lengthAdjust="spacing" id="i0">𝐴 ⊢ 𝐴</text>
+<text x="3404" y="1590" textLength="908" lengthAdjust="spacing" font-size="800">ax</text>
+<text x="5812" y="2480" textLength="2674" lengthAdjust="spacing" id="i1">𝐵 ⊢ 𝐵</text>
+<text x="6765" y="1190" textLength="768" lengthAdjust="spacing">⋮</text>
 </svg>

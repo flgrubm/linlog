@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="122.752" height="85.888" viewBox="0 0 7672 5368" font-family="'Euler Math', 'Neo Euler', serif" font-size="1000" fill="black">
+<title>⊢ A⊥ ⅋ B⊥, B ⊗ A</title>
+<g fill="none" stroke="black" stroke-width="40">
+<circle id="o0" cx="2152" cy="4278" r="380"/>
+<circle id="o3" cx="6130" cy="4278" r="380"/>
+<path d="M5942 3948L5274 3128"/>
+<path d="M6319 3948L6987 3128"/>
+<path d="M2152 4658V5028"/>
+<path d="M6130 4658V5028"/>
+</g>
+<g fill="none" stroke="#0072b2" stroke-width="40" stroke-dasharray="120 120">
+<path d="M1919 3978L990 3128"/>
+<path d="M2385 3978L3314 3128"/>
+</g>
+<g fill="none" stroke="black" stroke-width="40">
+<path id="l2-4" d="M3314 2138A980 588 0 0 1 5274 2138"/>
+<path id="l1-5" d="M990 2138A2998 1798 0 0 1 6987 2138"/>
+</g>
+<g id="o1">
+<text x="300" y="3028" textLength="770" lengthAdjust="spacing">𝐴</text>
+<text x="1070" y="2628" textLength="611" lengthAdjust="spacing" font-size="700">⊥</text>
+</g>
+<g id="o2">
+<text x="2681" y="3028" textLength="655" lengthAdjust="spacing">𝐵</text>
+<text x="3336" y="2628" textLength="611" lengthAdjust="spacing" font-size="700">⊥</text>
+</g>
+<text x="4947" y="3028" textLength="655" lengthAdjust="spacing" id="o4">𝐵</text>
+<text x="6602" y="3028" textLength="770" lengthAdjust="spacing" id="o5">𝐴</text>
+<text x="1858" y="4553" textLength="589" lengthAdjust="spacing" font-size="800">⅋</text>
+<text x="5863" y="4478" textLength="534" lengthAdjust="spacing" font-size="800">⊗</text>
+</svg>

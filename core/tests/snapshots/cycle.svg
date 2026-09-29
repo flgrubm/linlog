@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="60.016" height="67.072" viewBox="0 0 3751 4192" font-family="'Euler Math', 'Neo Euler', serif" font-size="1000" fill="black">
+<title>⊢ A ⊗ A⊥</title>
+<g fill="none" stroke="black" stroke-width="40">
+<circle id="o0" cx="1722" cy="3102" r="380"/>
+<path d="M1722 3482V3852"/>
+</g>
+<g fill="none" stroke="#0072b2" stroke-width="40" stroke-dasharray="120 120">
+</g>
+<g fill="none" stroke="black" stroke-width="40">
+</g>
+<g fill="none" stroke="#d55e00" stroke-width="40">
+<path d="M1506 2789L685 1952"/>
+<path d="M1938 2790L2760 1952"/>
+<path id="l1-2" d="M685 962A1037 622 0 0 1 2760 962"/>
+</g>
+<text x="300" y="1852" textLength="770" lengthAdjust="spacing" id="o1">𝐴</text>
+<g id="o2">
+<text x="2070" y="1852" textLength="770" lengthAdjust="spacing">𝐴</text>
+<text x="2840" y="1452" textLength="611" lengthAdjust="spacing" font-size="700">⊥</text>
+</g>
+<text x="1455" y="3302" textLength="534" lengthAdjust="spacing" font-size="800">⊗</text>
+</svg>

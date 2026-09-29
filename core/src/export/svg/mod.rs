@@ -33,10 +33,13 @@
 
 /// The metrics of the Euler Math font.
 mod font;
+/// Proof structures as formula trees under their axiom links.
+mod net;
 /// Derivations as proof trees.
 mod tree;
 
 use super::notation::Notation;
+use crate::nets::ProofStructure;
 use crate::occurrences::Reading;
 use crate::proofs::Derivation;
 use crate::sequents::Sequent;
@@ -384,6 +387,21 @@ pub fn two_sided(reading: &Reading, style: &Style) -> String {
 /// proof stays cheap.
 pub fn derivation(derivation: &Derivation, style: &Style) -> String {
     tree::draw(derivation, style)
+}
+
+/// Returns a proof structure, a proof net or not, complete or not, as an
+/// SVG document, titled with its sequent in plain text.
+///
+/// The conclusions stand in a row at the bottom and the formula trees
+/// grow upwards from them: every `⊗` and `⅋` is a small labelled circle,
+/// the edges to the two premises of a `⅋` are dashed and share a colour
+/// of their own (a switching keeps one of them), and the literals stand
+/// side by side along the top, each axiom link an arc over the two it
+/// joins; Mix leaves no trace. A structure with a switching cycle has the
+/// cycle's edges in the highlight colour. Literals and connectives are the
+/// elements with the id `o<n>` for occurrence `n`, and a link is `l<m>-<n>`.
+pub fn net(net: &ProofStructure, style: &Style) -> String {
+    net::draw(net, style)
 }
 
 #[cfg(test)]
