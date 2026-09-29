@@ -129,7 +129,14 @@ no consumer once engines run on occurrence forests.
 trait and the type parameter `I` on `Sequent` are removed: their flexibility
 has no user, they make every signature and every `impl` harder to read, and
 the spec's engines use `u32` throughout. Newtypes (`TermId`, `OccId`, `Atom`)
-keep the indices apart at the type level.
+keep the indices apart at the type level. Narrow indices were considered for
+cache footprint and rejected: a forest small enough for `u8` or `u16` fits in
+L1 at `u32` anyway, the memory that matters in search is bitsets and memo
+keys, which do not depend on index width, and the spec's `u64` bitset
+specialisation for `n ≤ 64` is the optimisation that pays. Two hedges: the
+occurrence index stays behind its single newtype so narrowing the forest
+later is a local change, and step 13's benchmarks decide with numbers
+whether to revisit.
 
 **D4. Module layout inside the `linlog` crate**, not eight crates as the
 spec proposes: the workspace stays `core/` and `cli/` (a `bench/` crate may
@@ -227,4 +234,5 @@ a package needs coordinates (it does not for ebproof and curryst trees).
 ## Status
 
 - 2026-09-29: plan written; spec committed as "Add the proof search
-  specification". No step run yet.
+  specification". D2 and D3 (runtime fragments, fixed `u32` indices)
+  confirmed by the author after discussion. No step run yet.
