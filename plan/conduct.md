@@ -25,6 +25,13 @@ Where the step is ambiguous, implement the reading its wording, the spec and
 the surrounding code most directly support, state that assumption in the
 report, and don't build for the other readings as well.
 
+When you design a library-level feature whose output people see, design
+its configuration for every front end at once (plan decision D15): one
+plain-data options value with defaults and serde, which the CLI maps its
+flags onto, the web front end holds as JSON and any other wrapper reuses;
+no choice a user might want to vary hidden in a constant. Say in the
+report which options exist and how each front end would set them.
+
 Test as necessary, not as much as possible. Commit tests only where the step
 names a behaviour to pin or the repository already keeps tests for this kind
 of change, sized like the neighbouring test files, roughly one focused test

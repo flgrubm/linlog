@@ -49,7 +49,14 @@ one form); a Rocq export has two natural forms, the lemma with its proof
 script to paste into a development and a whole `.v` file with its
 `Require`s, so take `Form`, add `rocq` to its `cfg(any(…))`, and let
 `form` in `cli/src/prove.rs` accept `--standalone` for `rocq` (it refuses
-the flag for one-form formats). Snapshots live in `core/tests/snapshots/`
+the flag for one-form formats). Decision D15 (added 2026-09-29) applies
+here from the start: whatever a user might want to vary in a certificate
+(the lemma's name, the kernel flavour if more than one is supported, the
+`Require` lines of a whole file, whether the CLI's verdict comment is
+written) is a field of one plain-data options value with `Default` and
+serde behind `serialize`, not a constant, and the report says how the
+CLI and the web front end would set each field. Snapshots live in
+`core/tests/snapshots/`
 through `core/tests/export.rs` (`snapshot`/`pin`, `BLESS=1` rewrites
 them), and `modules/export.nix` is the flake check that compiles and
 renders exactly those files plus a few CLI outputs, offline, with its

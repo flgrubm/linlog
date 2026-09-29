@@ -143,6 +143,52 @@ letters as mathematical italic code points to match Typst; and a smaller
 row height for trees without a raised `⊥` (`Style::line_height` is the
 knob).
 
+## 15h. Configurable output, and no font in the LaTeX and Typst output
+
+The author's requests of 2026-09-29, which D15 records as a decision for
+every later step; this item applies it to what steps 10 and 11 built.
+
+First the fix: the standalone LaTeX and Typst documents set a font
+(`eulervm` in `export::latex`'s preamble, `#show math.equation: set
+text(font: "Euler Math")` in `export::typst`'s page setup, both from step
+11's item 1a). Remove both: a user pastes linlog's output into a document
+and wants it to look like the rest of that document, so the program never
+chooses a font there, standalone or not. Re-bless the snapshots, drop
+`eulervm` from `modules/export.nix`'s TeX Live and keep Typst's
+`--font-path` only for what still needs it (nothing, once no document
+names a font; Typst's bundled fonts then serve the check). Euler stays
+where linlog draws (SVG, the web).
+
+Then the options. Each export gets one plain-data options value with
+`Default`, `Clone`, `PartialEq` and serde behind `serialize` (the SVG
+`Style` is the model; the LaTeX and Typst emitters take a `Form` only
+today, which becomes a field). What a user might vary:
+- the shape of an open goal: vertical dots over the sequent (today),
+  the bare sequent, a marked leaf (`?`, a name), a dotted or dashed line
+  where the target can draw one;
+- the rule-label convention: upright `L`/`R` with subscripts (today),
+  `\multimap_L`-style, no labels, or a user table;
+- turnstile alignment in two-sided LaTeX trees on or off;
+- whether the CLI's verdict and statistics comments are emitted in a
+  source-file format, and whether the LaTeX standalone class is
+  `standalone` or `article` with a preamble the user supplies;
+- the curryst import (version) and the ebproof options;
+- for SVG: the font (family name and its advance table, Euler Math the
+  default, a monospace preset with one advance for a viewer that has no
+  math font), the sizes, gaps and colours `Style` already has, a dark
+  preset, and per-formula ids on or off (15g'');
+- for the text renderer: the bar character and the gap between premises;
+- for the interactive session and the certificates: the lemma name, the
+  message language of `Refusal` if the web front end localises.
+Presets are named values of the options type (`Style::dark()`), not code
+paths. The CLI maps `--style KEY=VALUE` flags or a `--style-file` (JSON,
+the options' serde form) onto the options; the web front end holds the
+JSON in its settings and sends it back with each request; an editor
+plugin or a notebook reuses the same JSON. The step that does this
+records in `.claude/rules/core.md` that a new export option is a field,
+never a constant, and its report says how each front end sets each
+option. Fable 5.1, high.
+
 ## 15g'. Interactive follow-ups
 
 Left open by step 9, none a correctness issue. The net engine works on a

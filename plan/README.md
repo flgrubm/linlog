@@ -269,13 +269,17 @@ comes from deterministic layouts that the objects themselves suggest: a
 derivation is a tree laid out bottom-up by subtree width (as ebproof does),
 a proof net is its formula trees drawn downwards from the conclusions with
 the axiom links as arcs above the literals, a sequent is a line of text.
-The font is Euler math (the author's choice, 2026-09-29: AMS Euler through
-`eulervm` in LaTeX, the Euler Math OpenType font in Typst, SVG and the
-web), so widths cannot come from a fixed advance: the SVG layout uses a
-table of per-character advances of Euler Math measured once and committed,
-a fixed fallback advance for a character outside it, and `textLength` on
-every text run so that a viewer without the font still fits the layout.
-No graphviz, no browser-side layout. The same layouts feed the LaTeX and Typst exports where
+Where linlog itself draws (SVG, the web front end), the font is Euler
+math (the author's choice, 2026-09-29: the Euler Math OpenType font), so
+widths cannot come from a fixed advance: the SVG layout uses a table of
+per-character advances of Euler Math measured once and committed, a fixed
+fallback advance for a character outside it, and `textLength` on every
+text run so that a viewer without the font still fits the layout. Where a
+document system sets the text (LaTeX, Typst), linlog's output never
+chooses a font, not even in a standalone document: the user pastes the
+output into a document and wants it to look like the rest of that
+document (the author, 2026-09-29; step 11 had set `eulervm` and Euler
+Math there, which 15h removes). No graphviz, no browser-side layout. The same layouts feed the LaTeX and Typst exports where
 a package needs coordinates (it does not for ebproof and curryst trees).
 
 **D13. Interactive proving is a partial derivation.** The state a client
@@ -300,6 +304,23 @@ features, the `features` check and the documented command become
 `cargo hack check --feature-powerset --depth 2 -p linlog` rather than the
 full powerset; the step that adds the fifth feature makes that change in
 `modules/checks.nix` and CLAUDE.md.
+
+**D15. Whatever a user might want to vary in an output is configured
+through the library, for every front end.** A library feature whose output
+people see (text, LaTeX, Typst, SVG, certificates, the interactive
+session's messages) takes one plain-data options value with `Default`,
+`Clone` and serde behind `serialize`, and never hides a choice in a
+constant: the shape of an open goal, a rule-label convention, colours,
+sizes, the SVG font (with its advance table), whether a verdict comment is
+emitted, a lemma's name, and so on. The options are designed for the
+wrappers at once: the CLI maps flags or a config file onto them, the web
+front end holds them as JSON in its settings and sends them back, and a
+third wrapper (an editor plugin, a notebook) gets the same surface without
+new library code. Presets are named values of the options type, not
+alternative code paths. A step that adds an output feature says in its
+report which options it exposes and how each front end would set them; a
+step that finds a hidden constant a user might want to change turns it
+into an option or names it as a follow-up.
 
 ## Status
 
@@ -533,3 +554,17 @@ full powerset; the step that adds the fifth feature makes that change in
   gets the report's calls and ids; the SVG follow-ups (per-formula ids
   for clicks, anchors at the atom, a nesting-safe arc cap, disconnection
   colouring) join 15g''.
+- 2026-09-29: after the step 11 review, the author asked for two things,
+  recorded before step 12 runs. The LaTeX and Typst output must never set
+  a font, standalone documents included, since users paste it into their
+  own documents and want visual consistency: D12 now says so, and the
+  removal of step 11's `eulervm` and Euler Math lines is 15h (Euler stays
+  for SVG and the web). Visual outputs must be configurable through the
+  library, designed for the CLI, the web front end and any other wrapper
+  at once: new decision D15 (one plain-data options value per output
+  feature, with defaults and serde, presets as values, no hidden
+  constants), a paragraph in `conduct.md` so every later step designs
+  that way, 15h as the item that retrofits it to the exports (open-goal
+  shape, label convention, alignment, comments, the SVG font and its
+  advance table, presets, the CLI's `--style` flags), and a note in
+  prompt 12 applying D15 to the certificates from the start.
