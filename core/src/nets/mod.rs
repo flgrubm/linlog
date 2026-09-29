@@ -17,13 +17,18 @@
 //! derivations that differ only by the order of their rules give the same
 //! net.
 
+/// The coloured structure graph and the criterion's tests on it.
+mod graph;
 /// The `⅋`-free skeleton as a union-find with undo.
 mod skeleton;
+
+pub use graph::Scratch;
 
 use crate::Error;
 use crate::fragment::Fragment;
 use crate::occurrences::{Forest, OccId};
 use crate::sequents::{Kind, Sequent};
+use graph::Graph;
 use skeleton::Skeleton;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use thiserror::Error as ThisError;
@@ -167,6 +172,8 @@ pub struct ProofStructure {
     /// The links in the order they were made, each as the pair given to
     /// [`link`](Self::link).
     links: Vec<(OccId, OccId)>,
+    /// The coloured structure graph.
+    graph: Graph,
     /// The `⅋`-free skeleton.
     skeleton: Skeleton,
 }
@@ -191,6 +198,7 @@ impl ProofStructure {
         let literals = forest.all_literals().len();
         skeleton.commit(literals / 2);
         Ok(Self {
+            graph: Graph::new(&forest),
             forest,
             mix,
             partner: vec![NONE; n].into_boxed_slice(),
@@ -296,6 +304,7 @@ impl ProofStructure {
         self.partner[y.index()] = x.get();
         self.links.push((x, y));
         self.skeleton.union(x.get(), y.get());
+        self.graph.link(x.get(), y.get());
     }
 
     /// Takes back the last link made and returns it, or `None` if there is
@@ -306,6 +315,7 @@ impl ProofStructure {
         self.partner[x.index()] = NONE;
         self.partner[y.index()] = NONE;
         self.skeleton.undo();
+        self.graph.unlink(x.get(), y.get());
         Some((x, y))
     }
 
@@ -314,6 +324,52 @@ impl ProofStructure {
     /// such literals closes a cycle that every switching keeps.
     pub fn same_component(&self, x: OccId, y: OccId) -> bool {
         self.skeleton.same(x.get(), y.get())
+    }
+
+    /// Returns working memory for the tests of the criterion, sized for
+    /// this structure; one serves any number of calls.
+    pub fn scratch(&self) -> Scratch {
+        self.graph.scratch()
+    }
+
+    /// Returns whether no cycle survives any switching, by the deletion
+    /// procedure of Yeo's theorem: a vertex that every part of the graph
+    /// without it meets in edges of one colour only lies on no switching
+    /// cycle and goes; when none is left to delete, what remains carries a
+    /// switching cycle, or nothing remains. Meaningful on a partial
+    /// structure too: an unlinked literal lies on no cycle. Allocates
+    /// nothing; the scratch comes from [`scratch`](Self::scratch).
+    pub fn is_acyclic(&self, scratch: &mut Scratch) -> bool {
+        scratch.restore();
+        self.graph.acyclic(&self.forest, scratch)
+    }
+
+    /// Decides whether the structure is a proof net, independently of any
+    /// search and of the proof checker: every literal is linked, no cycle
+    /// survives any switching, and, unless Mix is allowed, every switching
+    /// is connected, which given acyclicity is the count of edges a
+    /// switching keeps being one less than the number of occurrences. The
+    /// error names an unlinked literal, a switching cycle or the parts the
+    /// structure falls into.
+    pub fn is_correct(&self) -> Result<(), NetError> {
+        if self.forest.is_empty() {
+            return Err(NetError::Empty);
+        }
+        if let Some(l) = self.unlinked().next() {
+            return Err(NetError::Unlinked(l));
+        }
+        let mut scratch = self.scratch();
+        if !self.is_acyclic(&mut scratch) {
+            return Err(NetError::SwitchingCycle(
+                self.graph.cycle(&self.forest, &mut scratch),
+            ));
+        }
+        if !self.mix && self.graph.switched_edges(self.links.len()) + 1 != self.forest.len() {
+            return Err(NetError::Disconnected(
+                self.graph.parts(&self.forest, &mut scratch),
+            ));
+        }
+        Ok(())
     }
 }
 
