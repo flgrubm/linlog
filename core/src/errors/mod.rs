@@ -94,6 +94,14 @@ pub enum Error {
     /// premise of a Mix would have no goal.
     #[error("Mix has no intuitionistic form: a premise of a Mix would have no goal")]
     IntuitionisticMix,
+    /// An intuitionistic goal has this many formulas on the right of `⊢`,
+    /// where a sequent of intuitionistic linear logic has exactly one.
+    #[error("an intuitionistic goal has {0} formulas on the right of ⊢ instead of one")]
+    GoalOutputs(usize),
+    /// The net engine, forced by the options, decides the sequent's roots
+    /// only, not a goal deeper in the forest.
+    #[error("the net engine decides the whole sequent only, not a goal within it")]
+    NetGoal,
     /// No engine handles the fragment in the mode yet.
     #[error("no engine for {fragment} in {mode} mode yet")]
     NoEngine {

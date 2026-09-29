@@ -19,6 +19,7 @@
 //! has one goal by itself, and neither weakening nor Mix can help a
 //! sequent of two formulas, so the procedure is the same in every mode.
 
+use super::focus::Search;
 use super::{Options, Reason, Statistics, Verdict};
 use crate::fragment::Mode;
 use crate::hash::HashMap;
@@ -35,8 +36,35 @@ pub(crate) fn search(
     options: &Options,
     stop: &mut dyn FnMut() -> bool,
 ) -> (Verdict, Statistics) {
-    let [x, y] = forest.roots() else {
-        unreachable!("the dispatch sends sequents of two formulas here");
+    let (result, nodes, statistics) = search_goal(forest, forest.roots(), options, stop);
+    let verdict = match result {
+        Ok(Some(root)) => {
+            let proof = Proof::new(forest.clone(), nodes, root)
+                .expect("the engine pushes premises before conclusions");
+            debug_assert_eq!(proof.check(mode), Ok(()), "the engine's proof");
+            Verdict::Proved(Box::new(proof))
+        }
+        Ok(None) => Verdict::Unprovable,
+        Err(reason) => Verdict::Unknown(reason),
+    };
+    (verdict, statistics)
+}
+
+/// Runs the additive fast path on a goal of exactly two additive-only
+/// occurrences of the forest, the roots or any other pair, polling `stop`
+/// at every pair of occurrences. Returns the node proving the goal (`None`
+/// when it is unprovable, or the reason the search gave up), the arena the
+/// node lives in, and the statistics. The mode plays no part: the additive
+/// rules keep one goal by themselves, and neither weakening nor Mix can
+/// help a sequent of two formulas.
+pub(crate) fn search_goal(
+    forest: &Forest,
+    goal: &[OccId],
+    options: &Options,
+    stop: &mut dyn FnMut() -> bool,
+) -> (Search, Vec<Node>, Statistics) {
+    let [x, y] = goal else {
+        unreachable!("the dispatch sends goals of two formulas here");
     };
     let mut engine = Engine {
         forest,
@@ -52,17 +80,7 @@ pub(crate) fn search(
         memo_entries: engine.memo.len(),
         ..engine.statistics
     };
-    let verdict = match result {
-        Ok(Some(root)) => {
-            let proof = Proof::new(forest.clone(), engine.nodes, root)
-                .expect("the engine pushes premises before conclusions");
-            debug_assert_eq!(proof.check(mode), Ok(()), "the engine's proof");
-            Verdict::Proved(Box::new(proof))
-        }
-        Ok(None) => Verdict::Unprovable,
-        Err(reason) => Verdict::Unknown(reason),
-    };
-    (verdict, statistics)
+    (result, engine.nodes, statistics)
 }
 
 /// The state of one run: the problem, the memo of pairs, the proof arena

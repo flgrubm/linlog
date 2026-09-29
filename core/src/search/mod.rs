@@ -20,7 +20,7 @@ pub mod net;
 use crate::Error;
 use crate::fragment::{Fragment, Mode};
 use crate::nets::ProofStructure;
-use crate::occurrences::{Forest, Reading};
+use crate::occurrences::{Forest, OccId, Reading};
 use crate::proofs::Proof;
 use crate::sequents::Sequent;
 use std::fmt::{Display, Formatter, Result as FmtResult};
@@ -102,9 +102,57 @@ pub fn prove_until(
     sequent: &Sequent,
     mode: Mode,
     options: &Options,
+    stop: impl FnMut() -> bool,
+) -> Result<Outcome, Error> {
+    let forest = Forest::new(sequent)?;
+    prove_goal(&forest, forest.roots(), mode, options, stop)
+}
+
+/// Decides a goal: a multiset of occurrences of a forest, given in any
+/// order, which stands for the sequent of those subformulas. The roots are
+/// the sequent itself, and [`prove_until`] is this function on them; any
+/// other goal is what an interactive proof leaves open, and the engine that
+/// decides it is the one its own fragment calls for, except that the net
+/// engine works on the roots only. The proof of a goal other than the
+/// roots is a [`Proof`] whose root concludes the goal, so
+/// [`Proof::check`], which expects the sequent's roots, rejects it; it is
+/// meant to be grafted onto the goal, as the interactive state does.
+///
+/// # Errors
+///
+/// Those of [`prove`], plus [`Error::OccurrenceIndexOutOfBounds`] for an
+/// occurrence outside the forest, [`Error::GoalOutputs`] for an
+/// intuitionistic goal without exactly one formula on the right of `⊢`,
+/// and [`Error::NetGoal`] for the net engine forced on a goal other than
+/// the roots.
+///
+/// # Examples
+///
+#[cfg_attr(feature = "parse", doc = "```")]
+#[cfg_attr(not(feature = "parse"), doc = "```ignore")]
+/// use linlog::search::{Options, Verdict, prove_goal};
+/// use linlog::{Forest, Mode, OccId, Sequent};
+///
+/// // ⊢ ~A, A ⊗ ~B, B, with the occurrences 0: ~A, 1: A ⊗ ~B, 2: A,
+/// // 3: ~B, 4: B. The goal ⊢ ~A, A is the left premise of the ⊗.
+/// let sequent: Sequent = "A, A -o B |- B".parse()?;
+/// let forest = Forest::new(&sequent)?;
+/// let goal = [OccId::new(0), OccId::new(2)];
+/// let outcome = prove_goal(&forest, &goal, Mode::CLASSICAL, &Options::default(), || false)?;
+/// assert!(matches!(outcome.verdict, Verdict::Proved(_)));
+/// # Ok::<(), linlog::Error>(())
+/// ```
+pub fn prove_goal(
+    forest: &Forest,
+    goal: &[OccId],
+    mode: Mode,
+    options: &Options,
     mut stop: impl FnMut() -> bool,
 ) -> Result<Outcome, Error> {
-    let detected = sequent.fragment();
+    if let Some(o) = goal.iter().find(|o| o.index() >= forest.len()) {
+        return Err(Error::OccurrenceIndexOutOfBounds(o.index(), forest.len()));
+    }
+    let detected = goal_fragment(forest, goal);
     let fragment = match options.fragment {
         Some(asserted) if !asserted.contains(detected) => {
             return Err(Error::FragmentMismatch { asserted, detected });
@@ -120,20 +168,25 @@ pub fn prove_until(
     if mode.intuitionistic && mode.mix {
         return Err(Error::IntuitionisticMix);
     }
-    let forest = Forest::new(sequent)?;
     let reading = if mode.intuitionistic {
-        Some(Reading::new(&forest).map_err(Error::NotIntuitionistic)?)
+        let reading = Reading::new(forest).map_err(Error::NotIntuitionistic)?;
+        let outputs = reading.outputs(goal.iter().copied());
+        if outputs != 1 {
+            return Err(Error::GoalOutputs(outputs));
+        }
+        Some(reading)
     } else {
         None
     };
+    let is_roots = goal == forest.roots();
     let is_mll = Fragment::MLL.contains(fragment);
     // Two formulas of the additive fragment; by default only when some
     // additive occurs, since atoms alone are the net engine's.
-    let is_additive = Fragment::ALL.contains(fragment) && forest.roots().len() == 2;
+    let is_additive = Fragment::ALL.contains(fragment) && goal.len() == 2;
     let engine = options.engine.unwrap_or({
         if is_additive && !fragment.is_empty() {
             Engine::Additive
-        } else if is_mll && !mode.affine && prefers_net(&forest) {
+        } else if is_roots && is_mll && !mode.affine && prefers_net(forest) {
             Engine::Net
         } else if mode.intuitionistic {
             Engine::TwoSided
@@ -144,6 +197,7 @@ pub fn prove_until(
     match engine {
         Engine::Net if !is_mll => return Err(Error::NetFragment(fragment)),
         Engine::Net if mode.affine => return Err(Error::NetMode(mode)),
+        Engine::Net if !is_roots => return Err(Error::NetGoal),
         Engine::Focus if mode.intuitionistic => return Err(Error::EngineMode { engine, mode }),
         Engine::TwoSided if !mode.intuitionistic => {
             return Err(Error::EngineMode { engine, mode });
@@ -151,26 +205,41 @@ pub fn prove_until(
         Engine::Additive if !is_additive => {
             return Err(Error::NotAdditive {
                 fragment,
-                roots: forest.roots().len(),
+                roots: goal.len(),
             });
         }
         _ => {}
     }
     let (verdict, statistics, net) = match engine {
-        Engine::Focus | Engine::TwoSided => {
-            let (verdict, statistics) = focus::search(
-                &forest,
-                fragment,
-                mode,
-                reading.as_ref(),
-                options,
-                &mut stop,
-            );
-            (verdict, statistics, None)
-        }
-        Engine::Net => net::search(&forest, mode, options, &mut stop),
-        Engine::Additive => {
-            let (verdict, statistics) = additive::search(&forest, mode, options, &mut stop);
+        Engine::Net => net::search(forest, mode, options, &mut stop),
+        Engine::Focus | Engine::TwoSided | Engine::Additive => {
+            let (result, nodes, statistics) = if engine == Engine::Additive {
+                additive::search_goal(forest, goal, options, &mut stop)
+            } else {
+                focus::search_goal(
+                    forest,
+                    goal,
+                    fragment,
+                    mode,
+                    reading.as_ref(),
+                    options,
+                    &mut stop,
+                )
+            };
+            let verdict = match result {
+                Ok(Some(root)) => {
+                    let proof = Proof::new(forest.clone(), nodes, root)
+                        .expect("the engine pushes premises before conclusions");
+                    debug_assert!(
+                        !is_roots || proof.check(mode).is_ok(),
+                        "the engine's proof: {:?}",
+                        proof.check(mode)
+                    );
+                    Verdict::Proved(Box::new(proof))
+                }
+                Ok(None) => Verdict::Unprovable,
+                Err(reason) => Verdict::Unknown(reason),
+            };
             (verdict, statistics, None)
         }
     };
@@ -182,6 +251,19 @@ pub fn prove_until(
         statistics,
         net,
     })
+}
+
+/// Returns the smallest fragment the goal's subformulas live in: the
+/// sequent's own fragment for the roots, and possibly a smaller one for an
+/// open goal deeper in the forest.
+fn goal_fragment(forest: &Forest, goal: &[OccId]) -> Fragment {
+    let mut fragment = Fragment::EMPTY;
+    for &o in goal {
+        for x in forest.subtree(o) {
+            fragment |= forest.kind(x).fragment();
+        }
+    }
+    fragment
 }
 
 /// The most occurrences of one literal, `a` or `~a`, a sequent may have for
@@ -726,6 +808,79 @@ mod tests {
             compared > 100 && provable > 50 && provable < compared,
             "{provable} of {compared}"
         );
+    }
+
+    /// A goal below the roots is decided in its own fragment by the focused
+    /// engine, two additive-only occurrences by the additive path, and the
+    /// two-sided engine in intuitionistic mode; the net engine is refused
+    /// off the roots, and an intuitionistic goal must have one output.
+    #[test]
+    fn goals() {
+        use crate::occurrences::OccId;
+        let o = |ids: &[u32]| ids.iter().map(|&i| OccId::new(i)).collect::<Vec<_>>();
+        // 0: ~a, 1: (a ⊗ ~b) ⊗ ?c, 2: a ⊗ ~b, 3: a, 4: ~b, 5: ?c, 6: c, 7: b.
+        let s = sequent("|- ~a, (a * ~b) * ?c, b");
+        let forest = Forest::new(&s).unwrap();
+        let options = Options::default();
+        let goal = o(&[0, 3]);
+        let outcome = prove_goal(&forest, &goal, Mode::CLASSICAL, &options, || false).unwrap();
+        assert_eq!(outcome.engine, Engine::Focus);
+        assert_eq!(outcome.fragment, Fragment::EMPTY);
+        let proof = outcome.verdict.proof().unwrap();
+        assert!(
+            proof.check(Mode::CLASSICAL).is_err(),
+            "a goal proof is not a proof of the roots"
+        );
+        let outcome =
+            prove_goal(&forest, &o(&[0, 2, 7]), Mode::CLASSICAL, &options, || false).unwrap();
+        assert!(outcome.verdict.proof().is_some());
+        assert_eq!(outcome.fragment, Fragment::MLL);
+        let outcome =
+            prove_goal(&forest, &o(&[4, 5]), Mode::CLASSICAL, &options, || false).unwrap();
+        assert!(
+            matches!(outcome.verdict, Verdict::Unprovable),
+            "{:?}",
+            outcome.verdict
+        );
+        assert_eq!(outcome.fragment, Fragment::EXPONENTIALS);
+        let net = Options::default().engine(Some(Engine::Net));
+        let error = prove_goal(&forest, &goal, Mode::CLASSICAL, &net, || false).unwrap_err();
+        assert!(matches!(error, Error::NetGoal), "{error}");
+        let error = prove_goal(&forest, &o(&[9]), Mode::CLASSICAL, &options, || false).unwrap_err();
+        assert!(
+            matches!(error, Error::OccurrenceIndexOutOfBounds(9, 8)),
+            "{error}"
+        );
+
+        // 0: (~a & ~b) ⅋ (a & b), 1: ~a & ~b, 2: ~a, 3: ~b, 4: a & b, 5: a,
+        // 6: b: the additive path on the pair below the ⅋.
+        let s = sequent("|- (~a & ~b) par (a & b)");
+        let forest = Forest::new(&s).unwrap();
+        let outcome =
+            prove_goal(&forest, &o(&[1, 4]), Mode::CLASSICAL, &options, || false).unwrap();
+        assert_eq!(outcome.engine, Engine::Additive);
+        assert!(matches!(outcome.verdict, Verdict::Unprovable));
+        let outcome =
+            prove_goal(&forest, &o(&[5, 2]), Mode::CLASSICAL, &options, || false).unwrap();
+        assert_eq!(outcome.engine, Engine::Focus);
+        assert!(outcome.verdict.proof().is_some());
+
+        // 0: ~a, 1: a ⊗ ~b, 2: a, 3: ~b, 4: b, read as a, a ⊸ b ⊢ b: the
+        // goal ⊢ ~a, a is a ⊢ a two-sided; ⊢ ~a alone has no output and
+        // ⊢ a, b two.
+        let s = sequent("a, a -o b |- b");
+        let forest = Forest::new(&s).unwrap();
+        let i = Mode::INTUITIONISTIC;
+        let outcome = prove_goal(&forest, &o(&[0, 2]), i, &options, || false).unwrap();
+        assert_eq!(outcome.engine, Engine::TwoSided);
+        assert!(outcome.verdict.proof().is_some());
+        for (goal, outputs) in [(o(&[0]), 0), (o(&[2, 4]), 2)] {
+            let error = prove_goal(&forest, &goal, i, &options, || false).unwrap_err();
+            assert!(
+                matches!(error, Error::GoalOutputs(n) if n == outputs),
+                "{error}"
+            );
+        }
     }
 
     /// The stop condition ends the search with `Unknown`.
