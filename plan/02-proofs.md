@@ -26,12 +26,28 @@ and build on the derivation view, so design the view with the conversion in
 mind: from a derivation of MLL one must be able to read off the axiom links
 (which literal occurrence is paired with which).
 
+## What step 1 left you
+
+The report names the types: `Forest` (built with `Forest::new(&sequent)`,
+owning a clone of the sequent), `OccId`, `OccSet` (a `Box<[u64]>` bitset of
+the forest's width, hashable through the crate-private `hash::HashMap`),
+`Kind`, `Polarity`, `Sign`, `Atom`, `TermId`, `Fragment`, `Mode`. There is
+no public `Sequent` constructor besides the parser and serde; tests that
+need sequents use the parser under `#[cfg(feature = "parse")]` as
+`core/tests/*.rs` already do, or crate-private struct literals inside
+`core/src`. `Fragment` and `Mode` have no serde yet; step 4 decides their
+wire form, so a proof file carries the sequent, not the mode.
+
 ## What to build
 
 1. **Proof terms (D6).** The spec's term over occurrence ids, one node per
    rule instance, stored in an arena (`Vec` of nodes with `u32` children)
-   owned by a `Proof` value that also records the forest it refers to (by
-   value or by an id the caller resolves; decide and document). Cover the
+   owned by a `Proof` value. Ownership of the forest, the report's open
+   question: `Proof` owns its `Forest` by value. One proof per problem is
+   returned, the forest is one arena plus `u32` arrays, and no lifetime or
+   `Rc`/`Arc` reaches the public API or serde; an engine keeps the forest
+   by reference during search and moves or clones it into the proof it
+   returns. Cover the
    rules of every engine in the spec so no later step has to change the
    type: axiom, `⊗`, `⅋`, `1`, `⊥`, `&`, `⊕` (side), `⊤` (`0` is never a
    rule), `!` (promotion), `?` handling in dyadic form (the `?` step that

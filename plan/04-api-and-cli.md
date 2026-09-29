@@ -63,6 +63,11 @@ then performance.
    detected and the engine used (so a user sees the auto-detection at work);
    `Unprovable` and `Unknown` say why in one line. `--json` output carries
    the outcome, the fragment, the engine, the statistics and the proof.
+   `Fragment` and `Mode` have no serde yet (step 1's report): give them a
+   wire form here, readable names rather than raw flags (`"MALL"`,
+   `{"intuitionistic": false, "affine": true, "mix": false}` or similar),
+   behind the `serialize` feature in `core`, and pin it in
+   `core/tests/serialize.rs` like the sequent format.
 4. **Tests.** CLI integration tests (`cli/tests/`) that run the binary on a
    few sequents and check verdicts, exit codes and that `--help` mentions
    every subcommand; use a test crate the ecosystem uses for this if it

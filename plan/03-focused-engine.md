@@ -26,6 +26,19 @@ CLI: `prove(&Sequent, &Mode, &Options) -> Outcome` with dispatch that, for
 now, sends every classical input without exponentials to this engine and
 rejects the rest with a clear error (steps 6 to 8 fill the table).
 
+## What steps 1 and 2 left you
+
+`Forest` and `OccSet` (`plan/reports/01-core-refactor.md` shows the API:
+`root_set`, `toggle`, `submasks` in Gray order over a compacted member list,
+`hash::HashMap<OccSet, _>` for the memo), the proof builder and checker of
+step 2 (`plan/reports/02-proofs.md`). Step 1 did not build the interval
+counts or the count equations: they are this step's. `submasks` takes at
+most 63 members: a `⊗` split over a larger context must not panic; decide
+what happens (the spec's lazy contexts are step 14 material, so an
+`Unknown` outcome with a reason is acceptable, as is a count-pruned
+enumeration that does not need a `u64` mask). Atom-only sequents
+(`Fragment::EMPTY`) and every fragment up to MALL dispatch here.
+
 ## What to build
 
 1. **The engine as the spec states it**: asynchronous phase run to

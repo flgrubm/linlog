@@ -63,27 +63,51 @@ what Opus at `xhigh`/`max` delivers.
   the cheaper alternative for 9, 10 and 13 if cost matters more than a
   first-pass finish.
 
+### How the prompts are written
+
+Following Anthropic's prompting guidance for Fable 5.1 and Opus 5.5 (the
+`claude-api` skill's migration guide, read 2026-09-29): both models do
+better with the goal, the constraints and the reason than with enumerated
+steps, so each prompt states what the step must achieve and points at the
+spec sections and reports to read, and its numbered items are requirements,
+not an order of work. The behaviours the guidance singles out for these
+models (over-planning at high effort, unrequested tidying and abstraction,
+test sprawl, ungrounded progress claims, whole-file rewrites, terse final
+summaries) are addressed once, in `conduct.md`, which the command below
+appends to every prompt: placement at the end of the first user message is
+where the guidance found such instructions most effective. `conduct.md`
+also asks for tests only where a behaviour needs pinning, and for sub-agents
+(the repository's `crate-source-explorer`, a fresh-context reviewer for
+soundness-critical code), which the guidance says Fable 5.1 uses well.
+
 ### The commands (nushell)
 
-Run from the repository root, one at a time, in order. `open --raw` passes the
-prompt file as one string; `--name` labels the session in `claude --resume`.
+Run from the repository root, one at a time, in order. `open --raw` reads a
+file as one string; the step's prompt comes first and `conduct.md` is
+appended; `--name` labels the session in `claude --resume`.
 
 ```nu
-claude --model claude-fable-5-1 --effort xhigh --name step-01 (open --raw plan/01-core-refactor.md)
-claude --model claude-fable-5-1 --effort xhigh --name step-02 (open --raw plan/02-proofs.md)
-claude --model claude-fable-5-1 --effort xhigh --name step-03 (open --raw plan/03-focused-engine.md)
-claude --model claude-opus-5-5  --effort high  --name step-04 (open --raw plan/04-api-and-cli.md)
-claude --model claude-fable-5-1 --effort xhigh --name step-05 (open --raw plan/05-proof-nets.md)
-claude --model claude-fable-5-1 --effort xhigh --name step-06 (open --raw plan/06-net-search.md)
-claude --model claude-fable-5-1 --effort xhigh --name step-07 (open --raw plan/07-exponentials.md)
-claude --model claude-fable-5-1 --effort xhigh --name step-08 (open --raw plan/08-intuitionistic.md)
-claude --model claude-opus-5-5  --effort high  --name step-09 (open --raw plan/09-latex-typst.md)
-claude --model claude-opus-5-5  --effort high  --name step-10 (open --raw plan/10-svg.md)
-claude --model claude-fable-5-1 --effort high  --name step-11 (open --raw plan/11-certificates.md)
-claude --model claude-fable-5-1 --effort xhigh --name step-12 (open --raw plan/12-parallel.md)
-claude --model claude-opus-5-5  --effort high  --name step-13 (open --raw plan/13-benchmarks.md)
+def step [n: string, model: string, effort: string, file: string] {
+  claude --model $model --effort $effort --name $"step-($n)" ((open --raw $"plan/($file)") + "\n" + (open --raw plan/conduct.md))
+}
+step 01 claude-fable-5-1 xhigh 01-core-refactor.md
+step 02 claude-fable-5-1 xhigh 02-proofs.md
+step 03 claude-fable-5-1 xhigh 03-focused-engine.md
+step 04 claude-opus-5-5  high  04-api-and-cli.md
+step 05 claude-fable-5-1 xhigh 05-proof-nets.md
+step 06 claude-fable-5-1 xhigh 06-net-search.md
+step 07 claude-fable-5-1 xhigh 07-exponentials.md
+step 08 claude-fable-5-1 xhigh 08-intuitionistic.md
+step 09 claude-opus-5-5  high  09-latex-typst.md
+step 10 claude-opus-5-5  high  10-svg.md
+step 11 claude-fable-5-1 high  11-certificates.md
+step 12 claude-fable-5-1 xhigh 12-parallel.md
+step 13 claude-opus-5-5  high  13-benchmarks.md
 ```
 
+Define `step` once per shell (or put it in `config.nu`), then run one line
+per step. Without the function, a single command reads
+`claude --model claude-fable-5-1 --effort xhigh --name step-02 ((open --raw plan/02-proofs.md) + "\n" + (open --raw plan/conduct.md))`.
 The aliases `fable` and `opus` also work for `--model`. The flags are
 documented at code.claude.com/docs/en/cli-reference.
 
@@ -235,4 +259,18 @@ a package needs coordinates (it does not for ebproof and curryst trees).
 
 - 2026-09-29: plan written; spec committed as "Add the proof search
   specification". D2 and D3 (runtime fragments, fixed `u32` indices)
-  confirmed by the author after discussion. No step run yet.
+  confirmed by the author after discussion.
+- 2026-09-29: step 1 reviewed and accepted. Seven commits, from "Drop the
+  Logic and Index type parameters" to "Document the new core model"; all
+  checks pass including `nix flake check`. The report
+  (`reports/01-core-refactor.md`) is the reference for the type names
+  (`Sequent`, `Term`, `TermId`, `Atom`, `Kind`, `Fragment`, `Mode`,
+  `Forest`, `OccId`, `OccSet`, `Sign`, `Polarity`). Decisions taken there
+  and accepted: a hand-written `OccSet` over `Box<[u64]>` instead of
+  fixedbitset; foldhash with a fixed seed; the forest owns a clone of its
+  sequent; children derived from the preorder, not stored; `submasks` for
+  up to 63 members. Open questions the report raised are assigned: proof
+  ownership of the forest (step 2), serde for `Fragment`/`Mode` (step 4),
+  intuitionistic fragment names (step 8), a public `Sequent` builder (when
+  a step needs it). Prompts 2, 3, 4 and 8 amended accordingly, and
+  `conduct.md` added to every command.

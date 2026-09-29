@@ -34,8 +34,11 @@ fast path of D8.
    output-shaped; decide and document how the symmetric reading is handled).
    It returns the polarity of every occurrence (input or output), which is
    Lamarche's polarization and what the two-sided engine, the two-sided
-   printing and step 14's essential nets use. Extend `Fragment` detection
-   with the intuitionistic fragment names (IMLL, IMALL, IMELL, ILL).
+   printing and step 14's essential nets use. Extend `Fragment` naming with
+   the intuitionistic fragment names (IMLL, IMALL, IMELL, ILL): step 1's
+   report leaves the classical `Display` as is and asks for a mode-aware
+   name (a method taking `Mode`, or a small wrapper type) that the CLI's
+   fragment line and the JSON output use.
 2. **Two-sided printing.** `Sequent` (or a view over it plus the
    polarization) prints as `Γ ⊢ A` with ILL formulas and `⊸`; the parser's
    output for `A, A -o B |- B` in intuitionistic mode prints back as
