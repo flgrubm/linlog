@@ -1,0 +1,16 @@
+\documentclass[border=5pt]{standalone}
+\usepackage{amssymb}
+\usepackage{cmll}
+\usepackage{ebproof}
+\begin{document}
+\begin{prooftree}
+\infer0[$\mathrm{ax}$]{\vdash A^\bot, A}
+\infer1[$\wn\mathrm{d}$]{\vdash \wn A^\bot, A}
+\infer0[$\mathrm{ax}$]{\vdash A^\bot, A}
+\infer1[$\wn\mathrm{d}$]{\vdash \wn A^\bot, A}
+\infer2[$\otimes$]{\vdash \wn A^\bot, \wn A^\bot, A \otimes A}
+\infer1[$\wn\mathrm{c}$]{\vdash \wn A^\bot, A \otimes A}
+\infer1[$\oc$]{\vdash \wn A^\bot, \oc (A \otimes A)}
+\infer1[$\wn\mathrm{w}$]{\vdash \wn A^\bot, \wn B^\bot, \oc (A \otimes A)}
+\end{prooftree}
+\end{document}

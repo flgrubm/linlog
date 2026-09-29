@@ -1,0 +1,12 @@
+\documentclass[border=5pt]{standalone}
+\usepackage{amssymb}
+\usepackage{cmll}
+\usepackage{ebproof}
+\begin{document}
+\begin{prooftree}
+\infer0[$\mathrm{ax}$]{A &\vdash A}
+\hypo{\vdots}
+\infer[no rule]1{B &\vdash B}
+\infer2[$\multimap\mathrm{L}$]{A, A \multimap B &\vdash B}
+\end{prooftree}
+\end{document}

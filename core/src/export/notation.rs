@@ -1,11 +1,13 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-//! What the export targets share: a symbol table per target, and the
-//! printers that write formulas and sequents through it with the
-//! bracketing of `Display`.
+//! What the export targets share: a symbol table per target, the printers
+//! that write formulas and sequents through it with the bracketing of
+//! `Display`, and the walk over a derivation that writes one inference at a
+//! time.
 
 use crate::occurrences::{Forest, OccId, Position, Reading};
+use crate::proofs::{Derivation, InfId};
 use crate::sequents::{Kind, Sequent, Term, TermId};
 
 /// How a target writes formulas and sequents: the spelling of every
@@ -190,6 +192,32 @@ impl Notation {
         if let Some(goal) = goal {
             out.push(' ');
             self.ill(out, reading, goal, false);
+        }
+    }
+}
+
+/// One step of the walk over a derivation.
+#[derive(Clone, Copy)]
+pub(crate) enum Step {
+    /// An inference is reached, before its premises; the root is at depth 0.
+    Enter(InfId, usize),
+    /// An inference is left, after its premises.
+    Exit(InfId, usize),
+}
+
+/// Walks a derivation depth-first from the root, premises in their order,
+/// and hands `visit` every inference once on the way up and once on the
+/// way down. Exits alone come in postfix order. The walk keeps its own
+/// stack, so a derivation of any height fits.
+pub(crate) fn walk(derivation: &Derivation, mut visit: impl FnMut(Step)) {
+    let mut stack = vec![Step::Enter(derivation.root(), 0)];
+    while let Some(step) = stack.pop() {
+        visit(step);
+        if let Step::Enter(id, depth) = step {
+            stack.push(Step::Exit(id, depth));
+            for &p in derivation.inference(id).premises.iter().rev() {
+                stack.push(Step::Enter(p, depth + 1));
+            }
         }
     }
 }

@@ -1,0 +1,12 @@
+\documentclass[border=5pt]{standalone}
+\usepackage{amssymb}
+\usepackage{cmll}
+\usepackage{ebproof}
+\begin{document}
+\begin{prooftree}
+\infer0[$\mathrm{ax}$]{\vdash B^\bot, B}
+\infer0[$\mathrm{ax}$]{\vdash A^\bot, A}
+\infer2[$\otimes$]{\vdash A^\bot, B^\bot, B \otimes A}
+\infer1[$\parr$]{\vdash A^\bot \parr B^\bot, B \otimes A}
+\end{prooftree}
+\end{document}

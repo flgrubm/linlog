@@ -1,0 +1,13 @@
+\documentclass[border=5pt]{standalone}
+\usepackage{amssymb}
+\usepackage{cmll}
+\usepackage{ebproof}
+\begin{document}
+\begin{prooftree}
+\infer0[$\mathrm{ax}$]{B &\vdash B}
+\infer0[$\mathrm{ax}$]{C &\vdash C}
+\infer2[$\multimap\mathrm{L}$]{B, B \multimap C &\vdash C}
+\infer1[$\with\mathrm{L}_2$]{A \with B, B \multimap C &\vdash C}
+\infer1[$\mathbf{1}\mathrm{L}$]{\mathbf{1}, A \with B, B \multimap C &\vdash C}
+\end{prooftree}
+\end{document}

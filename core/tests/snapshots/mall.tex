@@ -1,0 +1,15 @@
+\documentclass[border=5pt]{standalone}
+\usepackage{amssymb}
+\usepackage{cmll}
+\usepackage{ebproof}
+\begin{document}
+\begin{prooftree}
+\infer0[$\mathrm{ax}$]{\vdash A^\bot, A}
+\infer1[$\oplus_2$]{\vdash A^\bot, B \oplus A}
+\infer1[$\bot$]{\vdash A^\bot, \bot, B \oplus A}
+\infer0[$\mathrm{ax}$]{\vdash B^\bot, B}
+\infer1[$\oplus_1$]{\vdash B^\bot, B \oplus A}
+\infer1[$\bot$]{\vdash B^\bot, \bot, B \oplus A}
+\infer2[$\with$]{\vdash A^\bot \with B^\bot, \bot, B \oplus A}
+\end{prooftree}
+\end{document}
