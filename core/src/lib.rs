@@ -78,6 +78,9 @@ pub mod export;
 pub mod fragment;
 /// The hash tables of this crate.
 mod hash;
+/// Problems of the LLTP benchmark library.
+#[cfg(feature = "parse")]
+pub mod lltp;
 /// Proof nets.
 pub mod nets;
 /// The occurrence forest of a sequent and sets over it.

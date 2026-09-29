@@ -39,6 +39,10 @@ pub enum Error {
     #[cfg(feature = "parse")]
     #[error("cannot parse the sequent: {}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join("; "))]
     SequentParsing(Vec<ParseError>),
+    /// The input is not an LLTP problem, for the reason given.
+    #[cfg(feature = "parse")]
+    #[error("not an LLTP problem: {0}")]
+    Lltp(String),
     /// A proof node index (first) lies outside the arena (its length second).
     #[error("a proof refers to node {0}, but it has {1} nodes")]
     NodeIndexOutOfBounds(usize, usize),
