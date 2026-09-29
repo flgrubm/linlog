@@ -25,11 +25,11 @@ amended (see "Review protocol"). `notes/` holds research the prompts rely on.
 | 7 | Exponentials: MELL and LL, affine mode | `07-exponentials.md` | Fable 5.1 | xhigh | 4 |
 | 8 | Intuitionistic mode: ILL fragments, additive fast path | `08-intuitionistic.md` | Fable 5.1 | xhigh | 6, 7 |
 | 9 | Interactive proving: partial derivations, rule application, search from a goal | `09-interactive.md` | Fable 5.1 | xhigh | 8 |
-| 10 | LaTeX and Typst export of sequents and derivations | `10-latex-typst.md` | Opus 5.5 | high | 9 |
-| 11 | SVG export of sequents, derivations and proof nets | `11-svg.md` | Opus 5.5 | high | 9 |
+| 10 | LaTeX and Typst export of sequents and derivations | `10-latex-typst.md` | Opus 5.5 | xhigh | 9 |
+| 11 | SVG export of sequents, derivations and proof nets | `11-svg.md` | Opus 5.5 | xhigh | 9 |
 | 12 | Rocq certificates | `12-certificates.md` | Fable 5.1 | high | 10 |
 | 13 | Parallel search | `13-parallel.md` | Fable 5.1 | xhigh | 9 |
-| 14 | Benchmarks, LLTP input, hard families | `14-benchmarks.md` | Opus 5.5 | high | 13 |
+| 14 | Benchmarks, LLTP input, hard families | `14-benchmarks.md` | Opus 5.5 | xhigh | 13 |
 | 14b | Performance pass on the focused engine, driven by 14's numbers | written after 14's review | Fable 5.1 | xhigh | 14 |
 | 15 | Later: MELL nets with boxes, essential nets, inverse method, Petri nets, Lambek, MALL nets, the web front end | `15-later.md` | – | – | 14b |
 
@@ -60,11 +60,30 @@ what Opus at `xhigh`/`max` delivers.
 - **Fable 5.1 at `high`** for the certificate step (12): a long,
   research-heavy session (Rocq, NanoYalla, nix) rather than a deep
   algorithmic one.
-- **Opus 5.5 at `high`** for plumbing and user-facing work (4, 10, 11, 14):
-  clap, output formats, emitters, SVG layout and a benchmark harness. Set
-  explicitly, since Opus 5.5 defaults to `medium`. Sonnet 5.5 at `xhigh` is
-  the cheaper alternative for 10, 11 and 14 if cost matters more than a
-  first-pass finish.
+- **Opus 5.5** for plumbing and user-facing work (4, 10, 11, 14): clap,
+  output formats, emitters, SVG layout and a benchmark harness. Step 4 ran
+  at `high`; 10, 11 and 14 run at `xhigh` (see the re-evaluation below).
+  Sonnet 5.5 at `xhigh` is the cheaper alternative for 10, 11 and 14 if
+  cost matters more than a first-pass finish.
+
+Re-evaluated on 2026-09-29 after step 8, against the same docs (the lineup
+and prices are unchanged). What eight steps showed: every Fable 5.1
+`xhigh` step delivered its engine or representation with a fresh-context
+reviewer and differential tests in the tens of thousands, and the reviews
+found nothing that would call for `max`; the one failure was step 7's
+first attempt exceeding the output limit, which the settings and
+`conduct.md` now prevent; step 4 on Opus 5.5 at `high` delivered the
+plumbing as asked. The remaining Fable steps keep their settings: 9's
+translation from the standard calculus back to terms and its rule
+validation are checker-grade, 13's shared memo under concurrency and 14b's
+prunes are soundness work, and 12 stays at `high` because its difficulty
+is research and packaging, which Rocq itself verifies. The Opus steps move
+from `high` to `xhigh`: the docs name `xhigh` the best setting for coding
+and agentic work, the price difference on Opus is small next to a Fable
+turn, and 10 and 11 have exactly the kind of detail (package syntax
+checked against manuals, XML escaping, arc layout) where more effort on a
+cheaper model pays. Nothing moves to Sonnet: the savings are minor against
+the cost of a step that has to be redone.
 
 ### How the prompts are written
 
@@ -99,11 +118,11 @@ claude --model claude-fable-5-1 --effort xhigh --name step-06 ((open --raw plan/
 claude --model claude-fable-5-1 --effort xhigh --name step-07 ((open --raw plan/07-exponentials.md) + "\n" + (open --raw plan/conduct.md))
 claude --model claude-fable-5-1 --effort xhigh --name step-08 ((open --raw plan/08-intuitionistic.md) + "\n" + (open --raw plan/conduct.md))
 claude --model claude-fable-5-1 --effort xhigh --name step-09 ((open --raw plan/09-interactive.md) + "\n" + (open --raw plan/conduct.md))
-claude --model claude-opus-5-5 --effort high --name step-10 ((open --raw plan/10-latex-typst.md) + "\n" + (open --raw plan/conduct.md))
-claude --model claude-opus-5-5 --effort high --name step-11 ((open --raw plan/11-svg.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort xhigh --name step-10 ((open --raw plan/10-latex-typst.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort xhigh --name step-11 ((open --raw plan/11-svg.md) + "\n" + (open --raw plan/conduct.md))
 claude --model claude-fable-5-1 --effort high --name step-12 ((open --raw plan/12-certificates.md) + "\n" + (open --raw plan/conduct.md))
 claude --model claude-fable-5-1 --effort xhigh --name step-13 ((open --raw plan/13-parallel.md) + "\n" + (open --raw plan/conduct.md))
-claude --model claude-opus-5-5 --effort high --name step-14 ((open --raw plan/14-benchmarks.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort xhigh --name step-14 ((open --raw plan/14-benchmarks.md) + "\n" + (open --raw plan/conduct.md))
 ```
 
 The aliases `fable` and `opus` also work for `--model`. The flags are
@@ -218,14 +237,15 @@ whether it is a parameter or a sibling module). Proof-net search is
 
 | Mode | Detected fragment | Engine |
 |---|---|---|
-| classical | additives only, two roots | additive (step 8) |
+| classical | additives only, two roots | additive (step 8): a memoized recursion on subformula pairs |
 | classical | MLL without units, with or without Mix, no literal more than twice | net search (step 6) |
 | classical | MLL without units, some literal three or more times | focus (step 3); threshold tuned in step 14 |
 | classical | MLL with units, MALL | focus (step 3) |
 | classical | MELL, LL | focus with exponentials and copy bound (step 7) |
 | affine | anything | focus with weakening at the leaves, bounded like linear mode (step 7); the spec's supermultiset prune is unsound, so affine mode is not a decision procedure |
-| intuitionistic | IMLL over `⊗ ⊸ 1` | embedding into net search (step 8), essential nets later (step 15) |
-| intuitionistic | IMALL, IMELL, ILL, affine variants | two-sided focus (step 8) |
+| intuitionistic | additives only, two roots | additive (step 8): the same recursion, in every mode |
+| intuitionistic | IMLL without `1`, no literal more than twice | embedding into net search (step 8): every sequentialization of the classical net is intuitionistic; essential nets later (step 15) |
+| intuitionistic | IMLL with `1` or repeated literals, IMALL, IMELL, ILL, affine variants | two-sided focus (step 8): the focused engine given the reading, keeping the goal on the consequent's side of every `⊸L` split |
 
 **D9. Outcomes are three-valued.** `Proved(proof)`, `Unprovable` (only when
 the search was exhaustive) and `Unknown` (bound or time limit hit, with the
@@ -415,3 +435,24 @@ full powerset; the step that adds the fifth feature makes that change in
   the performance pass (identical members, nested forced factors,
   per-level restarts, a hashed loop check) are in 14 and 15a'. Prompts 8,
   9, 13 and 14 amended.
+- 2026-09-29: step 8 reviewed and accepted. Nine commits, "Recognise
+  intuitionistic sequents by shape" to "Add ILLTP-style problems as a slow
+  test"; all checks pass including `nix flake check`; intuitionistic mode
+  was exercised by hand on the CLI. D1 held: `Reading` reads the one-sided
+  arena two-sided by Lamarche's polarization (`Position`, the goal, `⊸`
+  recovered, `Γ ⊢ A` printing, `ShapeError` otherwise), the checker adds
+  the one-succedent condition as three bottom-up rules, the two-sided
+  engine is the focused engine given the reading (one constraint, in the
+  `⊸L` split), unit-free IMLL goes to the net engine by the embedding
+  (proved sound in the report), and the additive fast path decides two
+  additive-only formulas in every mode. A fresh-context reviewer compared
+  everything with an independent two-sided prover on about 60 000
+  sequents and caught one bug (the additive path's `⊕` choice, fixed). The
+  planning session's decisions: the reading's tie-break among `⊤`/`0`-only
+  roots (the written succedent is lost; the verdict never differs) is
+  parked as 15a'' rather than changed, since fixing it touches the arena's
+  canonical form and JSON; D8 rewritten with the three intuitionistic
+  rows; the model and effort choices re-evaluated ("Why these models and
+  efforts": the Opus steps 10, 11 and 14 move to `xhigh`, nothing else
+  changes). Prompts 9 to 15 amended with what the reading, the two-sided
+  view and the goal search now offer.

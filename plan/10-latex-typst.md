@@ -41,7 +41,14 @@ table (decision D14).
 2. **Derivations**: ebproof's postfix `\hypo`/`\infer<n>[label]` and
    curryst's nested `rule(name: …, premises…, conclusion)`, rule labels
    from the derivation's rule enum, two-sided sequents with the turnstile
-   aligned where the package supports it. An option for the standalone
+   aligned where the package supports it. A two-sided derivation
+   (`Proof::two_sided_derivation`, `Derivation::reading()` is `Some`) is
+   printed as `proofs/fmt.rs` does: the hypotheses (occurrences in input
+   position, in id order), `⊢`, the goal, each formula spelled through
+   `Reading::formula` (which recovers `⊸`, `1` and `0` from the one-sided
+   arena; the arena's `⅋` never appears two-sided). `Rule::name` gives the
+   ILL names with Unicode subscripts (`&L₁`, `⊕R₂`); map them to the
+   target's math (`\&L_1`, `plus.circle R_2`) in one table. An option for the standalone
    document (`\documentclass{standalone}` or `article` with the preamble;
    Typst with `#import "@preview/curryst:<version>"`, version pinned in one
    constant) versus a bare fragment.

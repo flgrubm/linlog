@@ -35,8 +35,10 @@ string). Readable at the default size, scalable, with the text selectable.
    maximum of its sequent's width and the sum of its premises' widths plus
    gaps; premises centred above the conclusion; a horizontal bar with the
    rule name to its right (as ebproof draws it); the tree grows upwards
-   with the root at the bottom. Two-sided sequents for intuitionistic mode.
-   Long trees are wide; do not try to wrap.
+   with the root at the bottom. Two-sided sequents for intuitionistic mode
+   (`Derivation::reading()`, printed as step 10's emitters print them:
+   hypotheses in id order, `⊢`, the goal, formulas through
+   `Reading::formula`). Long trees are wide; do not try to wrap.
 4. **Proof net**: conclusions in a row at the bottom, each formula tree
    drawn upwards from its root with binary nodes as small labelled circles
    (`⊗`, `⅋`, `&`… only MLL nets exist, so `⊗` and `⅋`, plus Mix as

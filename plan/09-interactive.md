@@ -16,6 +16,27 @@ every item, the verification table, no pushing. Read before you start:
   match in spirit, not in format.
 - `core/src/proofs/**`, `core/src/search/**`, `cli/src/**`.
 
+## What step 8 left you
+
+`plan/reports/08-intuitionistic.md`, "For steps 9 to 12 and 15". The
+two-sided engine is not a second engine: `search::focus::search` and
+`search_goal` take an `Option<&Reading>` (`Reading::new(&forest)`, the
+intuitionistic reading of the whole forest), and with one they keep the
+goal on the consequent's side of every `⊸L` split. So `search_goal(forest,
+goal, fragment, mode, reading, options, stop)` already decides a goal
+two-sided; in intuitionistic mode a goal must hold exactly one occurrence
+in output position (`Reading::outputs`), which is what to validate when
+the client applies a rule. `search::additive::search` decides a pair of
+roots; for a goal of two additive-only occurrences it needs a pair entry,
+the rest stays with the focused engine. In intuitionistic mode a goal is
+shown two-sided (`Reading::position` picks the side, `Reading::formula`
+the ILL spelling, as `proofs/fmt.rs` does for `Derivation::two_sided`),
+a rule is named through `Rule::intuitionistic(position)`, and Mix is
+refused (`Error::IntuitionisticMix`). The one-succedent conditions the
+checker tests are R1 to R3 in `.claude/rules/core.md` § "The checker";
+the interactive layer validates the same three at application time and
+still runs the checker at the end.
+
 ## Goal
 
 A library user (the CLI now, the web client later) can build a proof step
@@ -64,10 +85,11 @@ and resumed and so that a web client can hold it.
    `search::focus::search_goal(&Forest, &[OccId], …)` (its report, "The
    API"): the asynchronous phase starts from the given occurrences with
    an empty `Θ`, `?` formulas enter `Θ` there, and it returns the node,
-   the arena and the statistics rather than a `Proof`; wrap it, extend
-   the additive path and the two-sided engine likewise, and decide
-   whether the net engine accepts subtrees as conclusions or such goals go
-   to the focused engine (state it in the report). The interactive state uses it to close one goal or every open
+   the arena and the statistics rather than a `Proof`, and since step 8
+   it takes the reading, so the two-sided engine is covered; wrap it,
+   give the additive path a pair entry, and decide whether the net engine
+   accepts subtrees as conclusions or such goals go to the focused engine
+   (state it in the report). The interactive state uses it to close one goal or every open
    goal, with the usual `Options` and stop condition, and grafts the found
    proof's derivation view onto the goal. The outcome per goal is the
    three-valued one of D9.

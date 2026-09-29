@@ -24,9 +24,11 @@ change shows its effect.
 
 1. **LLTP reader**: the `fof(...)` syntax used by LLTP/ILLTP (read the
    repository's format description and a few files; WebFetch is allowed),
-   parsed into `Sequent` with mode flags (ILL problems are two-sided). Put
-   it behind the `parse` feature in `core` or in the bench crate; decide by
-   whether the web front end could want it.
+   parsed into `Sequent` with mode flags (ILL problems are two-sided and
+   run with `Mode::INTUITIONISTIC`; the parser already lowers `Γ ⊢ A`, and
+   `Reading::new` must accept every ILLTP problem, so report any it
+   refuses). Put it behind the `parse` feature in `core` or in the bench
+   crate; decide by whether the web front end could want it.
 2. **Family generators**: Kanovich's Horn encoding of 3-Partition and
    Matsuoka's encodings for MLL, the LMSS QBF encoding for MALL (Chaudhuri's
    qbf suites are the model), and a Petri-net style !-Horn family for MELL;
@@ -64,7 +66,14 @@ change shows its effect.
    the performance pass can measure a canonical choice among identical
    members, a nested forced rule for a factor that is a tensor of positive
    literals, a per-level restart from the frontier of exhausted sequents
-   instead of re-exploring, and a hashed loop check.
+   instead of re-exploring, and a hashed loop check. Run the ILL problems
+   and the two-sided forms of these families both classically and with
+   `-i`: step 8's report measured the counter program at 21 ms two-sided
+   against 126 ms classically (the ignored test `illtp_style_slow` in
+   `core/src/search/focus/mod.rs`), and the table should say whether that
+   holds across ILLTP. The additive engine (two additive-only formulas) is
+   a row of its own; it is linear in the product of the sizes and should
+   never appear among the timeouts.
 7. **The known slow cases as benchmark families.** Step 3's report
    ("Performance observations", "Open questions and follow-ups") names
    them: refuting a wide sequent under Mix costs about `3^k`; refuting an

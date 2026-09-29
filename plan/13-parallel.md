@@ -31,6 +31,15 @@ with `get`/`insert` that a sharded map replaces; the stop closure polled per
 stable sequent is where the stop flag goes; `Engine` holds all state and its
 pools, so one engine per worker; there is no global.
 
+## What step 8 left you
+
+The two-sided engine is the focused engine given a `Reading`
+(`Engine::TwoSided` names the configuration), so whatever cube-and-conquer
+does to the focused engine covers intuitionistic mode; the reading is
+read-only and shared. The additive path (`search::additive`, a memoized
+recursion on subformula pairs) is small enough to stay sequential; say so
+rather than parallelizing it.
+
 ## What to build
 
 1. **Runtime**: one rayon pool sized by `--jobs`; the stop flag; the sharded

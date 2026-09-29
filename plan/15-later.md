@@ -21,7 +21,11 @@ polarization from step 8, correctness by directed acyclicity plus the
 dominator condition (Murawski–Ong), incremental search with a transitive
 closure bit-matrix and an undo log (Moot 2008). Compare against the
 embedding route of step 8 on the benchmarks of step 14 before making it the
-default for IMLL. Fable 5.1, xhigh.
+default for IMLL: step 8 showed the verdict needs no essential-net
+condition (every sequentialization of a classical net of an IMLL sequent
+is intuitionistic), so this is a performance alternative, and its report
+sketches the engine as the dominator condition added to the net engine's
+`complete` branch. Fable 5.1, xhigh.
 
 ## 15a'. Focused-engine follow-ups from the exponentials
 
@@ -35,6 +39,19 @@ and a hash per branch-stack entry for the loop check. Separately, whether
 a sound and useful affine prune exists (Kopylov's decidability argument
 does not give one directly; the spec's was unsound) is a research question
 to keep open; until then affine mode stays bounded.
+
+## 15a''. Intuitionistic follow-ups
+
+Left open by step 8, none of them a correctness issue. The written
+succedent: for formulas built from `⊤` and `0` alone the reading's goal is
+the last root by id, not the written one (`0, ⊤ ⊢ ⊤` prints as `0, 0 ⊢ 0`;
+provability never differs, 607 464 cases brute-forced), and recovering it
+means the arena keeps the parser's root order or the count of right-hand
+roots, a change to `Sequent`'s canonical form and JSON; do it only if a
+user of the two-sided print or the certificates asks. The additive path on
+more than two roots, and on a `!` of an additive formula, is decided by
+the focused engine today. The identical-hypotheses follow-up of 15a'
+applies two-sided as well.
 
 ## 15b'. Net-engine pruning for repeated literals
 

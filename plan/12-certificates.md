@@ -24,7 +24,14 @@ default, enabled by the CLI): from a derivation, a Rocq script that certifies th
 in a Yalla-based kernel, the way Click & coLLecT does with NanoYalla, for
 classical derivations (MLL, MALL, MELL, LL, with Mix where the kernel
 supports it) and, if Yalla's ILL development makes it reasonable, for
-intuitionistic ones. `linlog prove --format rocq`. A way to actually check
+intuitionistic ones: Yalla's `ill` takes two-sided sequents with the ILL
+rules, `Derivation::two_sided` is that view (the same inferences as the
+classical one, named through `Rule::intuitionistic` by the principal
+formula's position; a `⊸L` node's two premises are its split), and the
+sequent certified is the one the reading prints, which for formulas built
+from `⊤` and `0` alone can differ from the written succedent
+(`plan/reports/08-intuitionistic.md`, "Ambiguity"; say so in the report
+if it matters to the kernel). `linlog prove --format rocq`. A way to actually check
 the certificates, in nix if feasible.
 
 ## What to build
