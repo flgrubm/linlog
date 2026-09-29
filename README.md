@@ -3,7 +3,7 @@
 A linear logic suite for all your needs: a command line program and a Rust
 library that parse, print and decide sequents of classical linear logic and
 its fragments, keep the proofs in a checkable form and show them as
-derivation trees.
+derivation trees or proof nets.
 
 [API documentation](https://flgrubm.github.io/linlog/) (rustdoc of `main`,
 rebuilt on every push).
@@ -56,6 +56,23 @@ stable sequents visited: 3 (0 from the memo)
 memo entries at most: 3
 splits examined: 4
 time: 47.10µs
+```
+
+`--format net` shows the proof as a proof net instead of a derivation: the
+sequent, the axiom links as pairs of literals with their positions in the
+sequent's subformula numbering, and the verdict of the correctness
+criterion. Proof nets exist for MLL without units, with or without Mix:
+
+```console
+$ linlog prove --format net "|- A * B, C * (~A par ~B), ~C"
+provable (MLL, classical, focus engine)
+⊢ A ⊗ B, C ⊗ (~A ⅋ ~B), ~C
+A[1] — ~A[6]
+B[2] — ~B[7]
+C[4] — ~C[8]
+proof net
+$ linlog prove --format net "A & B |- A"
+error: proof nets exist for MLL without units only, not for ALL
 ```
 
 The exit status tells scripts the verdict: 0 provable, 1 unprovable, 3
@@ -111,14 +128,19 @@ Built:
   Mix: a focused sequent engine over occurrence bitsets with a memo and
   count-based pruning, returning a checked proof, "unprovable" after an
   exhaustive search, or "unknown" with the reason.
+- Proof nets for MLL, with or without Mix, as a representation of their
+  own: proof structures over the subformula occurrences, an independent
+  correctness criterion (Danos–Regnier, decided by Yeo's deletion test on
+  the coloured structure graph, with a switching cycle or the
+  disconnection named when it fails), sequentialization into a checked
+  proof and desequentialization of a proof into its net, a text form and
+  a JSON form.
 - The `linlog` command: `prove`, `check` and `seq`, with time limits,
-  Ctrl-C, statistics and JSON output.
+  Ctrl-C, statistics, JSON output and proof nets.
 
 Planned, in roughly this order:
 
-- Proof nets for MLL as a representation of their own: correctness
-  criterion, sequentialization in both directions, and proof-net search as
-  the engine for unit-free MLL.
+- Proof-net search as the engine for unit-free MLL.
 - The exponentials (MELL, full LL) with a bounded copy rule, and affine
   mode as a decision procedure.
 - Intuitionistic linear logic, with two-sided printing and derivations.
@@ -148,6 +170,8 @@ the numbering of subformula occurrences that every proof-search engine,
 proof checker and proof net works on. A proof is a compact term over those
 occurrences, one node per rule instance; an independent checker decides
 whether it proves its sequent, and a derivation view unfolds it into the
-tree of explicit sequents of the standard sequent calculus. Proof search
-decides a sequent with the engine its fragment calls for and returns a
-checked proof, that there is none, or why it could not tell.
+tree of explicit sequents of the standard sequent calculus. A proof net is
+the same forest with axiom links, checked by its own criterion and
+convertible to and from a proof term. Proof search decides a sequent with
+the engine its fragment calls for and returns a checked proof, that there
+is none, or why it could not tell.

@@ -22,7 +22,9 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
 - `io.rs`: input from the argument, `--file` (`-` is standard input) or
   standard input, refused when standard input is a terminal; output to
   `--output` or standard output.
-- `prove.rs`: `prove` and `check`.
+- `prove.rs`: `prove` and `check`, and the `net` format's refusal of
+  sequents outside unit-free MLL and of affine or intuitionistic mode
+  (`nets_exist`), before the search runs.
 
 ## Invariants
 
@@ -59,10 +61,11 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
 - **An engine**: a variant of `EngineArg` with a doc comment (its `--help`
   line) and its arm in `From<EngineArg> for Option<Engine>`. The verdict
   line prints `Engine`'s `Display`, so nothing else changes.
-- **An output format** (`latex`, `typst`, `svg`, `rocq`, `net`): a variant
-  of `Format` and its arm in `prove`'s and `check_text`'s `match format`.
-  A format that renders the derivation builds it inside the
-  `on_large_stack` closure, as the text format does.
+- **An output format** (`latex`, `typst`, `svg`, `rocq`): a variant of
+  `Format` and its arm in `prove`'s and `check_text`'s `match format`, as
+  `net` has. A format that renders the derivation builds it inside the
+  `on_large_stack` closure, as the text format does; `net` builds the net
+  there too, though desequentialization does not recurse.
 - **The copy bound**: `--copies` is parsed but hidden and refused; wiring it
   is unhiding it and passing it to the `Options` setter the exponential
   engine adds.

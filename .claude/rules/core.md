@@ -327,14 +327,118 @@ and `Mode`). Its functions are the spec's rules: `asynchronous` (the phase
   them) for every combination of units, additives and Mix; a new engine or
   rule set extends it rather than writing new positives by hand.
 
+## Proof nets
+
+`nets/mod.rs` is the proof-net model for unit-free MLL, with or without
+Mix; `ProofStructure::new` refuses any other fragment
+(`Error::NetFragment`), and there is no net for affine or intuitionistic
+mode (the CLI refuses those before searching). A structure is the forest
+plus `partner` (one `u32` per occurrence, `NONE` for unlinked literals and
+connectives), the stack of links in the order they were made, the coloured
+graph (`graph.rs`) and the `⅋`-free skeleton (`skeleton.rs`); `mix` says
+whether Mix is allowed, which is the difference between the two criteria.
+What the code relies on:
+
+- **Links are a stack.** `link(x, y)` pushes and `unlink()` pops the last
+  link: the skeleton's union-find has an undo log (union by rank, no path
+  compression, one entry per union, so undo is O(1) and find is
+  logarithmic), and a backtracking search takes links back in reverse
+  order anyway. `link` debug-asserts that the literals are dual and
+  unlinked; `from_links` and deserialization validate the same at the
+  boundary and return `NetError`.
+- **The coloured graph** (`graph.rs`): vertices are the occurrences, edges
+  the premise edges of every `⊗` and `⅋` plus the links, in CSR layout
+  with the parent edge in a vertex's first slot, then its children, and
+  for a literal its axiom slot last (`NONE` while unlinked), so `link` and
+  `unlink` write two slots. The colouring is the spec's: the two premise
+  edges of a `⅋` share a colour of their own, every other edge has its own
+  colour, so a cycle survives some switching iff it is properly coloured.
+  `⊗` premise edges must never share a colour (that would forbid the cycle
+  `⊗ – A – ~A – ⊗` in `⊢ A ⊗ ~A` and accept a wrong structure), and `⅋`
+  premise edges must always share one (else `⊢ A ⅋ ~A` would be rejected).
+  The colours are not stored: with this colouring, Yeo's deletion
+  condition ("no component of `G − z` meets `z` in two colours") is
+  exactly "every present edge of `z` is a bridge" for a vertex that is not
+  a `⅋`, whose incident colours are all distinct, and "the parent edge is
+  absent or a bridge" for a `⅋`, whose premise edges share a colour.
+  Bridges come from one iterative Tarjan search per round (`search`,
+  which skips the search-tree parent vertex, valid because the graph is
+  simple: a literal's tree edge and its link never join the same pair).
+- **The Yeo test is exact on partial structures.** `acyclic` deletes, in
+  rounds, every vertex deletable by the round's bridges and stops when a
+  round deletes nothing: everything gone means no switching cycle, and
+  otherwise the vertices left carry one. Deleting several vertices found
+  deletable in one round is sound because deletability only grows as
+  vertices go (components of `G − z` can only split). A deletable vertex
+  never lies on a properly coloured cycle, and Yeo's theorem gives a
+  deletable vertex whenever there is none, which is the exactness. An
+  unlinked literal is a leaf and lies on no cycle, so
+  `is_acyclic(&mut Scratch)` answers the same question about a partial
+  structure; it allocates nothing, the `Scratch` (from
+  `ProofStructure::scratch`) holds the bitsets and the search arrays.
+  The cost is one search per round, and the number of rounds is the
+  nesting depth of cycles that pass through both premises of a `⅋` (each
+  round peels one layer of them); a forest of unlinked trees goes in one.
+- **Connectedness is a count, checked after acyclicity only.** When no
+  switching has a cycle, every switching is a forest with
+  `2t + p + k` edges (`t` tensors, `p` pars, `k` links), so it is a tree
+  iff that is `V − 1`. Before acyclicity the equation says nothing. With
+  Mix the equation is dropped: correctness is acyclicity alone. The empty
+  structure is not a net in either case (`NetError::Empty`), since no rule
+  concludes `⊢`. `is_correct` requires completeness first
+  (`NetError::Unlinked`).
+- **Witnesses are for humans and tests, not the hot loop.** `is_correct`
+  allocates its own scratch. A `SwitchingCycle` is isolated from the
+  vertices the procedure got stuck on by removing each edge among them in
+  turn and keeping it out when a cycle survives; an edge found necessary
+  stays necessary as edges go, so one pass leaves exactly one cycle, at the
+  cost of one deletion procedure per edge. `Disconnected` lists the parts
+  of the switching that keeps every left premise, each by its vertices
+  without a parent edge there (roots and right premises of `⅋`s); a part
+  may hold no root at all. `nets::graph`'s tests check every witness
+  against a brute-force enumeration of switchings and assert the two
+  criteria agree; keep that test when the criterion changes.
+- **Sequentialization** (`sequentialize.rs`) is the splitting-tensor
+  lemma on the *plain* graph of a sub-net (tree edges and links, no
+  switching): a `⊗` conclusion is splitting iff its premise edge is a
+  bridge there. The spec's "delete it and count components under one
+  switching" is wrong: under any switching, every `⊗` conclusion of a
+  correct net leaves exactly two components (the switching is a tree and
+  loses two edges), so the count cannot tell. Per stage: open every `⅋`
+  conclusion (its rule goes below the rest), one search from the
+  conclusions gives the parts and the bridges, parts are joined with Mix
+  (only with Mix; a sub-net of a connected net is connected), two
+  literals are an axiom (`Ax(min, max)`), else the splitting `⊗` with the
+  smallest id is applied and the conclusions reached from its left premise
+  go left. Handled conclusions are deleted in the scratch, so a sub-net is
+  what its conclusions reach. O(n²) in the net's size; the recursion is as
+  deep as the derivation. The proof is checked in a `debug_assert!` and the
+  round trip derivation → net → derivation is a test.
+- **Nets and terms.** `from_proof` reads the links off the `Ax` nodes and
+  returns the net only if it is correct; every proof the checker accepts
+  gives a correct net, two proofs that differ by rule permutations give the
+  same one, and `sequentialize` gives one proof per net, so the net is the
+  canonical form of an MLL proof. The net of a term is meaningful only over
+  the term's forest, like the term itself.
+- What a net search (step 6 of the plan) keeps outside the structure:
+  candidate counts, the choice order, the explicit stack, statistics, and
+  one `Scratch`. The structure offers `partner`, `unlinked`, `link`,
+  `unlink`, `same_component` (the skeleton's rejection), `is_acyclic`, and
+  `Forest::lca` is the other O(1) rejection.
+- The text form (`Display`: the sequent, `~A[0] — A[2]` per link sorted
+  by first id, then `proof net`, `proof net with Mix` or `not a proof net:
+  ` with the reason in formulas) and the JSON form are pinned in tests.
+
 ## Layout
 
 `sequents` (arena, printing), `parse`, `serialize`, `fragment`, `occurrences`
 (forest and sets), `proofs` (terms in `mod.rs`, `check`, `derivation`, the
 renderer `fmt`, the crate-private `multiset`), `search` (the front door in
 `mod.rs`, the focused engine in `focus/` with `counts` and `memo`, the
-test-only `generate`), and the empty `nets` and `export` modules that the
-plan fills in. `lib.rs` re-exports the public types, so users write
+test-only `generate`), `nets` (structures and the criterion's front door
+in `mod.rs`, the graph and the Yeo test in `graph`, the union-find in
+`skeleton`, `sequentialize`), and the empty `export` module that the plan
+fills in. `lib.rs` re-exports the public types, so users write
 `linlog::Sequent`, `linlog::Proof`, `linlog::prove`, and so on. `hash` is
 crate-private.
 
@@ -389,3 +493,9 @@ same test file:
   keys) and `linlog check` reads the output of `linlog prove --format json`.
   A new `Reason` variant or `Statistics` field needs its line in the proxy.
 - `Forest` has no serde; it is rebuilt from the sequent.
+
+`serialize/nets.rs` writes a `ProofStructure` as `{"sequent": …, "mix":
+false, "links": [[0, 2], [3, 4]]}`, the links as occurrence id pairs in
+the order they were made; reading validates the links as `from_links`
+does and accepts a partial or incorrect structure, since whether it is a
+net is `is_correct`'s question.

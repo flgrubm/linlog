@@ -22,7 +22,8 @@ Workspace crates:
 - `core/` is package **`linlog`**: all logic.
   It has two optional default features, `parse` (chumsky) and `serialize` (serde).
 - `cli/` is package **`linlog-cli`**, binary **`linlog`**: a clap front end
-  with `prove`, `check` and `seq print|json|fragment`. The tree and its
+  with `prove`, `check` and `seq print|json|fragment`, and the output
+  formats `text`, `json` and `net`. The tree and its
   `--help` text are the doc comments in `argument_parsing.rs`; `prove.rs`
   runs the search on a thread sized from `--recursion-limit` and owns the
   output; exit status 0 proved/valid, 1 unprovable/invalid, 2 error,
@@ -39,7 +40,12 @@ tree; and `prove(&sequent, mode, &options)` (or `prove_until` with a stop
 closure) for proof search, which dispatches on the fragment and returns an
 `Outcome` with a three-valued `Verdict`. Only the focused engine exists
 (`search::focus`, classical MLL, units, MALL, with or without Mix); the other
-rows of the dispatch table are refused with `Error::NoEngine`. Sequents are
+rows of the dispatch table are refused with `Error::NoEngine`.
+`ProofStructure` (`nets`) is a proof net of unit-free MLL over the forest:
+`from_links`, `link`/`unlink`, `is_correct()` (the Danos–Regnier criterion
+through Yeo's deletion test, independent of the search and the checker),
+`sequentialize()` to a `Proof`, `from_proof(&proof, mix)` back, and a
+`Display` that the CLI's `--format net` prints. Sequents are
 one-sided arena DAGs in negation normal form; fragments and modes are
 runtime values, and indices are `u32` newtypes. The invariants live in
 `.claude/rules/core.md`, which loads when a file under `core/` is read.
