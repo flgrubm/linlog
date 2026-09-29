@@ -3,9 +3,11 @@
 
 //! Sequents of linear logic, stored as compact arena DAGs in negation normal
 //! form, with parsing, printing and serialization; the fragment a sequent
-//! lives in and the mode proof search runs in; and the occurrence forest of a
+//! lives in and the mode proof search runs in; the occurrence forest of a
 //! sequent, the numbering of its subformula occurrences that proof search,
-//! proof checking and proof nets are built on.
+//! proof checking and proof nets are built on; and proofs as terms over
+//! those occurrences, with the checker that validates them, the derivation
+//! view that renders them, and their serialization.
 
 #![allow(dead_code)]
 #![allow(unused_variables)]
@@ -31,7 +33,7 @@ pub mod proofs;
 pub mod search;
 /// Sequents and the terms they are built from.
 pub mod sequents;
-/// Serde support for sequents.
+/// Serde support for sequents and proofs.
 #[cfg(feature = "serialize")]
 mod serialize;
 
@@ -41,4 +43,5 @@ pub use errors::ParseError;
 pub use errors::Error;
 pub use fragment::{Fragment, Mode};
 pub use occurrences::{Forest, OccId, OccSet, Polarity, Sign};
+pub use proofs::{Node, NodeId, Proof, Side};
 pub use sequents::{Atom, Formula, Kind, Sequent, Term, TermId};

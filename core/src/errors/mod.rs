@@ -32,4 +32,19 @@ pub enum Error {
     #[cfg(feature = "parse")]
     #[error("Parsing failed with errors: {0:?}")]
     SequentParsing(Vec<ParseError>),
+    /// A proof node index (first) lies outside the arena (its length second).
+    #[error(
+        "Proof node index out of bounds: tried to access node {0} while number of nodes is {1}"
+    )]
+    NodeIndexOutOfBounds(usize, usize),
+    /// A premise's node index (first) is not below the index of the node it
+    /// proves (second).
+    #[error("Proof node index not decreasing: node {1} has premise {0} >= {1}")]
+    PremiseIndexNotDecreasing(usize, usize),
+    /// A proof node refers to an occurrence (first) outside its forest (its
+    /// length second).
+    #[error(
+        "Occurrence index out of bounds: a proof node refers to occurrence {0} while the forest has {1}"
+    )]
+    OccurrenceIndexOutOfBounds(usize, usize),
 }
