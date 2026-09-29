@@ -106,7 +106,14 @@ web front end": the calls the client makes (`Interactive::new` or the JSON,
 targets, `rules` for the menu, `split_passes` to grey out a split,
 `apply`, `undo`, `close` with a node-counting stop closure since wasm has
 no clock in core, `derivation` for the picture, `proof` at the end), and
-the `linlog interact` command of step 9 as the reference behaviour.
+the `linlog interact` command of step 9 as the reference behaviour; and
+`plan/reports/11-svg.md`, "What the web front end will call": pure,
+clock-free `svg::derivation`, `svg::net`, `svg::sequent` and
+`svg::two_sided` with a `Style` (a dark theme sets its colours), the ids
+`i<n>` (conclusion of inference `n`), `o<n>` (literal or node of
+occurrence `n`) and `l<m>-<n>` (a link) as click targets, and Euler Math
+(OFL) served as a web font under the family name `Euler Math`, the layout
+holding without it through `textLength`.
 
 ## 15g''. Export follow-ups
 
@@ -122,6 +129,19 @@ if users name atoms that way. `interact`'s `proof` could take a format
 with a spelling that does not collide with its file argument (`proof
 --latex`). The rule-label convention (upright `L`/`R`, subscript `1`/`2`,
 `?d`) is one table per target for a user who wants another.
+
+From step 11 (`plan/reports/11-svg.md`, "Open questions"), for the web
+front end above all: a `<g>` per formula of a goal's sequent with the
+position in its id, so that a click on a formula maps to `(InfId,
+position)` for `Interactive::apply` (today `i<n>` names a whole
+conclusion); edges and links meeting a negated literal at its atom rather
+than at the middle of `A⊥`; a nesting-safe cap on the height of wide
+axiom links (the height grows with the width, and a plain cap makes an
+inner arc poke through its outer one); colouring a disconnection
+(`NetError::Disconnected`) as the switching cycle is coloured; Greek
+letters as mathematical italic code points to match Typst; and a smaller
+row height for trees without a raised `⊥` (`Style::line_height` is the
+knob).
 
 ## 15g'. Interactive follow-ups
 

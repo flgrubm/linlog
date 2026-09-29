@@ -31,8 +31,9 @@ gives the checked `Proof`, and `proof.derivation()` (or
 `Rule::classical()` maps every two-sided name to its one-sided rule, which
 the Yalla mapping wants for the classical kernel.
 
-Step 10 (`plan/reports/10-latex-typst.md`, "The API" and "For step 11 and
-step 12") built the export scaffolding to reuse: `export::notation::walk`
+Steps 10 and 11 (`plan/reports/10-latex-typst.md`, "The API" and "For
+step 11 and step 12"; `plan/reports/11-svg.md`, "Decisions") built the
+export scaffolding to reuse: `export::notation::walk`
 walks a derivation with an explicit stack and hands out enter and exit
 events, the exits in postfix order, which is the order of tactics for a
 script that proves premises before conclusions; `export::Form`
@@ -42,8 +43,20 @@ decides which formats take `--standalone`, `note` writes the verdict as
 the format's comment (`(* … *)`) and `derivation(proof, mode, format,
 form)` in `prove.rs` has one arm per format. The symbol table `Notation`
 is for math notation and does not fit Rocq's constructors; write the
-formula printer of the kernel's syntax in `export::rocq`. Add
-`feature = "rocq"` to the `cfg(any(…))` on `Form`.
+formula printer of the kernel's syntax in `export::rocq`. `Form` is gated
+on `latex` or `typst` only (step 11 left `svg` off it, since an SVG has
+one form); a Rocq export has two natural forms, the lemma with its proof
+script to paste into a development and a whole `.v` file with its
+`Require`s, so take `Form`, add `rocq` to its `cfg(any(…))`, and let
+`form` in `cli/src/prove.rs` accept `--standalone` for `rocq` (it refuses
+the flag for one-form formats). Snapshots live in `core/tests/snapshots/`
+through `core/tests/export.rs` (`snapshot`/`pin`, `BLESS=1` rewrites
+them), and `modules/export.nix` is the flake check that compiles and
+renders exactly those files plus a few CLI outputs, offline, with its
+tools from nixpkgs: the Rocq check follows that shape (the snapshots
+copied in, `linlog prove --format rocq` for one more, the kernel and Rocq
+as `nativeBuildInputs`, output that must be empty), in `export.nix` if it
+is cheap or as its own `modules/rocq.nix` check if the closure is large.
 
 ## Goal
 

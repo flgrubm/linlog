@@ -508,3 +508,28 @@ full powerset; the step that adds the fifth feature makes that change in
   safety net, and switches the step 10 standalone documents to `eulervm`
   and the Euler Math font (item 1a). Prompts 11, 12, 13 (the cargo-hack
   commands) and 15 amended.
+- 2026-09-29: step 11 reviewed and accepted. Seven commits, "Add an SVG
+  writer with a fixed-advance layout" to "Document the SVG export"; all
+  checks pass including `nix flake check`, whose `export` check now also
+  renders every SVG snapshot and two CLI drawings with resvg and Euler
+  Math as the only font, with any tool output fatal; the planning session
+  rendered every snapshot and three CLI drawings (a twelve-inference
+  tree, a net with a crossing, a partial derivation) to PNG and they look
+  as intended. D12 as amended held: a committed table of Euler Math's
+  advances (202 characters, the script that printed it in the report),
+  integer coordinates in thousandths of an em, `textLength` on every text
+  run, one pass up and one down the tree over the explicit-stack walk,
+  nets as formula trees under half-ellipse links of one shape (nested
+  pairs nest, interleaved pairs cross), switching cycles highlighted.
+  Item 1a done: the standalone LaTeX documents load `eulervm` and the
+  Typst documents set Euler Math. Decisions accepted: no `svg` crate;
+  atom letters as mathematical italic code points (Euler has no italic
+  face); `--standalone` refused for the one-form SVG formats;
+  `--format net-svg` rather than a `net` subcommand; verdicts as XML
+  comments with `-` written as U+2010 since `--` cannot appear in one;
+  roxmltree as a dev-dependency for the structural tests. Prompts 12 and
+  15 amended: the certificates take `Form` (two natural forms) and follow
+  `modules/export.nix`'s shape for their check; the web front end's plan
+  gets the report's calls and ids; the SVG follow-ups (per-formula ids
+  for clicks, anchors at the atom, a nesting-safe arc cap, disconnection
+  colouring) join 15g''.
