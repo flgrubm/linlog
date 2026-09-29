@@ -303,6 +303,13 @@ impl Tally {
         if mix { c >= rhs } else { c == rhs }
     }
 
+    /// Returns whether the `MLL` count equation leaves room for a Mix among
+    /// the members: `c > t − p − u + b + 2`, since every Mix adds two to the
+    /// left side.
+    pub(crate) fn admits_mix(&self) -> bool {
+        i64::from(self.len) > i64::from(self.weight) + 2
+    }
+
     /// Returns the number of members.
     pub(crate) fn len(&self) -> u32 {
         self.len
