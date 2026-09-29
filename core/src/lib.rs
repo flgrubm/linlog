@@ -99,6 +99,7 @@ pub use errors::ParseError;
 
 pub use errors::Error;
 pub use fragment::{Fragment, Mode};
+pub use nets::{NetError, ProofStructure};
 pub use occurrences::{Forest, OccId, OccSet, Polarity, Sign};
 pub use proofs::{CheckError, Derivation, InfId, Inference, Node, NodeId, Proof, Rule, Side};
 pub use search::{Engine, Options, Outcome, Reason, Statistics, Verdict, prove, prove_until};

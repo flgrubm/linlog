@@ -9,6 +9,7 @@ mod parse;
 pub use parse::ParseError;
 
 use crate::fragment::{Fragment, Mode};
+use crate::nets::NetError;
 use crate::proofs::CheckError;
 use thiserror::Error;
 
@@ -50,6 +51,14 @@ pub enum Error {
     /// A proof does not prove its sequent.
     #[error("invalid proof: {0}")]
     InvalidProof(#[from] CheckError),
+    /// A list of links is not a proof structure, or a structure is not a
+    /// proof net.
+    #[error("not a proof net: {0}")]
+    InvalidNet(#[from] NetError),
+    /// Proof nets exist for unit-free MLL only, and the sequent lies in a
+    /// larger fragment.
+    #[error("proof nets exist for MLL without units only, not for {0}")]
+    NetFragment(Fragment),
     /// No engine handles the fragment in the mode yet.
     #[error("no engine for {fragment} in {mode} mode yet")]
     NoEngine {
