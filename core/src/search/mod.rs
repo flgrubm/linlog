@@ -242,6 +242,10 @@ pub fn prove_goal(
         None
     };
     let (verdict, statistics, net) = match engine {
+        #[cfg(feature = "parallel")]
+        Engine::Net if runtime.is_some() => {
+            net::parallel::search(forest, mode, options, runtime.as_ref().unwrap(), &mut stop)
+        }
         Engine::Net => net::search(forest, mode, options, &mut stop),
         Engine::Focus | Engine::TwoSided | Engine::Additive => {
             let (result, nodes, statistics) = if engine == Engine::Additive {

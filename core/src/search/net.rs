@@ -20,7 +20,7 @@
 //! count equation is the connectedness equation of a complete acyclic
 //! linking. The net is sequentialized into the proof term returned.
 
-use super::{Options, Reason, Statistics, Verdict};
+use super::{Options, Reason, Statistics, Stop, Verdict};
 use crate::fragment::Mode;
 use crate::nets::{ProofStructure, Scratch};
 use crate::occurrences::{Forest, OccId, Sign};
@@ -50,7 +50,7 @@ pub(crate) fn search(
     if !counts_admit(forest, mode.mix) {
         return (Verdict::Unprovable, Statistics::default(), None);
     }
-    let mut engine = Engine::new(forest, mode, options, stop);
+    let mut engine = Engine::new(forest, mode, options, Stop::Closure(stop));
     match engine.run() {
         Ok(true) => {
             let proof = engine
@@ -148,18 +148,13 @@ struct Engine<'a> {
     period: u32,
     /// The counters.
     statistics: Statistics,
-    /// The caller's stop condition.
-    stop: &'a mut dyn FnMut() -> bool,
+    /// The stop condition.
+    stop: Stop<'a>,
 }
 
 impl<'a> Engine<'a> {
     /// Prepares a run on the forest, which must be one of unit-free MLL.
-    fn new(
-        forest: &Forest,
-        mode: Mode,
-        options: &Options,
-        stop: &'a mut dyn FnMut() -> bool,
-    ) -> Self {
+    fn new(forest: &Forest, mode: Mode, options: &Options, stop: Stop<'a>) -> Self {
         let net = ProofStructure::new(forest.clone(), mode.mix)
             .expect("the dispatch routes unit-free MLL only");
         let scratch = net.scratch();
@@ -204,8 +199,23 @@ impl<'a> Engine<'a> {
     }
 
     /// Runs the search and returns whether a proof net was found, or the
-    /// reason the search stopped.
+    /// reason the search stopped. With links seeded, the search is the
+    /// branch below them and ends when it backtracks up to them.
     fn run(&mut self) -> Result<bool, Reason> {
+        self.explore(None, &mut Vec::new())
+    }
+
+    /// The search, and the enumeration of its cubes: with a `limit`, a
+    /// branch that reaches that many links is recorded in `cubes` as the
+    /// links made, and taken back instead of followed, so that the cubes
+    /// are the branches of the first `limit` links that the tests do not
+    /// reject; a proof net found within the limit ends the search as
+    /// usual. Without a limit this is the whole search.
+    fn explore(
+        &mut self,
+        limit: Option<usize>,
+        cubes: &mut Vec<Vec<(OccId, OccId)>>,
+    ) -> Result<bool, Reason> {
         // A dead end before any link is a refutation; a complete structure
         // without a link would have no literal, which the counts exclude.
         let Choice::Literal(first) = self.decide()? else {
@@ -237,6 +247,11 @@ impl<'a> Engine<'a> {
             if complete {
                 return Ok(true);
             }
+            if limit == Some(self.net.links().len()) {
+                cubes.push(self.net.links().to_vec());
+                self.unlink();
+                continue;
+            }
             match self.decide()? {
                 Choice::Literal(literal) => self.stack.push(Frame { literal, next: 0 }),
                 Choice::DeadEnd => self.unlink(),
@@ -249,10 +264,31 @@ impl<'a> Engine<'a> {
     /// literal.
     fn decide(&mut self) -> Result<Choice, Reason> {
         self.statistics.nodes += 1;
-        if (self.stop)() {
+        if self.stop.fired() {
             return Err(Reason::Stopped);
         }
         Ok(self.choose())
+    }
+
+    /// Makes the links of a cube, on an engine without links, so that
+    /// `run` searches the branch below them.
+    fn seed(&mut self, links: &[(OccId, OccId)]) {
+        debug_assert!(
+            self.net.links().is_empty(),
+            "a seed goes on an empty structure"
+        );
+        for &(x, y) in links {
+            self.link(x, y);
+        }
+    }
+
+    /// Takes every link back and forgets the decisions, keeping the
+    /// counters, so that the engine can run another cube.
+    fn reset(&mut self) {
+        self.stack.clear();
+        while !self.net.links().is_empty() {
+            self.unlink();
+        }
     }
 
     /// Chooses the unlinked literal with the fewest admissible partners,
@@ -376,7 +412,7 @@ impl<'a> Engine<'a> {
 }
 
 #[cfg(all(test, feature = "parse"))]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use crate::search::generate::{self, Rng, Rules};
     use crate::search::{Engine, focus};
@@ -597,7 +633,7 @@ mod tests {
     /// sequents, mutants of them, doubled sequents (equal conclusions),
     /// and random sequents that pass the counts; with and without Mix.
     /// Returns the texts with their modes.
-    fn sample(samples: usize, budget: usize, pairs: usize) -> Vec<(String, Mode)> {
+    pub(super) fn sample(samples: usize, budget: usize, pairs: usize) -> Vec<(String, Mode)> {
         let mut texts = Vec::new();
         for mix in [false, true] {
             let mode = mode_for(mix);
@@ -687,7 +723,7 @@ mod tests {
     /// once, and half the total of each buys the goal `e`. Every clause is
     /// used exactly once, so the sequent is provable if and only if the
     /// sizes split into two halves of equal sum.
-    fn partition(sizes: &[u32]) -> String {
+    pub(super) fn partition(sizes: &[u32]) -> String {
         let total: u32 = sizes.iter().sum();
         assert_eq!(total % 2, 0, "the total is even");
         let items: Vec<String> = (1..=sizes.len()).map(|i| format!("a{i}")).collect();
@@ -753,5 +789,247 @@ mod tests {
             second.proof().map(|p| p.nodes().to_vec())
         );
         assert_eq!(Engine::Net.to_string(), "net");
+    }
+}
+
+/// The net engine on several threads: cube-and-conquer over the first
+/// links.
+#[cfg(feature = "parallel")]
+pub(crate) mod parallel {
+    use super::{Engine, counts_admit};
+    use crate::fragment::Mode;
+    use crate::nets::ProofStructure;
+    use crate::occurrences::{Forest, OccId};
+    use crate::search::parallel::Runtime;
+    use crate::search::{Options, Reason, Statistics, Stop, Verdict};
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    /// How many cubes per thread the enumeration aims for, so that the
+    /// cubes that turn out large are shared out among many small ones.
+    const CUBES_PER_THREAD: usize = 16;
+
+    /// A cube: the first links of a branch of the search, in the order
+    /// they were made.
+    type Cube = Vec<(OccId, OccId)>;
+
+    /// What the workers of a cube-and-conquer run report.
+    struct Collected {
+        /// The first proof net found.
+        net: Option<ProofStructure>,
+        /// The first error, a stop that a cancellation caused excepted,
+        /// a stop giving way to any other reason.
+        error: Option<Reason>,
+        /// The counters of every engine that ran.
+        statistics: Statistics,
+    }
+
+    /// Runs the net engine on the runtime's pool, as [`super::search`]
+    /// does on one thread, polling `stop` on the calling thread while the
+    /// pool searches. The root engine enumerates the branches of the
+    /// first `d` links as cubes, `d` growing until there are
+    /// [`CUBES_PER_THREAD`] cubes per thread or the enumeration decided
+    /// the sequent by itself; then every worker takes cubes from a
+    /// shared counter, one engine of its own reset per cube, until a
+    /// proof net is found, which stops the others, or the cubes run out.
+    /// `Unprovable` needs every cube to have been searched to its end.
+    pub(crate) fn search(
+        forest: &Forest,
+        mode: Mode,
+        options: &Options,
+        runtime: &Runtime,
+        stop: &mut dyn FnMut() -> bool,
+    ) -> (Verdict, Statistics, Option<ProofStructure>) {
+        if !counts_admit(forest, mode.mix) {
+            return (Verdict::Unprovable, Statistics::default(), None);
+        }
+        let threads = runtime.threads();
+        let pairs = forest.all_literals().len() / 2;
+        let (result, statistics, net) = runtime.drive(stop, |flags| {
+            let mut root = Engine::new(forest, mode, options, Stop::Flags(flags));
+            let mut cubes = Vec::new();
+            let mut depth = 1;
+            loop {
+                cubes.clear();
+                match root.explore(Some(depth), &mut cubes) {
+                    Ok(true) => return (Ok(true), root.statistics, Some(root.net)),
+                    Ok(false) if cubes.is_empty() => return (Ok(false), root.statistics, None),
+                    Ok(false) => {}
+                    Err(reason) => return (Err(reason), root.statistics, None),
+                }
+                if cubes.len() >= CUBES_PER_THREAD * threads || depth >= pairs {
+                    break;
+                }
+                root.reset();
+                depth += 1;
+            }
+            let next = AtomicUsize::new(0);
+            let found = AtomicBool::new(false);
+            let collected = Mutex::new(Collected {
+                net: None,
+                error: None,
+                statistics: root.statistics,
+            });
+            runtime.pool.scope(|scope| {
+                for _ in 0..threads {
+                    let (cubes, next, found, collected, flags) =
+                        (&cubes, &next, &found, &collected, &flags);
+                    scope.spawn(move |_| {
+                        let mut engine =
+                            Engine::new(forest, mode, options, Stop::Flags(flags.child(found)));
+                        loop {
+                            let i = next.fetch_add(1, Ordering::Relaxed);
+                            let Some(cube) = cubes.get(i) else {
+                                break;
+                            };
+                            engine.reset();
+                            engine.seed(cube);
+                            match engine.run() {
+                                Ok(false) => continue,
+                                Ok(true) => {
+                                    let mut collected = lock(collected);
+                                    if collected.net.is_none() {
+                                        collected.net = Some(engine.net.clone());
+                                    }
+                                    found.store(true, Ordering::Relaxed);
+                                }
+                                Err(Reason::Stopped) if found.load(Ordering::Relaxed) => {}
+                                Err(reason) => {
+                                    let mut collected = lock(collected);
+                                    if collected.error.is_none_or(|old| old == Reason::Stopped) {
+                                        collected.error = Some(reason);
+                                    }
+                                    found.store(true, Ordering::Relaxed);
+                                }
+                            }
+                            break;
+                        }
+                        lock(collected).statistics.add(&engine.statistics);
+                    });
+                }
+            });
+            let collected = collected
+                .into_inner()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            match (collected.net, collected.error) {
+                (Some(net), _) => (Ok(true), collected.statistics, Some(net)),
+                (None, Some(reason)) => (Err(reason), collected.statistics, None),
+                (None, None) => (Ok(false), collected.statistics, None),
+            }
+        });
+        let verdict = match result {
+            Ok(true) => {
+                let net = net.as_ref().expect("a proof net was found");
+                let proof = net
+                    .sequentialize()
+                    .expect("a complete linking that passed the exact test is a proof net");
+                debug_assert_eq!(proof.check(mode), Ok(()), "the engine's proof");
+                Verdict::Proved(Box::new(proof))
+            }
+            Ok(false) => Verdict::Unprovable,
+            Err(reason) => Verdict::Unknown(reason),
+        };
+        (verdict, statistics, net)
+    }
+
+    /// Locks what the workers report.
+    fn lock<T>(shared: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+        shared
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+#[cfg(all(test, feature = "parse", feature = "parallel"))]
+mod parallel_tests {
+    use super::tests::{partition, sample};
+    use crate::fragment::Mode;
+    use crate::search::{Engine, Options, Reason, Verdict, prove, prove_until};
+    use crate::sequents::Sequent;
+
+    /// The verdict of the net engine on `jobs` threads, the proof and the
+    /// net checked.
+    fn verdict(text: &str, mode: Mode, jobs: usize) -> Verdict {
+        let sequent: Sequent = text.parse().unwrap();
+        let options = Options::default().engine(Some(Engine::Net)).jobs(jobs);
+        let outcome = prove(&sequent, mode, &options).unwrap();
+        if let Verdict::Proved(proof) = &outcome.verdict {
+            assert_eq!(proof.check(mode), Ok(()), "{text:?}");
+            let net = outcome.net.as_ref().expect("the net found");
+            assert_eq!(net.is_correct(), Ok(()), "{text:?}");
+        }
+        outcome.verdict
+    }
+
+    /// The net engine on two and four threads agrees with itself on one
+    /// on generated sequents, provable and balanced ones, in both modes.
+    #[test]
+    fn cubes_agree_with_the_sequential_search() {
+        for (text, mode) in sample(20, 6, 6) {
+            let sequential = verdict(&text, mode, 1);
+            for jobs in [2, 4] {
+                let parallel = verdict(&text, mode, jobs);
+                assert_eq!(
+                    matches!(sequential, Verdict::Proved(_)),
+                    matches!(parallel, Verdict::Proved(_)),
+                    "{text:?} in {mode} mode: {sequential:?} on one thread, {parallel:?} on {jobs}"
+                );
+                assert_eq!(
+                    matches!(sequential, Verdict::Unprovable),
+                    matches!(parallel, Verdict::Unprovable),
+                    "{text:?} in {mode} mode: {sequential:?} on one thread, {parallel:?} on {jobs}"
+                );
+            }
+        }
+    }
+
+    /// A stop condition that fires at once stops the pool: the driver
+    /// raises the flag at its first poll, a millisecond in, long before
+    /// the refutation of this Partition instance ends (seconds on one
+    /// thread, half a second on eight).
+    #[test]
+    fn stops() {
+        let sequent: Sequent = partition(&[1, 2, 5]).parse().unwrap();
+        let options = Options::default().engine(Some(Engine::Net)).jobs(2);
+        let outcome = prove_until(&sequent, Mode::CLASSICAL, &options, || true).unwrap();
+        assert!(
+            matches!(outcome.verdict, Verdict::Unknown(Reason::Stopped)),
+            "{:?}",
+            outcome.verdict
+        );
+    }
+
+    /// Times the Partition instances on one, two, four and eight threads:
+    /// run in release mode and read the table.
+    #[test]
+    #[ignore = "seconds in release mode; run with --release -- --ignored --nocapture"]
+    fn speedups() {
+        println!("instance | verdict | 1 | 2 | 4 | 8");
+        for (name, sizes) in [
+            ("partition 2 3 2 1, solved", &[2, 3, 2, 1][..]),
+            ("partition 1 2 5, refuted", &[1, 2, 5][..]),
+        ] {
+            let sequent: Sequent = partition(sizes).parse().unwrap();
+            let mut row = format!("{name} | ");
+            for (i, jobs) in [1, 2, 4, 8].into_iter().enumerate() {
+                let options = Options::default().engine(Some(Engine::Net)).jobs(jobs);
+                let start = std::time::Instant::now();
+                let outcome = prove(&sequent, Mode::CLASSICAL, &options).unwrap();
+                let elapsed = start.elapsed();
+                if i == 0 {
+                    let verdict = match outcome.verdict {
+                        Verdict::Proved(_) => "proved",
+                        Verdict::Unprovable => "unprovable",
+                        Verdict::Unknown(_) => "unknown",
+                    };
+                    row.push_str(&format!("{verdict} | "));
+                }
+                row.push_str(&format!(
+                    "{elapsed:.2?} ({} nodes) | ",
+                    outcome.statistics.nodes
+                ));
+            }
+            println!("{row}");
+        }
     }
 }
