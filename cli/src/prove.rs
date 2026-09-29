@@ -5,6 +5,7 @@ use crate::argument_parsing::{CheckArgs, Format, ProveArgs};
 use crate::io;
 use crate::{Status, catch_interrupt, interrupted};
 use anyhow::{Context, Result, anyhow, bail};
+use linlog::proofs::Problem;
 use linlog::search::{Options, Outcome, Reason, Statistics, Verdict, prove_until};
 use linlog::{Mode, Proof};
 use std::fmt::Write;
@@ -190,6 +191,11 @@ pub(crate) fn check(args: &CheckArgs) -> Result<Status> {
 /// Checks the proof and returns whether it is valid, with the output text.
 fn check_text(proof: &Proof, mode: Mode, format: Format, quiet: bool) -> Result<(bool, String)> {
     let result = proof.check(mode);
+    if let Err(e) = &result
+        && e.problem == Problem::Intuitionistic
+    {
+        bail!("intuitionistic proofs cannot be checked yet");
+    }
     let text = match format {
         Format::Json => serde_json::json!({
             "valid": result.is_ok(),
