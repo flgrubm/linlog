@@ -40,6 +40,18 @@ Workspace crates:
   1 unprovable/invalid, 2 error, 3 unknown. Its
   invariants and extension points live in `.claude/rules/cli.md`, which
   loads when a file under `cli/` is read.
+- `bench/` is package **`linlog-bench`**, binary `linlog-bench` (not
+  published, `doc = false`): the benchmark harness. `run` times the
+  generated families (`linlog::families`), LLTP problems (`--lltp`, under
+  an `ILL` directory intuitionistic) and problem files
+  (`bench/problems/*.txt`, lines `name; mode; expected; copies; sequent`)
+  in every mode, engine and thread count asked for, one child process per
+  run (the hidden `one` command) with a time limit and a kill after it,
+  one CSV row per run; `summary` prints Markdown tables of CSV files.
+  `bench/baseline.sh` regenerates `bench/results/*.csv` and
+  `bench/RESULTS.md`, the tracked baseline. Its invariants live in
+  `.claude/rules/bench.md`, which loads when a file under `bench/` is
+  read.
 
 The core API the CLI builds on: `"…".parse::<Sequent>()`, `Display` for
 pretty-printing, serde behind `serialize`, `Sequent::fragment()` for the
@@ -107,6 +119,13 @@ through Yeo's deletion test, independent of the search and the checker),
 one-sided arena DAGs in negation normal form; fragments and modes are
 runtime values, and indices are `u32` newtypes. The invariants live in
 `.claude/rules/core.md`, which loads when a file under `core/` is read.
+`lltp::read` (feature `parse`) reads a problem of the LLTP library
+(`fof(name, role, formula).` clauses, the formulas in this crate's own
+syntax) into a `Sequent` and the status its header claims; `families`
+(feature `parse`) generates problem families with known verdicts at any
+size, seeded (`FAMILIES`, `find`, `Family::instance`, and the encodings
+themselves: `three_partition`, `three_partition_mll`, `partition`, `qbf`,
+`counter`, `wide`, `mix`), which the harness and the engines' tests use.
 `plan/README.md` is the proof-search plan the code follows, `plan/reports/`
 what each step of it did.
 
@@ -127,8 +146,11 @@ cargo hack check --each-feature -p linlog                  # each feature alone,
 cargo hack check --feature-powerset --depth 2 -p linlog    # and every pair
 cargo deny check                                           # licenses, bans, sources + advisories (online)
 cargo run -p linlog-cli -- <args>
+cargo run --release -p linlog-bench -- run --family partition-no=3,4 --engines focus,net
+nix build .#lltp -o bench/lltp   # the LLTP library (1.1 GB, GPL-3.0, fetched at a pinned commit)
+bench/baseline.sh                # the whole baseline, about five hours (as a systemd unit, see the script): bench/RESULTS.md
 
-nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), export (the LaTeX and Typst output compiles, the SVG renders), rocq (NanoYalla checks the certificates), deadnix, actionlint, treefmt, claude-hooks
+nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), export (the LaTeX and Typst output compiles, the SVG renders), rocq (NanoYalla checks the certificates), bench (the harness on the smallest problems), deadnix, actionlint, treefmt, claude-hooks
 nix build .#checks.x86_64-linux.rocq   # the certificates alone: Rocq is a 1.2 GB closure from the binary cache
 nix fmt           # nixfmt, rustfmt, taplo, shfmt, shellcheck (a hook runs it on each edited file)
 nix build         # linlog-cli, whose binary is result/bin/linlog
@@ -141,6 +163,7 @@ Verify as much as the change needs:
 |---|---|
 | any `.rs` edit | `cargo clippy …` and `cargo test --workspace` |
 | touches `#[cfg(feature = …)]` or `[features]` | add `cargo hack check --each-feature -p linlog` and `cargo hack check --feature-powerset --depth 2 -p linlog` (both cover `parallel`, which is off by default: `--each-feature`'s `--all-features` run is the one that differs from the defaults) |
+| touches `bench/` or `core/src/families.rs` | add `cargo run --release -p linlog-bench -- run --all-families --timeout 5` for the verdicts (a `MISMATCH` in `summary` is a bug); timings only from `bench/baseline.sh` on an idle machine |
 | touches `search/parallel.rs`, `focus/parallel.rs` or `net::parallel` | `cargo test --workspace` covers them (the CLI depends on `parallel`, and cargo unifies features across a workspace run); `cargo test -p linlog` alone needs `--features parallel` |
 | adds or changes a dependency | add `cargo deny check`. New deps must use a license `deny.toml` allows: EUPL-1.2, MIT, Apache-2.0 (± LLVM-exception), Unicode-3.0 or Zlib |
 | `flake.nix`, `modules/`, `.github/`, the toolchain, a lock bump, or before a push | `nix flake check`, which runs all of the above |
@@ -164,7 +187,11 @@ is the `rocq` check, which builds NanoYalla from the non-flake input
 `nanoyalla` (Click & coLLecT pinned to a commit; `export::rocq::NANOYALLA`
 names the version) with nixpkgs' Rocq and standard library and compiles
 the `.v` snapshots and two CLI certificates against it, requiring Rocq
-to print nothing.
+to print nothing; `bench.nix` is the `linlog-bench` package, the `bench`
+check (the harness on the smallest instance of every family and on the
+problem file, failing on a verdict against a known one) and the `lltp`
+package, the LLTP library fetched at a pinned commit with its Petri-net
+archives unpacked, which no check uses.
 
 ## CI
 

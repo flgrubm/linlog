@@ -429,6 +429,50 @@ The syntax: `*`/`⊗` tensor, `|`/`par`/`⅋` par, `&` with, `+`/`⊕` plus,
 `-o`/`⊸` linear implication, `~A` or `A^` negation, `!` and `?`, and the
 units `1`, `bot`/`⊥`, `top`/`⊤`, `0`; `|-` or `⊢` separates the sides.
 
+### Benchmarks
+
+`linlog-bench` (`cargo run --release -p linlog-bench -- …` in a checkout,
+or `nix build .#linlog-bench`) times the engines on three kinds of
+problems: generated families with known verdicts (`linlog-bench families`
+lists them: 3-Partition as a Horn program and as an MLL sequent,
+Matsuoka's Partition, random QBF, wide sequents, contexts under Mix,
+Petri-net counters and more, each at any size), the problems of the
+[LLTP library](https://github.com/meta-logic/lltp) (`nix build .#lltp -o
+bench/lltp` fetches it at a pinned commit; its problems under `ILL/` run
+intuitionistically), and problem files of lines `name; mode; expected;
+copies; sequent` such as `bench/problems/slow-tests.txt`. `run` runs every
+problem in every mode, engine and thread count asked for, each run in a
+child process of its own with a time limit, and writes one CSV row per
+run with the verdict, the time and the engine's counters; `summary`
+prints Markdown tables of CSV files: the problems solved within the time
+limit per family and configuration, and a time per problem and
+configuration.
+
+```console
+$ linlog-bench run --family partition-no=3,4 --engines focus,net --jobs 1,4 --timeout 10 --output runs.csv
+[1/8] partition-no/3 classical focus j1: unprovable  5.027 ms
+[2/8] partition-no/3 classical focus j4: unprovable  2.108 ms
+[3/8] partition-no/3 classical net j1: unprovable  4323.962 ms
+[4/8] partition-no/3 classical net j4: unprovable  1054.534 ms
+[5/8] partition-no/4 classical focus j1: unprovable  128.696 ms
+[6/8] partition-no/4 classical focus j4: unprovable  47.414 ms
+[7/8] partition-no/4 classical net j1: unknown timeout 10000.942 ms
+[8/8] partition-no/4 classical net j4: unknown timeout 10000.390 ms
+
+$ linlog-bench summary runs.csv
+…
+## partition-no
+
+| problem | classical focus j1 | classical focus j4 | classical net j1 | classical net j4 |
+|---|--:|--:|--:|--:|
+| partition-no/3 | 5.0 ms ✗ | 2.1 ms ✗ | 4.32 s ✗ | 1.05 s ✗ |
+| partition-no/4 | 128.7 ms ✗ | 47.4 ms ✗ | > 10 s | > 10 s |
+```
+
+`bench/RESULTS.md` holds the current numbers of every family, engine and
+thread count and of the whole LLTP library, and `bench/baseline.sh`
+regenerates them (about five hours).
+
 ## What exists and what is planned
 
 Built:
@@ -493,11 +537,15 @@ Built:
 - The `linlog` command: `prove`, `check`, `interact` and `seq`, with time
   limits, Ctrl-C, statistics, JSON output, proof nets, LaTeX, Typst,
   SVG and Rocq output, and `--jobs` and `--deterministic` for the search.
+- Benchmarks: a reader for the problems of the LLTP library, generated
+  families with known verdicts (the hard families of the literature and
+  the cases where one engine is known to be slow), and `linlog-bench`,
+  which runs them with a time limit per run, writes CSV and summarises it;
+  `bench/RESULTS.md` is the current baseline.
 
 Planned, in roughly this order:
 
-- A benchmark harness with the standard problem libraries, and
-  performance work driven by its numbers.
+- Performance work driven by the benchmark numbers.
 - Later: proof nets with exponential boxes, essential nets for
   intuitionistic MLL, the inverse method, the Lambek calculus, and a web
   front end.
@@ -508,9 +556,11 @@ contributions are welcome. All code is licensed under the EUPL.
 
 ## Architecture
 
-Two crates, with a third to come: the library `linlog` in `core/` holds all
-the logic; the command line program `linlog` (package `linlog-cli`) in
-`cli/` is a thin front end; a web front end will compile the library to
+Three crates, with a fourth to come: the library `linlog` in `core/` holds
+all the logic; the command line program `linlog` (package `linlog-cli`) in
+`cli/` is a thin front end; the benchmark harness `linlog-bench` in
+`bench/` runs the library's engines on problem sets; a web front end will
+compile the library to
 WebAssembly, so the library uses no clock, and threads only behind its
 `parallel` feature, which the web front end leaves off.
 

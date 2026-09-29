@@ -38,6 +38,9 @@ Current contents:
 - `rules/cli.md` (`cli/**`): the `linlog` command's layout, exit statuses,
   search thread, stop polling, the interactive session, and where a new
   engine, output format or session command plugs in.
+- `rules/bench.md` (`bench/**`): the benchmark harness's layout, the CSV
+  columns as its interface, what a mismatch means, where a family, a
+  problem source or a configuration axis plugs in.
 - `rules/ci.md` (`.github/**`): how the GitHub workflows are written and pinned.
 - `agents/crate-source-explorer.md`: read-only, answers dependency-API questions
   against the Cargo.lock-pinned sources in `~/.cargo/registry`, never the web.

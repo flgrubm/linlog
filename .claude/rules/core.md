@@ -419,8 +419,19 @@ the net engine's, and the others stay zero.
   than `NET_MULTIPLICITY` (2) times (`prefers_net`: equal literals are
   interchangeable partners, and the linking search pays a permutation's
   worth of nodes for every wrong choice among them, which the focused
-  engine's counts refute at once), else to `focus`; every other classical
-  input, exponentials included, and everything in affine mode to `focus`.
+  engine's counts refute at once), else to `focus`. Multiplicity is a
+  proxy, measured by the benchmarks (`bench/RESULTS.md`, the `engines`
+  rows): the net engine loses on Horn encodings (literals six times and
+  more, by one to four orders of magnitude) and on equal literals inside
+  one pure `⊗` or `⅋` tree (a sequent of five blocks `x ⊗ x ⊗ x ⊗ x`
+  against `~x ⅋ ~x ⅋ ~x ⅋ ~x` with one defect: over 10 s against 20 ms at
+  multiplicity 4), and wins by up to five orders on literals repeated
+  three or four times across different conclusions (`wide-m3`,
+  `wide-m4`). No threshold serves both; the feature that separates them
+  is equal literals under one pure tree, which the leaf symmetry break
+  below would take from the net engine's weaknesses. Every other
+  classical input, exponentials included, and everything in affine mode
+  goes to `focus`.
   Before both: exactly two roots in the additive fragment with at least
   one additive connective go to `additive` (atoms alone stay with `net`).
   Intuitionistic mode first computes the `Reading`
@@ -451,7 +462,11 @@ the net engine's, and the others stay zero.
   picks the engine (`--fragment mall` on an MLL input runs `focus`).
 - The crate has no clock (D11): a time limit is a closure the caller gives
   `prove_until`, polled once per node (a stable sequent, or a literal
-  chosen); it answers `Unknown (Reason::Stopped)`. The crate docs in
+  chosen) and, in the focused engine, once every `SPLITS_PER_POLL` (4096)
+  splits of a `⊗` or Mix enumeration (`poll_splits`): one stable sequent
+  of a 20-token Petri net enumerates tens of millions of splits whose
+  premises fail in focus, and without that poll a 2 s limit ran past five
+  minutes. It answers `Unknown (Reason::Stopped)`. The crate docs in
   `lib.rs` show the common path (parse, fragment, prove, derivation, JSON)
   as a doc test; keep it the shortest correct program when the API moves.
   The focused engine recurses on the caller's stack, bounded by
@@ -654,8 +669,9 @@ relies on:
 - **The atom bias hurts Horn clauses.** The forest makes the rarer literal
   positive, so clause bodies whose atoms also appear as hypotheses are
   usually negative and their `⊗` splits are enumerated instead of forced;
-  the 3-Partition refutation in the tests takes about a minute in release
-  mode for that reason. A bias override is step 14 material.
+  refuting `families::three_partition` with bins of four takes 51 s in
+  release mode for that reason (`3-partition-no/4` in
+  `bench/RESULTS.md`). A bias override is performance-pass material.
 - **The memo can change decisiveness within the bound, never a verdict.**
   An `Exhausted` entry is a fact about the sequent alone, the loop check
   about the branch, so a run with the memo may answer `Unknown` where a
@@ -843,7 +859,8 @@ What the code relies on:
   link and unlink. The stop condition is polled once per node, in
   `decide`, so a frame's candidates run between two polls.
 - **Where it loses.** Horn encodings (Matsuoka's Partition and Lincoln's
-  two-literal 3-Partition, see `partition` in the tests) have few atoms
+  two-literal 3-Partition, `families::partition` and
+  `families::three_partition_mll`) have few atoms
   with many occurrences, and the equal literals inside `b ⊗ b ⊗ b` and
   `~b ⅋ ~b` are interchangeable, so a wrong early choice costs a whole
   symmetric subtree before a cycle appears; the focused engine refutes the
@@ -1145,6 +1162,44 @@ in `mod.rs`, the graph and the Yeo test in `graph`, the union-find in
 re-exports the public types, so users write
 `linlog::Sequent`, `linlog::Proof`, `linlog::prove`, and so on. `hash` is
 crate-private.
+
+## Benchmark inputs: LLTP and the families
+
+- **`lltp::read`** (feature `parse`) turns an LLTP file into `axioms ⊢
+  conjectures` by assembling text for the crate's own parser: the
+  library's connectives and precedences (`*` over `|` over `&` over `+`
+  over `-o`, prefix `!`/`?`, postfix `^`) are this crate's, checked on
+  every mixed-operator formula of the library. Lines from `%` on are
+  comments; the status (`Status::Theorem`, or `NonTheorem` for
+  `Non-Theorem` and `CounterSatisfiable`) is the first `Status (intuit.)`
+  or `Status (linear)` comment's, else the first plain one's, because the
+  translated ILLTP problems carry the classical source's `Status` first
+  (39 files, the excluded middle among them, would read as theorems);
+  roles other than `axiom`, `hypothesis` and `conjecture`, and an
+  annotation after the formula, are refused. A `-` between two name
+  characters is part of the name unless it starts `-o` and becomes
+  `lltp::HYPHEN` (`‿`), a `.` there becomes `lltp::DOT` (`·`), since the
+  Petri nets name places `P-start_1_1` and `merge.s00001061.input` and
+  this crate's identifiers hold neither. The mode
+  is not in the file: the caller decides (the harness by the `ILL`
+  directory). A header's status is the library's claim, not a fact: the
+  statuses of translated problems are those of the intuitionistic source.
+- **`families`** (feature `parse`): `FAMILIES` lists the benchmark
+  families, each a name, a summary, default sizes, instances per size and
+  a generator `(size, index) → Instance` (sequent, mode, `provable`,
+  `copies`). A family's `provable` comes from the problem it encodes
+  (subset sums, QBF evaluation, 3-Partition by construction) or from a
+  construction argument written at the generator, never from an engine,
+  so that an engine disagreeing is a finding. Random families seed
+  SplitMix64 from the size and index. The encodings are public
+  (`three_partition`, `three_partition_mll`, `partition`, `qbf`,
+  `counter`, `wide`, `mix`), and the engines' tests use them instead of
+  private copies. The QBF encoding sequences quantifiers with key atoms:
+  `∃x` is `((~tx ⅋ ~kx) ⊕ (~fx ⅋ ~kx)) ⅋ (kx ⊗ S)`, so the rest `S` can
+  only be focused once the choice released `~kx`; `∀x` is `(~tx & ~fx) ⅋
+  S`; a clause is the `⊕` of `(tx ⊗ ⊤)`/`(fx ⊗ ⊤)`, and the matrix their
+  `&`. `mix` wraps each tensor pair in `⊕ 0` because in MLL the count
+  equation refutes the bare pairs at once.
 
 ## Parsing
 
