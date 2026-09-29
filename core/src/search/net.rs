@@ -679,6 +679,65 @@ mod tests {
         println!("net with the exact test every fourth link: {net_time:.2?}");
     }
 
+    /// Encodes a Partition instance as a Horn sequent, as Matsuoka does:
+    /// every item `a_i` of size `s_i` may be turned into `s_i` units `b`
+    /// or `s_i` units `c`; half the total of each buys the items back
+    /// once, and half the total of each buys the goal `e`. Every clause is
+    /// used exactly once, so the sequent is provable if and only if the
+    /// sizes split into two halves of equal sum.
+    fn partition(sizes: &[u32]) -> String {
+        let total: u32 = sizes.iter().sum();
+        assert_eq!(total % 2, 0, "the total is even");
+        let items: Vec<String> = (1..=sizes.len()).map(|i| format!("a{i}")).collect();
+        let units = |unit: &str, n: u32| vec![unit; n as usize].join(" * ");
+        let mut hypotheses = vec![items.join(" * ")];
+        for unit in ["b", "c"] {
+            for (i, &size) in sizes.iter().enumerate() {
+                hypotheses.push(format!("(a{} -o {})", i + 1, units(unit, size)));
+            }
+        }
+        let half = format!("({} * {})", units("b", total / 2), units("c", total / 2));
+        hypotheses.push(format!("({half} -o {})", items.join(" * ")));
+        hypotheses.push(format!("({half} -o e)"));
+        format!("{} |- e", hypotheses.join(", "))
+    }
+
+    /// Small Partition instances are decided as the instance says, by both
+    /// engines. The equal literals inside `b ⊗ b ⊗ …` and `~b ⅋ ~b` are
+    /// interchangeable, so the net engine visits a symmetric subtree for
+    /// every wrong choice and falls far behind the focused engine here.
+    #[test]
+    fn partition_instances() {
+        for (sizes, expected) in [
+            (&[1, 1][..], true),
+            (&[1, 3], false),
+            (&[2, 1, 1], true),
+            (&[1, 1, 4], false),
+        ] {
+            let text = partition(sizes);
+            let s: Sequent = text.parse().unwrap();
+            assert_eq!(provable(&text, Mode::CLASSICAL), expected, "{sizes:?}");
+            assert_eq!(focus_verdict(&s, Mode::CLASSICAL), expected, "{sizes:?}");
+        }
+    }
+
+    /// Larger Partition instances: a few seconds each in release mode for
+    /// the net engine, milliseconds for the focused engine.
+    #[test]
+    #[ignore = "seconds in release mode; run with --release -- --ignored --nocapture"]
+    fn partition_instances_slow() {
+        for (sizes, expected) in [(&[2, 3, 2, 1][..], true), (&[1, 2, 5], false)] {
+            let text = partition(sizes);
+            let start = Instant::now();
+            let (verdict, statistics) = run(&text, Mode::CLASSICAL, &Options::default());
+            assert_eq!(verdict.proof().is_some(), expected, "{sizes:?}");
+            println!(
+                "{sizes:?}: {verdict:?} in {:.2?}, {statistics:?}",
+                start.elapsed()
+            );
+        }
+    }
+
     /// The engine is deterministic: the same input gives the same proof
     /// and the same counters.
     #[test]
