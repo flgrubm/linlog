@@ -5,13 +5,17 @@
 //! zones that holds regardless of how the search reached it; a failed one
 //! is a fact only relative to the copy budget that was left when it failed,
 //! unless the search space below it was explored without ever hitting the
-//! budget. The table is a plain map with a cap; a sharded map can replace
-//! it when the search runs on several threads.
+//! budget. The table is a plain map with a cap; when the search runs on
+//! several threads it is one shard of a sharded map, [`Shared`], whose
+//! merge under the shard's lock keeps the same invariant: an entry's
+//! validity only ever grows.
 
 use super::context::Context;
 use crate::hash::HashMap;
 use crate::occurrences::OccSet;
 use crate::proofs::NodeId;
+use std::hash::BuildHasher as _;
+use std::sync::Mutex;
 
 /// A stable sequent as the memo keys it: the unrestricted zone and the
 /// linear zone.
@@ -128,6 +132,113 @@ impl Memo {
     /// Returns how many lookups found an entry that applied.
     pub(crate) fn hits(&self) -> u64 {
         self.hits
+    }
+}
+
+/// How many shards a shared memo has: a key's top hash bits pick one.
+const SHARDS: usize = 64;
+
+/// The memo shared by the workers of a parallel search: [`SHARDS`] memos
+/// behind one lock each, a key's top hash bits choosing the shard. A
+/// lookup or an insertion holds one lock for the time of one map
+/// operation, so the merge of `insert` is atomic per key and two workers
+/// that decide the same sequent at once cost duplicated work, never a
+/// weaker entry. The cap is per shard.
+#[derive(Debug)]
+pub(crate) struct Shared {
+    /// The shards.
+    shards: Box<[Mutex<Memo>]>,
+}
+
+impl Shared {
+    /// Returns an empty shared memo holding at most `limit` entries in all.
+    pub(crate) fn new(limit: usize) -> Self {
+        let per_shard = limit.div_ceil(SHARDS);
+        Self {
+            shards: (0..SHARDS)
+                .map(|_| Mutex::new(Memo::new(if limit == 0 { 0 } else { per_shard })))
+                .collect(),
+        }
+    }
+
+    /// The shard of a key.
+    fn shard(&self, key: &Key) -> &Mutex<Memo> {
+        let hash = crate::hash::BuildHasher::default().hash_one(key);
+        &self.shards[(hash >> (64 - SHARDS.trailing_zeros())) as usize]
+    }
+
+    /// Locks a shard, recovering the memo from a worker that panicked
+    /// while holding the lock: every entry is a fact the worker had
+    /// finished writing before the panic could interrupt it.
+    fn lock(shard: &Mutex<Memo>) -> std::sync::MutexGuard<'_, Memo> {
+        shard
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// [`Memo::get`] on the key's shard.
+    pub(crate) fn get(&self, key: &Key, remaining: u32) -> Option<Entry> {
+        Self::lock(self.shard(key)).get(key, remaining)
+    }
+
+    /// [`Memo::insert`] on the key's shard.
+    pub(crate) fn insert(&self, key: &Key, entry: Entry) {
+        Self::lock(self.shard(key)).insert(key, entry);
+    }
+
+    /// Returns the sum over the shards of the most entries each held at
+    /// once: an upper bound on the most entries the memo held at once.
+    pub(crate) fn peak(&self) -> usize {
+        self.shards.iter().map(|s| Self::lock(s).peak()).sum()
+    }
+
+    /// Returns how many lookups found an entry that applied.
+    pub(crate) fn hits(&self) -> u64 {
+        self.shards.iter().map(|s| Self::lock(s).hits()).sum()
+    }
+}
+
+/// The memo an engine consults: its own, or the one a parallel search
+/// shares among its workers.
+#[derive(Debug)]
+pub(crate) enum Table<'a> {
+    /// The engine's own memo.
+    Own(Memo),
+    /// The memo of a parallel search.
+    Shared(&'a Shared),
+}
+
+impl Table<'_> {
+    /// [`Memo::get`].
+    pub(crate) fn get(&mut self, key: &Key, remaining: u32) -> Option<Entry> {
+        match self {
+            Self::Own(memo) => memo.get(key, remaining),
+            Self::Shared(shared) => shared.get(key, remaining),
+        }
+    }
+
+    /// [`Memo::insert`].
+    pub(crate) fn insert(&mut self, key: &Key, entry: Entry) {
+        match self {
+            Self::Own(memo) => memo.insert(key, entry),
+            Self::Shared(shared) => shared.insert(key, entry),
+        }
+    }
+
+    /// [`Memo::peak`].
+    pub(crate) fn peak(&self) -> usize {
+        match self {
+            Self::Own(memo) => memo.peak(),
+            Self::Shared(shared) => shared.peak(),
+        }
+    }
+
+    /// [`Memo::hits`].
+    pub(crate) fn hits(&self) -> u64 {
+        match self {
+            Self::Own(memo) => memo.hits(),
+            Self::Shared(shared) => shared.hits(),
+        }
     }
 }
 

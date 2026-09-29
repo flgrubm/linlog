@@ -16,6 +16,8 @@ pub mod focus;
 pub(crate) mod generate;
 /// The proof-net engine.
 pub mod net;
+#[cfg(feature = "parallel")]
+mod parallel;
 
 use crate::Error;
 use crate::fragment::{Fragment, Mode};
@@ -24,6 +26,27 @@ use crate::occurrences::{Forest, OccId, Reading};
 use crate::proofs::Proof;
 use crate::sequents::Sequent;
 use std::fmt::{Display, Formatter, Result as FmtResult};
+
+/// An engine's stop condition: the caller's closure in a sequential
+/// search, the chain of stop flags of a worker in a parallel one.
+pub(crate) enum Stop<'a> {
+    /// The caller's condition.
+    Closure(&'a mut dyn FnMut() -> bool),
+    /// A worker's flags.
+    #[cfg(feature = "parallel")]
+    Flags(parallel::Flags<'a>),
+}
+
+impl Stop<'_> {
+    /// Polls the condition.
+    pub(crate) fn fired(&mut self) -> bool {
+        match self {
+            Self::Closure(stop) => stop(),
+            #[cfg(feature = "parallel")]
+            Self::Flags(flags) => flags.raised(),
+        }
+    }
+}
 
 /// Decides a sequent under a mode with the engine its fragment calls for,
 /// and returns the outcome: the verdict with a proof if there is one, the
@@ -350,6 +373,12 @@ pub struct Options {
     test_period: Option<u32>,
     /// The most copies of `?` formulas one branch may take.
     copies: u32,
+    /// How many threads the search may use; one runs the sequential
+    /// engines.
+    jobs: usize,
+    /// Whether the workers of a parallel search order the alternatives of
+    /// their choices by seeds of their own rather than by id.
+    portfolio: bool,
 }
 
 impl Default for Options {
@@ -357,8 +386,8 @@ impl Default for Options {
     /// stable sequents, a recursion limit of
     /// [`DEFAULT_RECURSION_LIMIT`](Self::DEFAULT_RECURSION_LIMIT), the
     /// engine and fragment chosen by detection, the net engine's exact test
-    /// at its default cadence, and a copy bound of
-    /// [`DEFAULT_COPIES`](Self::DEFAULT_COPIES).
+    /// at its default cadence, a copy bound of
+    /// [`DEFAULT_COPIES`](Self::DEFAULT_COPIES), and one thread.
     fn default() -> Self {
         Self {
             memo_limit: Self::DEFAULT_MEMO_LIMIT,
@@ -367,6 +396,8 @@ impl Default for Options {
             fragment: None,
             test_period: None,
             copies: Self::DEFAULT_COPIES,
+            jobs: 1,
+            portfolio: false,
         }
     }
 }
@@ -442,6 +473,47 @@ impl Options {
             test_period: period,
             ..self
         }
+    }
+
+    /// Sets how many threads the search may use. One, the default, runs
+    /// the sequential engines, whose proof is a function of the input.
+    /// More than one, with the `parallel` feature, runs the focused engine
+    /// and the net engine on that many threads of a pool of their own,
+    /// which may find a different proof but never a different verdict;
+    /// without the feature, or for the additive path, the search stays
+    /// sequential. Zero counts as one.
+    pub fn jobs(self, jobs: usize) -> Self {
+        Self {
+            jobs: jobs.max(1),
+            ..self
+        }
+    }
+
+    /// Sets whether the workers of a parallel search try the alternatives
+    /// of a choice in orders of their own, one seed per worker, rather
+    /// than in the order by id the sequential engine uses: a portfolio,
+    /// which can find a proof sooner and cannot change a verdict. Without
+    /// the `parallel` feature, or on one thread, it has no effect.
+    pub fn portfolio(self, portfolio: bool) -> Self {
+        Self { portfolio, ..self }
+    }
+
+    /// Returns the stack, in bytes, a thread needs to run the search at
+    /// the recursion limit: the most one level of recursion was measured
+    /// to take, doubled for the derivation built from the proof, and at
+    /// least a main thread's 8 MiB. The parallel search sizes its workers
+    /// by it; a caller that runs the sequential search on a thread of its
+    /// own sizes that thread by it.
+    pub fn stack_size(&self) -> usize {
+        /// The stack one level of recursion may take: twice the most the
+        /// search was measured to take (2 KiB unoptimized, 512 bytes
+        /// optimized).
+        const PER_LEVEL: usize = if cfg!(debug_assertions) { 4096 } else { 1024 };
+        /// A main thread's stack.
+        const MIN: usize = 8 << 20;
+        (self.recursion_limit as usize)
+            .saturating_mul(PER_LEVEL)
+            .max(MIN)
     }
 }
 
@@ -544,6 +616,18 @@ pub struct Statistics {
     pub links: u64,
     /// The exact acyclicity tests the net engine ran.
     pub tests: u64,
+}
+
+impl Statistics {
+    /// Adds another engine's counters to these, the memo's excepted: they
+    /// describe a table, not a run, and a parallel search reads them off
+    /// the one table its workers share.
+    pub(crate) fn add(&mut self, other: &Statistics) {
+        self.nodes += other.nodes;
+        self.splits += other.splits;
+        self.links += other.links;
+        self.tests += other.tests;
+    }
 }
 
 #[cfg(all(test, feature = "parse"))]

@@ -102,6 +102,10 @@ pub enum Error {
     /// only, not a goal deeper in the forest.
     #[error("the net engine decides the whole sequent only, not a goal within it")]
     NetGoal,
+    /// The threads of a parallel search could not be started.
+    #[cfg(feature = "parallel")]
+    #[error("cannot start {0} search threads: {1}")]
+    ThreadPool(usize, String),
     /// A rule does not apply to a goal of an interactive proof as asked.
     #[cfg(feature = "interactive")]
     #[error(transparent)]
