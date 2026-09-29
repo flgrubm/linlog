@@ -31,11 +31,16 @@ fragment a sequent lives in, `Forest::new(&sequent)` for the occurrence
 forest that proof search works on, and `Proof` for a proof term over it:
 `Proof::new(forest, nodes, root)`, `check(mode)` for the independent checker,
 `derivation()` for the standard-calculus view, whose `Display` draws the
-tree. Sequents are one-sided arena DAGs in negation normal form; fragments
-and modes are runtime values, and indices are `u32` newtypes. The invariants
-live in `.claude/rules/core.md`, which loads when a file under `core/` is
-read. `plan/README.md` is the proof-search plan the code follows,
-`plan/reports/` what each step of it did.
+tree; and `prove(&sequent, mode, &options)` (or `prove_until` with a stop
+closure) for proof search, which dispatches on the fragment and returns an
+`Outcome` with a three-valued `Verdict`. Only the focused engine exists
+(`search::focus`, classical MLL, units, MALL, with or without Mix); the other
+rows of the dispatch table are refused with `Error::NoEngine`. Sequents are
+one-sided arena DAGs in negation normal form; fragments and modes are
+runtime values, and indices are `u32` newtypes. The invariants live in
+`.claude/rules/core.md`, which loads when a file under `core/` is read.
+`plan/README.md` is the proof-search plan the code follows, `plan/reports/`
+what each step of it did.
 
 ## Commands
 

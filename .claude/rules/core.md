@@ -211,14 +211,125 @@ in a monospace font), lines are trimmed on the right, and there is no
 trailing newline. The renderings are pinned in tests, so a layout change is
 a test change.
 
+## Proof search: the front door
+
+`search/mod.rs` is what a front end calls: `prove(&sequent, mode,
+&options)` and `prove_until(…, stop)` return `Result<Outcome, Error>`, where
+`Outcome` carries the `Verdict` (`Proved(Box<Proof>)`, `Unprovable` only
+after an exhaustive search, `Unknown(Reason)`), the `Fragment` searched in,
+the `Engine` that ran and the `Statistics`. `Options` has private fields
+and setters (`memo_limit`, `recursion_limit`, `engine`, `fragment`);
+`Reason`, `Statistics`, `Engine` and `Outcome` are `#[non_exhaustive]` so
+later steps add variants and fields without a breaking change.
+
+- The dispatch is plan decision D8. Today every classical input without
+  exponentials goes to `focus`; intuitionistic and affine modes and
+  exponentials are `Error::NoEngine`, an error and not an `Unknown`, until
+  steps 7 and 8 fill the rows. A new engine gets an `Engine` variant, a
+  row in `prove_until` and a line in the CLI's output.
+- `Options::fragment` asserts a fragment: a sequent outside it is
+  `Error::FragmentMismatch`, and the search runs in the asserted fragment,
+  which switches off the prunes that only hold in the smaller one.
+- The crate has no clock (D11): a time limit is a closure the caller gives
+  `prove_until`, polled once per stable sequent; it answers `Unknown
+  (Reason::Stopped)`. The engine recurses on the caller's stack, bounded by
+  `Options::recursion_limit`; a caller that raises the limit runs the
+  search on a thread with a larger stack.
+
+## The focused engine
+
+`search/focus/mod.rs` is the spec's MALL-Seq, one engine for every fragment
+up to MALL with units and Mix as rule switches (`Rules`, from `Fragment`
+and `Mode`). Its functions are the spec's rules: `asynchronous` (the phase
+`⊢ Γ ⇑ L`), `prove` (a stable sequent), `focus` (`⊢ Γ ⇓ F`), `split`
+(the `⊗` rule), `mix`. What it relies on:
+
+- **Stable sequents only.** The asynchronous phase runs to completion (`⅋`
+  opens, `⊥` drops, `⊤` closes with a `Top` node and the pending `⅋`/`⊥`
+  nodes wrapped around it, `&` branches on copies of the state); what
+  reaches `prove` is a set of positive formulas and negative literals, and
+  only those are memoized. `?` is unreachable until step 7 adds the dyadic
+  zone.
+- **Memo validity.** An entry is a fact about an occurrence set:
+  `Proved(NodeId)` into the engine's arena, which a hit reuses as a shared
+  subproof (the arena is append-only, so clearing the memo never dangles),
+  or `Failed`. In fragments without exponentials it holds unconditionally,
+  because cut-free provability depends on the set alone; step 7 must add
+  the copy bound to the entry. When the memo is full it is cleared
+  (`Options::memo_limit`; zero switches it off). Never memoize across
+  forests.
+- **A `0` is fatal only without a `⊤`.** The spec calls a `0` in a stable
+  sequent fatal, but `⊢ 0, ⊤ ⊕ b` is provable through the `⊕`; the
+  immediate failure applies only when no member has a `⊤` below it
+  (`Tally::absorbs`). The other immediate tests: a dual pair succeeds; a
+  literal-only sequent fails without Mix; an unbalanced sequent fails.
+- **Counts** (`focus/counts.rs`): per occurrence a sparse row of intervals
+  per atom (literals `±1`, `⊗`/`⅋` sum, `&`/`⊕` hull, units nothing), an
+  `absorbs` flag (a `⊤` at or below it: the row is meaningless and any set
+  containing the occurrence passes), and a `weight` `t − p − #1 + #⊥`. The
+  interval check is sound in every fragment without exponentials (proof by
+  induction on the rules, with `⊤` covered by the flag and `0` as `(0, 0)`).
+  The hull for `&` is the spec's choice; the intersection would be sound
+  too and stronger, and is a follow-up. The count equation
+  `c = t − p − #1 + #⊥ + 2` (`≥` with Mix, and `>` for a Mix to be worth
+  trying) is only sound without additives, additive units or
+  exponentials, and `Rules::equation` switches it on for exactly those
+  fragments; `⊢ a ⊕ b, ~a` is the counterexample the spec names. A
+  `Tally` keeps a set's sums incrementally, so a split moves one row per
+  flip.
+- **Focus candidates.** Every `⊗` and `⊕` of a stable sequent; `1` only
+  when alone (it needs an empty context); never a literal (a positive
+  literal in focus succeeds only in the dual-pair case). Order: a `⊗` with
+  a forced split first, then `⊕`, then a `⊗` whose split is enumerated;
+  ascending ids within a class. This order is what makes the run
+  deterministic, with the memo, which is only looked up, never iterated.
+- **Forced splits.** A factor that is a positive literal takes exactly its
+  dual from the context, and the first dual occurrence when there are
+  several (they are the same formula, so the residues are equal
+  multisets); a factor `1` takes the empty context; a factor `0` fails the
+  candidate, not the sequent. `⊤`, `⊥` and negative literals force
+  nothing: `⊢ ⊥ ⊗ b, a, ~a, ~b` needs `{a, ~a}` on the `⊥` side.
+- **Free splits** enumerate the submasks of the compacted members in
+  Gray-code order (`submasks`), the empty submask first, two tallies moved
+  per flip, and both sides must pass the counts before either premise is
+  searched. More than 63 members is `Reason::ContextTooWide` for the whole
+  search, never a silent failure; the spec's lazy contexts (step 14) or a
+  branch-and-bound over the members are the ways past it.
+- **Mix** is tried last on a stable sequent, with the first member fixed on
+  the left so each partition comes up once, the trivial partition skipped,
+  and each part decided by `prove`, so the memo shares parts between
+  partitions. Refuting a wide sequent with Mix costs about `3^k` stable
+  sequents for `k` members.
+- **Recursion.** `prove`, `focus` and `asynchronous` count one level each
+  (at most three per occurrence); `Options::recursion_limit` stops the
+  search with `Reason::RecursionLimit`. Measured stack per level: under
+  2 KiB in debug builds, under 512 bytes in release, so the default of
+  2048 fits an 8 MiB main-thread stack.
+- **No allocation per node once warm**: sets, member lists and tallies come
+  from pools on the engine (`take_*`/`give_*`); a leaked buffer on an
+  error path only costs an allocation later. The memo insert clones its
+  key; that is the one allocation per stable sequent.
+- **The atom bias hurts Horn clauses.** The forest makes the rarer literal
+  positive, so clause bodies whose atoms also appear as hypotheses are
+  usually negative and their `⊗` splits are enumerated instead of forced;
+  the 3-Partition refutation in the tests takes about a minute in release
+  mode for that reason. A bias override is step 13 material.
+- **Every proof passes the checker**: `debug_assert!` in `search`, and
+  every test that gets a proof calls `check`. The test-only generator
+  `search/generate.rs` builds random provable sequents (and mutants of
+  them) for every combination of units, additives and Mix; a new engine or
+  rule set extends it rather than writing new positives by hand.
+
 ## Layout
 
 `sequents` (arena, printing), `parse`, `serialize`, `fragment`, `occurrences`
 (forest and sets), `proofs` (terms in `mod.rs`, `check`, `derivation`, the
-renderer `fmt`, the crate-private `multiset`), and the empty `nets`,
-`search`, `export` modules that the plan fills in. `lib.rs` re-exports the
-public types, so users write `linlog::Sequent`, `linlog::Proof`, and so on.
-`hash` is crate-private.
+renderer `fmt`, the crate-private `multiset`), `search` (the front door in
+`mod.rs`, the focused engine in `focus/` with `counts` and `memo`, the
+test-only `generate`), and the empty `nets` and `export` modules that the
+plan fills in. `lib.rs` re-exports the public types, so users write
+`linlog::Sequent`, `linlog::Proof`, `linlog::prove`, and so on. `hash` is
+crate-private.
 
 ## Parsing
 

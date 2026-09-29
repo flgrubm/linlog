@@ -4,7 +4,8 @@
 //! The focused sequent engine: backward search over occurrence bitsets with
 //! a memo of stable sequents, as the `MALL-Seq` specification states it.
 //!
-//! A sequent inside the search is an [`OccSet`] of the forest. The
+//! A sequent inside the search is an [`OccSet`](crate::OccSet) of the
+//! forest. The
 //! *asynchronous phase* decomposes the negative formulas of a sequent
 //! without choice (`⅋` opens, `⊥` drops, `⊤` closes, `&` branches into two
 //! premises with the same context) until a *stable* sequent remains: a set
@@ -19,7 +20,7 @@
 //! the context, or a split that revisits a part, never pays twice. With
 //! Mix, a stable sequent no focus proves is split into two provable parts.
 //!
-//! The counts of [`counts`] prune: a stable sequent or a side of a split
+//! The counts of `counts.rs` prune: a stable sequent or a side of a split
 //! whose intervals exclude zero for some atom is refuted without search,
 //! and in the multiplicative fragments the count equation as well.
 
