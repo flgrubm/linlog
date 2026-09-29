@@ -14,6 +14,14 @@ every item, the verification table, no pushing. Read before you start:
   infrastructure" (counts on the translation `⊢ Γ⊥, A`).
 - `.claude/rules/core.md`, `core/src/**`.
 
+## What steps 3 and 7 left you
+
+The dispatch in `search::prove_until` refuses intuitionistic mode with
+`Error::NoEngine`; `Engine` is `#[non_exhaustive]` and gains the two-sided
+engine and `Additive`. The focused engine's report
+(`plan/reports/03-focused-engine.md`) describes the phases, the memo, the
+counts and the pools the two-sided engine should share rather than copy.
+
 ## Goal
 
 `Mode::intuitionistic` works end to end: the polarized-shape test of D1

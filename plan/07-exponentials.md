@@ -15,6 +15,20 @@ every item, the verification table, no pushing. Read before you start:
   "Memoization contract".
 - `.claude/rules/core.md`, `core/src/search/focus/**`, `core/src/proofs/**`.
 
+## What step 3 left you
+
+`plan/reports/03-focused-engine.md`, "The engine, in the spec's terms" and
+"For step 7": `Rules` is where the exponential switches go, `asynchronous`
+currently hits `unreachable!` on `Kind::Quest`, `decide` must see `!` as a
+focus candidate, `memo::Entry` and `Memo::get` get the bound comparison and
+the key both zones, and `Counts::new` must give `!A`/`?A` a row (the spec:
+skip atoms below a `?`). The dispatch refuses exponentials and affine mode
+with `Error::NoEngine`; replace those refusals. The generator
+(`search/generate.rs`, test-only) is the differential-testing tool: extend
+its `Rules` with exponentials. Keep the engine's shape: the functions are
+the spec's rules, the pools keep the hot path allocation-free, and the
+stop closure is polled per stable sequent.
+
 ## What step 2 fixed about the terms
 
 Read "How an engine constructs a proof" and "The dyadic-to-standard

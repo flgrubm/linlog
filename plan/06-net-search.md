@@ -14,6 +14,16 @@ every item, the verification table, no pushing. Read before you start:
   paragraph is for step 12: keep all search state per worker, no globals.
 - `.claude/rules/core.md`, `core/src/nets/**`, `core/src/search/**`.
 
+## What step 3 left you
+
+`search::prove_until` holds the dispatch (`plan/reports/03-focused-engine.md`,
+"What the dispatch does"): add `Engine::Net` (the enum is
+`#[non_exhaustive]`), route unit-free MLL there by default, honour
+`Options::engine`, and poll the stop closure at the same cadence the
+focused engine does (once per node of search). `Statistics` is
+`#[non_exhaustive]` too; add the counters a net search wants (links tried,
+exact tests run) rather than reusing `splits`.
+
 ## Goal
 
 `search::net`: axiom-linking enumeration over a step 5 proof structure with

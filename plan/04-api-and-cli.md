@@ -11,6 +11,22 @@ Read before you start:
   `core/src/lib.rs` and the `search` and `proofs` modules' public items.
 - `.claude/rules/core.md`.
 
+## What step 3 left you
+
+`plan/reports/03-focused-engine.md`, "The public API" and "For step 4":
+`prove` and `prove_until(&sequent, mode, &options, stop)` where `stop` is
+polled once per stable sequent (the deadline closure and a Ctrl-C flag go
+there; `core` has no clock); `Options` with private fields and setters
+(`memo_limit`, `recursion_limit`, `engine`, `fragment`); `Outcome { verdict,
+fragment, engine, statistics }`; `Verdict::{Proved(Box<Proof>), Unprovable,
+Unknown(Reason)}`; `Reason` and `Engine` with `Display`;
+`Error::{NoEngine, FragmentMismatch}` as the user-facing refusals. The
+engine recurses on the calling thread: one level costs under 2 KiB in
+debug and under 512 bytes in release, and the default recursion limit of
+2048 fits an 8 MiB stack, so spawn the search thread with a stack sized
+from `--recursion-limit` when it exceeds the default, and run the
+derivation builder on the same thread.
+
 ## Goal
 
 A CLI and a library surface that a person understands at first read:

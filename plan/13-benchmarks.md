@@ -41,11 +41,21 @@ change shows its effect.
    (license permitting; LLTP's license must allow redistribution, else
    fetch on demand and document), the generated families at a few sizes,
    and the sequents from the earlier steps' slow tests.
-5. **Tracking**: a `bench/RESULTS.md` (or CSV) with the current numbers per
+5. **The known slow cases as benchmark families.** Step 3's report
+   ("Performance observations", "Open questions and follow-ups") names
+   them: refuting a wide sequent under Mix costs about `3^k`; refuting an
+   unsolvable 3-Partition instance takes 55 s for bins of size 4 (3.9
+   billion splits) because the atom bias makes the Horn clauses' bodies
+   negative and every `⊗` split is enumerated. Make both families part of
+   the harness at several sizes so that the performance pass after this
+   step (branch-and-bound splitting instead of Gray-code enumeration, a
+   per-problem atom bias, the tighter counts the report lists, memo keys in
+   an arena) has numbers to beat. Measure, do not fix here.
+6. **Tracking**: a `bench/RESULTS.md` (or CSV) with the current numbers per
    family and engine, and the command that regenerates it; not a CI job
    (timings on shared runners are noise), but a `nix flake check` entry
    that runs the harness on a tiny set to keep it building.
-6. **Documentation**: README (how to run the benchmarks), CLAUDE.md
+7. **Documentation**: README (how to run the benchmarks), CLAUDE.md
    (commands, the bench crate), `.claude/rules/core.md` if formats were
    added.
 

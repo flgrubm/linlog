@@ -29,7 +29,8 @@ amended (see "Review protocol"). `notes/` holds research the prompts rely on.
 | 11 | Rocq certificates | `11-certificates.md` | Fable 5.1 | high | 9 |
 | 12 | Parallel search | `12-parallel.md` | Fable 5.1 | xhigh | 8 |
 | 13 | Benchmarks, LLTP input, hard families | `13-benchmarks.md` | Opus 5.5 | high | 12 |
-| 14 | Later: MELL nets with boxes, essential nets, inverse method, Petri nets, Lambek, MALL nets | `14-later.md` | – | – | 13 |
+| 13b | Performance pass on the focused engine, driven by 13's numbers | written after 13's review | Fable 5.1 | xhigh | 13 |
+| 14 | Later: MELL nets with boxes, essential nets, inverse method, Petri nets, Lambek, MALL nets | `14-later.md` | – | – | 13b |
 
 Steps 5–6 and 7 are independent of each other; 9, 10 and 12 are independent
 of each other. Everything else is in order.
@@ -284,3 +285,20 @@ a package needs coordinates (it does not for ebproof and curryst trees).
   and the `check` command's mode (4), affine `Weaken` placement and the
   dyadic term shapes (7), axiom links from `Node::Ax` (5). Nullary Mix and
   a canonical node order stay open until something needs them.
+- 2026-09-29: step 3 reviewed and accepted. Seven commits, "Add interval
+  counts per occurrence" to "Document the focused engine"; all checks pass
+  including `nix flake check`. The engine is the spec's MALL-Seq with
+  units and Mix as switches, a memo of stable sequents (cleared when
+  full), a counted recursion depth with `Reason::RecursionLimit`,
+  `Reason::ContextTooWide` above 63 members, and pools that keep the hot
+  path allocation-free; `prove`/`prove_until`, `Options`, `Outcome`,
+  `Verdict`, `Reason`, `Statistics`, `Engine` are the front door. A
+  fresh-context reviewer compared it with an independent unfocused prover
+  on 1.43 million sequents with no disagreement. Two corrections to the
+  spec are recorded in the report and in `.claude/rules/core.md`: a `0` in
+  a stable sequent is fatal only when no member has a `⊤` below it, and
+  the literal-only failure holds only without Mix; also `⊥` and `⊤` factors
+  do not force a split. Performance follow-ups (branch-and-bound splits,
+  atom bias, tighter counts, memo key arena, the `3^k` cost of Mix) become
+  step 13b, driven by step 13's numbers. Prompts 4, 6, 7, 8, 12 and 13
+  amended.

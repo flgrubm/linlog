@@ -24,6 +24,13 @@ swap so `bound_remaining` only grows), per-worker scratch allocated once.
 `--jobs N` and `--deterministic` in the CLI; the sequential engines stay
 the default under `--deterministic` and the reference in tests.
 
+## What step 3 left you
+
+`plan/reports/03-focused-engine.md`, "For step 12": `Memo` is one type
+with `get`/`insert` that a sharded map replaces; the stop closure polled per
+stable sequent is where the stop flag goes; `Engine` holds all state and its
+pools, so one engine per worker; there is no global.
+
 ## What to build
 
 1. **Runtime**: one rayon pool sized by `--jobs`; the stop flag; the sharded
