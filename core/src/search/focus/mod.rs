@@ -1936,6 +1936,49 @@ mod tests {
         );
     }
 
+    /// Problems in the style of the ILLTP library, two-sided: the counter
+    /// program as Petri-net reachability (`a^8 ⊢ d` through three doubling
+    /// clauses), its unreachable marking, and a chain of implications with
+    /// additive choice. Run in release mode and read the timings.
+    #[test]
+    #[ignore = "slow; run with --release -- --ignored --nocapture"]
+    fn illtp_style_slow() {
+        let i = Mode::INTUITIONISTIC;
+        let counter = |tokens: usize, goal: &str| {
+            format!(
+                "!(a * a -o b), !(b * b -o c), !(c * c -o d), {} |- {goal}",
+                vec!["a"; tokens].join(", ")
+            )
+        };
+        let chain = (0..12)
+            .map(|k| format!("!(p{k} -o p{} & p{})", k + 1, k + 2))
+            .collect::<Vec<_>>()
+            .join(", ");
+        for (input, options) in [
+            (counter(8, "d"), Options::default()),
+            (counter(8, "d * a"), Options::default()),
+            (format!("{chain}, p0 |- p13"), Options::default().copies(14)),
+            (
+                format!("{chain}, p0 |- p13 * p1"),
+                Options::default().copies(3),
+            ),
+        ] {
+            let start = std::time::Instant::now();
+            let (verdict, statistics) = run(&input, i, &options);
+            let word = match &verdict {
+                Verdict::Proved(_) => "proved",
+                Verdict::Unprovable => "unprovable",
+                Verdict::Unknown(_) => "unknown",
+            };
+            println!(
+                "{input}: {word} in {:.2?}, {} stable sequents, {} memo hits",
+                start.elapsed(),
+                statistics.nodes,
+                statistics.memo_hits
+            );
+        }
+    }
+
     /// The same on a larger sample of larger proofs, without exponentials:
     /// with them, a few sequents of a sample this size take minutes at the
     /// bound their derelictions give. Run it in release mode and read the
