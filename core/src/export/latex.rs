@@ -10,7 +10,8 @@
 //! A fragment is a sequent in `$…$` or a `prooftree` environment, for a
 //! document that loads `amssymb`, `cmll` and `ebproof`; a standalone
 //! document is of the `standalone` class, which crops the page to the
-//! content, and compiles with pdfLaTeX. The turnstiles of two-sided
+//! content, sets math in AMS Euler with `eulervm`, and compiles with
+//! pdfLaTeX; a fragment takes the fonts of the document it goes into. The turnstiles of two-sided
 //! sequents are aligned in the tree with ebproof's `&`; one-sided
 //! sequents are centred. An open goal of a proof in progress is its
 //! sequent under vertical dots, with no inference line.
@@ -73,9 +74,11 @@ const NOTATION: Notation = Notation {
 };
 
 /// The preamble of a standalone document: `amssymb` for `\multimap`,
-/// `cmll` for `\parr`, `\with`, `\oc` and `\wn`.
+/// `eulervm` for math in AMS Euler, `cmll` for `\parr`, `\with`, `\oc`
+/// and `\wn`.
 const PREAMBLE: &str = r"\documentclass[border=5pt]{standalone}
 \usepackage{amssymb}
+\usepackage{eulervm}
 \usepackage{cmll}
 ";
 

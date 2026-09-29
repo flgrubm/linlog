@@ -1,5 +1,6 @@
 #import "@preview/curryst:0.6.0": prooftree, rule
 #set page(width: auto, height: auto, margin: 5pt)
+#show math.equation: set text(font: "Euler Math")
 
 #prooftree(
   rule(

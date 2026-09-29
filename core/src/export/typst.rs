@@ -12,7 +12,9 @@
 //! punctuation space follows it, and `1` bold. A fragment is a sequent in
 //! `$…$` or a `#prooftree(…)` call, for a document that imports `rule`
 //! and `prooftree` from curryst [`CURRYST`]; a standalone document imports
-//! them itself and sizes the page to its content. curryst cannot align
+//! them itself, sizes the page to its content and sets math in the Euler
+//! Math font, which Typst must find (`--font-path`); a fragment takes the
+//! fonts of the document it goes into. curryst cannot align
 //! turnstiles, so every sequent is centred. An open goal of a proof in
 //! progress is its sequent under vertical dots, with no inference line.
 //! curryst nests its layout at every level of the tree, so Typst refuses a
@@ -82,8 +84,11 @@ const NOTATION: Notation = Notation {
     atom,
 };
 
-/// The page setup of a standalone document: as large as its content.
-const PAGE: &str = "#set page(width: auto, height: auto, margin: 5pt)\n";
+/// The page setup of a standalone document: as large as its content,
+/// with math in the Euler Math font.
+const PAGE: &str = "#set page(width: auto, height: auto, margin: 5pt)
+#show math.equation: set text(font: \"Euler Math\")
+";
 
 /// Writes an atom's name in math mode.
 fn atom(out: &mut String, name: &str) {
