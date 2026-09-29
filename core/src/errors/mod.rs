@@ -8,6 +8,7 @@ mod parse;
 #[cfg(feature = "parse")]
 pub use parse::ParseError;
 
+use crate::fragment::{Fragment, Mode};
 use crate::proofs::CheckError;
 use thiserror::Error;
 
@@ -51,4 +52,21 @@ pub enum Error {
     /// A proof does not prove its sequent.
     #[error("Invalid proof: {0}")]
     InvalidProof(#[from] CheckError),
+    /// No engine handles the fragment in the mode yet.
+    #[error("no engine for {fragment} in {mode} mode yet")]
+    NoEngine {
+        /// The fragment the search was asked for.
+        fragment: Fragment,
+        /// The mode the search was asked for.
+        mode: Mode,
+    },
+    /// The sequent uses connectives outside the fragment the search options
+    /// assert.
+    #[error("the sequent lies in {detected}, outside the asserted fragment {asserted}")]
+    FragmentMismatch {
+        /// The fragment the options assert.
+        asserted: Fragment,
+        /// The fragment the sequent was detected to lie in.
+        detected: Fragment,
+    },
 }

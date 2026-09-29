@@ -7,7 +7,9 @@
 //! sequent, the numbering of its subformula occurrences that proof search,
 //! proof checking and proof nets are built on; and proofs as terms over
 //! those occurrences, with the checker that validates them, the derivation
-//! view that renders them, and their serialization.
+//! view that renders them, and their serialization; and proof search, which
+//! decides a sequent with the engine its fragment calls for and returns a
+//! checked proof.
 
 #![allow(dead_code)]
 #![allow(unused_variables)]
@@ -44,4 +46,5 @@ pub use errors::Error;
 pub use fragment::{Fragment, Mode};
 pub use occurrences::{Forest, OccId, OccSet, Polarity, Sign};
 pub use proofs::{CheckError, Derivation, InfId, Inference, Node, NodeId, Proof, Rule, Side};
+pub use search::{Engine, Options, Outcome, Reason, Statistics, Verdict, prove, prove_until};
 pub use sequents::{Atom, Formula, Kind, Sequent, Term, TermId};
