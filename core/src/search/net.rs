@@ -570,6 +570,7 @@ mod tests {
             &forest,
             s.fragment(),
             mode,
+            None,
             &Options::default(),
             &mut || false,
         );

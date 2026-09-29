@@ -10,7 +10,9 @@ pub use parse::ParseError;
 
 use crate::fragment::{Fragment, Mode};
 use crate::nets::NetError;
+use crate::occurrences::ShapeError;
 use crate::proofs::CheckError;
+use crate::search::Engine;
 use thiserror::Error;
 
 /// Everything that can go wrong in this crate.
@@ -62,6 +64,21 @@ pub enum Error {
     /// Proof nets exist in classical mode only, and the mode is affine.
     #[error("proof nets exist in classical mode only, with or without Mix, not in {0} mode")]
     NetMode(Mode),
+    /// The mode is intuitionistic and the sequent has no intuitionistic
+    /// reading. The message names occurrences by id; [`ShapeError::describe`]
+    /// names them by formula.
+    #[error("not an intuitionistic sequent: {0}")]
+    NotIntuitionistic(ShapeError),
+    /// The engine forced by the options does not search in the mode: the
+    /// two-sided engine is for intuitionistic mode, the focus engine for
+    /// classical mode.
+    #[error("the {engine} engine does not search in {mode} mode")]
+    EngineMode {
+        /// The engine the options force.
+        engine: Engine,
+        /// The mode the search was asked for.
+        mode: Mode,
+    },
     /// No engine handles the fragment in the mode yet.
     #[error("no engine for {fragment} in {mode} mode yet")]
     NoEngine {

@@ -3,8 +3,9 @@
 
 //! Proof search: the front door `prove` with its options and outcome, the
 //! dispatch on fragment and mode, and one submodule per engine: proof-net
-//! search for unit-free MLL, the focused sequent engine for everything else
-//! up to MALL, and later the additive fast path.
+//! search for unit-free MLL, the focused sequent engine for everything
+//! else, one-sided in classical mode and two-sided in intuitionistic mode,
+//! and later the additive fast path.
 
 /// The focused sequent engine.
 pub mod focus;
@@ -17,7 +18,7 @@ pub mod net;
 use crate::Error;
 use crate::fragment::{Fragment, Mode};
 use crate::nets::ProofStructure;
-use crate::occurrences::Forest;
+use crate::occurrences::{Forest, Reading};
 use crate::proofs::Proof;
 use crate::sequents::Sequent;
 use std::fmt::{Display, Formatter, Result as FmtResult};
@@ -29,12 +30,15 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 ///
 /// # Errors
 ///
-/// No engine handles intuitionistic mode yet ([`Error::NoEngine`]); a
-/// sequent outside the fragment the options assert is refused
-/// ([`Error::FragmentMismatch`]); the net engine is refused outside
-/// unit-free MLL ([`Error::NetFragment`]) and in affine mode
-/// ([`Error::NetMode`]); and a sequent with more subformula occurrences
-/// than a forest can index is refused ([`Error::TooManyOccurrences`]).
+/// A sequent outside the fragment the options assert is refused
+/// ([`Error::FragmentMismatch`]); in intuitionistic mode a sequent with no
+/// intuitionistic reading ([`Error::NotIntuitionistic`]) and Mix
+/// ([`Error::NoEngine`]); the net engine outside unit-free MLL
+/// ([`Error::NetFragment`]) and in affine mode ([`Error::NetMode`]); the
+/// focus engine in intuitionistic mode and the two-sided engine in
+/// classical mode ([`Error::EngineMode`]); and a sequent with more
+/// subformula occurrences than a forest can index
+/// ([`Error::TooManyOccurrences`]).
 ///
 /// # Examples
 ///
@@ -106,30 +110,48 @@ pub fn prove_until(
         None => detected,
     };
     // The dispatch: unit-free MLL with mostly distinct atoms goes to the net
-    // engine in classical mode, every other classical fragment and every
-    // fragment in affine mode to the focused engine; intuitionistic mode
-    // has no engine yet.
-    if mode.intuitionistic {
+    // engine (in intuitionistic mode by the embedding of IMLL into MLL),
+    // every other fragment, and every fragment in affine mode, to the
+    // focused engine, one-sided or two-sided by the mode. Mix has no
+    // intuitionistic form.
+    if mode.intuitionistic && mode.mix {
         return Err(Error::NoEngine { fragment, mode });
     }
-    let is_mll = Fragment::MLL.contains(fragment);
     let forest = Forest::new(sequent)?;
-    let engine = options
-        .engine
-        .unwrap_or(if is_mll && !mode.affine && prefers_net(&forest) {
+    let reading = if mode.intuitionistic {
+        Some(Reading::new(&forest).map_err(Error::NotIntuitionistic)?)
+    } else {
+        None
+    };
+    let is_mll = Fragment::MLL.contains(fragment);
+    let engine = options.engine.unwrap_or({
+        if is_mll && !mode.affine && prefers_net(&forest) {
             Engine::Net
+        } else if mode.intuitionistic {
+            Engine::TwoSided
         } else {
             Engine::Focus
-        });
-    if engine == Engine::Net && !is_mll {
-        return Err(Error::NetFragment(fragment));
-    }
-    if engine == Engine::Net && mode.affine {
-        return Err(Error::NetMode(mode));
+        }
+    });
+    match engine {
+        Engine::Net if !is_mll => return Err(Error::NetFragment(fragment)),
+        Engine::Net if mode.affine => return Err(Error::NetMode(mode)),
+        Engine::Focus if mode.intuitionistic => return Err(Error::EngineMode { engine, mode }),
+        Engine::TwoSided if !mode.intuitionistic => {
+            return Err(Error::EngineMode { engine, mode });
+        }
+        _ => {}
     }
     let (verdict, statistics, net) = match engine {
-        Engine::Focus => {
-            let (verdict, statistics) = focus::search(&forest, fragment, mode, options, &mut stop);
+        Engine::Focus | Engine::TwoSided => {
+            let (verdict, statistics) = focus::search(
+                &forest,
+                fragment,
+                mode,
+                reading.as_ref(),
+                options,
+                &mut stop,
+            );
             (verdict, statistics, None)
         }
         Engine::Net => net::search(&forest, mode, options, &mut stop),
@@ -171,18 +193,23 @@ fn prefers_net(forest: &Forest) -> bool {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Engine {
-    /// The focused sequent engine of [`focus`].
+    /// The focused sequent engine of [`focus`], one-sided: classical mode.
     Focus,
-    /// The proof-net engine of [`net`], for unit-free MLL only.
+    /// The proof-net engine of [`net`], for unit-free MLL only; in
+    /// intuitionistic mode it decides IMLL through the embedding into MLL.
     Net,
+    /// The focused sequent engine of [`focus`] two-sided, keeping one goal
+    /// on every branch: intuitionistic mode.
+    TwoSided,
 }
 
 impl Display for Engine {
-    /// Writes the engine's name: `focus` or `net`.
+    /// Writes the engine's name: `focus`, `net` or `two-sided`.
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Engine::Focus => f.write_str("focus"),
             Engine::Net => f.write_str("net"),
+            Engine::TwoSided => f.write_str("two-sided"),
         }
     }
 }
@@ -516,22 +543,10 @@ mod tests {
         );
     }
 
-    /// Intuitionistic mode, which no engine handles yet, is refused, not
-    /// searched; affine mode and the exponentials go to the focused engine,
-    /// and the net engine is refused in affine mode.
+    /// Affine mode and the exponentials go to the focused engine, and the
+    /// net engine is refused in affine mode.
     #[test]
     fn dispatch_by_mode() {
-        let error = prove(
-            &sequent("a |- a"),
-            Mode::INTUITIONISTIC,
-            &Options::default(),
-        )
-        .unwrap_err();
-        assert!(matches!(error, Error::NoEngine { .. }));
-        assert_eq!(
-            error.to_string(),
-            "no engine for MLL in intuitionistic mode yet"
-        );
         for (input, mode, fragment) in [
             ("a, b |- a", Mode::CLASSICAL.affine(), Fragment::EMPTY),
             ("!a |- a", Mode::CLASSICAL, Fragment::EXPONENTIALS),
@@ -558,6 +573,63 @@ mod tests {
             error.to_string(),
             "proof nets exist in classical mode only, with or without Mix, not in classical affine mode"
         );
+    }
+
+    /// Intuitionistic mode: IMLL without units goes to the net engine by
+    /// the embedding, everything else to the two-sided engine; a sequent
+    /// with no intuitionistic reading, Mix, and an engine forced for the
+    /// other mode are errors.
+    #[test]
+    fn dispatch_intuitionistic() {
+        let i = Mode::INTUITIONISTIC;
+        for (input, fragment, engine) in [
+            ("a, a -o b |- b", Fragment::MLL, Engine::Net),
+            ("a * a * a |- a * a * a", Fragment::MLL, Engine::TwoSided),
+            ("1 |- 1", Fragment::MULTIPLICATIVE_UNITS, Engine::TwoSided),
+            ("a & b |- a", Fragment::ADDITIVES, Engine::TwoSided),
+            (
+                "!a |- a * a",
+                Fragment::MLL | Fragment::EXPONENTIALS,
+                Engine::TwoSided,
+            ),
+        ] {
+            let outcome = prove(&sequent(input), i, &Options::default()).unwrap();
+            assert_eq!(outcome.fragment, fragment, "{input:?}");
+            assert_eq!(outcome.engine, engine, "{input:?}");
+            let proof = outcome
+                .verdict
+                .proof()
+                .unwrap_or_else(|| panic!("{input:?}"));
+            assert_eq!(proof.check(i), Ok(()), "{input:?}");
+        }
+        let outcome = prove(&sequent("a, b |- a"), i.affine(), &Options::default()).unwrap();
+        assert_eq!(outcome.engine, Engine::TwoSided);
+        assert!(outcome.verdict.proof().is_some());
+
+        let error = prove(&sequent("|- a par b"), i, &Options::default()).unwrap_err();
+        assert!(matches!(error, Error::NotIntuitionistic(_)));
+        assert_eq!(
+            error.to_string(),
+            "not an intuitionistic sequent: subformula 0 is neither an intuitionistic formula nor \
+             the negation of one (⅋ only as A ⊸ B, that is ~A ⅋ B, and ? only under a negation)"
+        );
+        let error = prove(&sequent("a |- a"), i.with_mix(), &Options::default()).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "no engine for MLL in intuitionistic with Mix mode yet"
+        );
+        let focus = Options::default().engine(Some(Engine::Focus));
+        let error = prove(&sequent("a |- a"), i, &focus).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "the focus engine does not search in intuitionistic mode"
+        );
+        let two_sided = Options::default().engine(Some(Engine::TwoSided));
+        let error = prove(&sequent("a |- a"), Mode::CLASSICAL, &two_sided).unwrap_err();
+        assert!(matches!(error, Error::EngineMode { .. }));
+        let outcome = prove(&sequent("a, a -o b |- b"), i, &two_sided).unwrap();
+        assert_eq!(outcome.engine, Engine::TwoSided);
+        assert!(outcome.verdict.proof().is_some());
     }
 
     /// The stop condition ends the search with `Unknown`.

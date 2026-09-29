@@ -29,6 +29,14 @@
 //!
 //! The copies are bounded per branch and the bound deepens iteratively:
 //! `Unprovable` is answered only after a level that never hit its bound.
+//!
+//! The same engine searches intuitionistic linear logic two-sided, given
+//! the sequent's intuitionistic reading: every rule of the two-sided
+//! focused calculus is a rule of this one on the one-sided sequent, and
+//! the one-succedent condition holds on every branch by itself except at
+//! the split of a hypothesis `A ⊸ B` (a `⊗` in input position), where the
+//! goal must stay on the consequent's side; that is the one place the
+//! reading is consulted.
 //! The counts of `counts.rs` prune: a stable sequent or a side of a split
 //! whose intervals exclude zero for some atom is refuted without search,
 //! and in the multiplicative fragments the count equation as well.
@@ -45,7 +53,7 @@ use self::counts::{Counts, Tally};
 use self::memo::{Entry, Failure, Key, Memo};
 use super::{Options, Reason, Statistics, Verdict};
 use crate::fragment::{Fragment, Mode};
-use crate::occurrences::{Forest, OccId, OccSet, Polarity, submasks};
+use crate::occurrences::{Forest, OccId, OccSet, Polarity, Position, Reading, submasks};
 use crate::proofs::{Node, NodeId, Proof, Side};
 use crate::sequents::Kind;
 
@@ -57,17 +65,26 @@ const MAX_SPLIT: usize = 63;
 const NO_DEPENDENCY: u32 = u32::MAX;
 
 /// Runs the focused engine on the forest of a sequent of `fragment` under
-/// `mode`, polling `stop` at every stable sequent, and returns the verdict
-/// with the statistics of the run.
+/// `mode`, two-sided when the sequent's intuitionistic reading is given,
+/// polling `stop` at every stable sequent, and returns the verdict with the
+/// statistics of the run.
 pub(crate) fn search(
     forest: &Forest,
     fragment: Fragment,
     mode: Mode,
+    reading: Option<&Reading>,
     options: &Options,
     stop: &mut dyn FnMut() -> bool,
 ) -> (Verdict, Statistics) {
-    let (result, nodes, statistics) =
-        search_goal(forest, forest.roots(), fragment, mode, options, stop);
+    let (result, nodes, statistics) = search_goal(
+        forest,
+        forest.roots(),
+        fragment,
+        mode,
+        reading,
+        options,
+        stop,
+    );
     let verdict = match result {
         Ok(Some(root)) => {
             let proof = Proof::new(forest.clone(), nodes, root)
@@ -84,18 +101,21 @@ pub(crate) fn search(
 /// Runs the focused engine from a goal: a multiset of occurrences of the
 /// forest, the sequent's roots for a search of the sequent itself, or any
 /// other with an empty unrestricted zone, as an interactive prover hands
-/// over an open goal. Returns the node proving the goal (`None` when it is
-/// unprovable, or the reason the search gave up), the arena the node lives
-/// in, and the statistics.
+/// over an open goal (with exactly one occurrence in output position when
+/// a reading is given). Returns the node proving the goal (`None` when it
+/// is unprovable, or the reason the search gave up), the arena the node
+/// lives in, and the statistics.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn search_goal(
     forest: &Forest,
     goal: &[OccId],
     fragment: Fragment,
     mode: Mode,
+    reading: Option<&Reading>,
     options: &Options,
     stop: &mut dyn FnMut() -> bool,
 ) -> (Search, Vec<Node>, Statistics) {
-    let mut engine = Engine::new(forest, fragment, mode, options, stop);
+    let mut engine = Engine::new(forest, fragment, mode, reading, options, stop);
     let result = engine.run(goal);
     let statistics = engine.statistics();
     (result, engine.nodes, statistics)
@@ -132,6 +152,8 @@ pub(crate) type Search = Result<Option<NodeId>, Reason>;
 struct Engine<'a> {
     /// The problem.
     forest: &'a Forest,
+    /// Its intuitionistic reading, for a two-sided search.
+    reading: Option<&'a Reading<'a>>,
     /// Its count invariants.
     counts: Counts,
     /// The rules in force.
@@ -182,6 +204,7 @@ impl<'a> Engine<'a> {
         forest: &'a Forest,
         fragment: Fragment,
         mode: Mode,
+        reading: Option<&'a Reading<'a>>,
         options: &Options,
         stop: &'a mut dyn FnMut() -> bool,
     ) -> Self {
@@ -200,6 +223,7 @@ impl<'a> Engine<'a> {
         };
         Self {
             forest,
+            reading,
             counts,
             rules,
             memo: Memo::new(options.memo_limit),
@@ -769,6 +793,10 @@ impl<'a> Engine<'a> {
             gamma.is_empty() || self.rules.affine,
             "weakening needs affine mode"
         );
+        debug_assert!(
+            self.reading.is_none_or(|r| r.outputs(gamma.iter()) == 0),
+            "a leaf is the goal, so only hypotheses are left over"
+        );
         for o in gamma.iter() {
             node = self.push(Node::Weaken(o, node));
         }
@@ -852,17 +880,36 @@ impl<'a> Engine<'a> {
 
         let mut members = self.take_list();
         members.extend(gamma.iter());
-        if members.len() > MAX_SPLIT {
-            return Err(Reason::ContextTooWide(members.len()));
-        }
         let mut left = self.take_context();
         let mut right = self.take_context();
         right.clone_from(gamma);
+        // Two-sided, on a hypothesis `A ⊸ B`: the goal stays with `B`, so it
+        // is fixed on the consequent's side and left out of the enumeration.
+        let mut fixed_left = None;
+        if let Some(reading) = self.reading
+            && let Some((_, consequent)) = reading.implication(f)
+            && let Some(at) = members
+                .iter()
+                .position(|&m| reading.position(m) == Position::Output)
+        {
+            let goal = members.remove(at);
+            if consequent == a {
+                right.remove(goal);
+                left.insert(goal);
+                fixed_left = Some(goal);
+            }
+        }
+        if members.len() > MAX_SPLIT {
+            return Err(Reason::ContextTooWide(members.len()));
+        }
         let mut left_tally = self.take_tally();
         left_tally.add(&self.counts, a);
+        if let Some(goal) = fixed_left {
+            left_tally.add(&self.counts, goal);
+        }
         let mut right_tally = self.take_tally();
         right_tally.add(&self.counts, b);
-        for &m in &members {
+        for m in right.iter() {
             right_tally.add(&self.counts, m);
         }
 
@@ -1132,7 +1179,17 @@ mod tests {
     fn run(input: &str, mode: Mode, options: &Options) -> (Verdict, Statistics) {
         let s: Sequent = input.parse().unwrap_or_else(|e| panic!("{input:?}: {e}"));
         let forest = Forest::new(&s).unwrap();
-        let (verdict, statistics) = search(&forest, s.fragment(), mode, options, &mut || false);
+        let reading = mode.intuitionistic.then(|| {
+            Reading::new(&forest).unwrap_or_else(|e| panic!("{input:?}: {}", e.describe(&forest)))
+        });
+        let (verdict, statistics) = search(
+            &forest,
+            s.fragment(),
+            mode,
+            reading.as_ref(),
+            options,
+            &mut || false,
+        );
         if let Verdict::Proved(proof) = &verdict {
             assert_eq!(proof.sequent(), &s);
             proof
@@ -1291,6 +1348,7 @@ mod tests {
             &forest,
             s.fragment(),
             Mode::CLASSICAL,
+            None,
             &Options::default(),
             &mut || {
                 calls += 1;
@@ -1323,6 +1381,92 @@ mod tests {
             verdict,
             Verdict::Unknown(Reason::ContextTooWide(126))
         ));
+    }
+
+    /// Intuitionistic mode: the textbook sequents of ILL, the pitfalls of
+    /// the spec (`0` on the left proves anything, `⊤` on the left is inert,
+    /// promotion needs an empty linear context) and the sequent classical
+    /// linear logic proves but intuitionistic linear logic does not.
+    #[test]
+    fn intuitionistic() {
+        let i = Mode::INTUITIONISTIC;
+        for (input, expected) in [
+            ("a |- a", true),
+            ("|- a -o a", true),
+            ("a, a -o b |- b", true),
+            ("a -o b, b -o c |- a -o c", true),
+            ("a -o b |- b -o a", false),
+            ("a * b |- b * a", true),
+            ("a * b |- a", false),
+            ("a |- a * a", false),
+            ("(a * b) -o c |- a -o b -o c", true),
+            ("a -o b -o c |- (a * b) -o c", true),
+            ("a & b |- a", true),
+            ("a & b |- a * b", false),
+            ("a * b |- a & b", false),
+            ("a |- a + b", true),
+            ("a + b |- a", false),
+            ("a + b |- b + a", true),
+            ("a & (b + c) |- (a & b) + (a & c)", false),
+            ("a * (b + c) |- (a * b) + (a * c)", true),
+            ("(a -o b) -o a |- a", false),
+            ("|- ((a -o b) -o a) -o a", false),
+            ("(a -o 0) -o 0 |- a", false),
+            ("|- 1", true),
+            ("1 |- 1", true),
+            ("a |- 1", false),
+            ("1, a |- a", true),
+            ("|- top", true),
+            ("a |- top", true),
+            ("a |- 0", false),
+            // `0` on the left proves anything, `⊤` on the left is inert.
+            ("0 |- a", true),
+            ("0, b |- a", true),
+            ("a -o 0, a |- b", true),
+            ("a -o 0 |- a -o b", true),
+            ("top |- a", false),
+            ("top |- top", true),
+            ("a, top |- a", false),
+            ("top, 0 |- a", true),
+            ("a -o top, a |- b", false),
+            // Ambiguous roots read with the last as the goal: ⊤ ⊢ ⊤.
+            ("|- 0, top", true),
+            // Promotion needs an empty linear context.
+            ("!a |- !a", true),
+            ("a |- !a", false),
+            ("!a, b |- !a", false),
+            ("!a, !b |- !a", true),
+            ("!a |- a * a", true),
+            ("!a, !(a -o b) |- !b", true),
+            ("!(a & b) |- !a * !b", true),
+            ("!a * !b |- !(a & b)", true),
+            ("!a, !(a -o b & c) |- b * c", true),
+            ("!(a -o top), a |- b", false),
+            ("!a, !(a -o 0) |- b", true),
+        ] {
+            assert_eq!(provable(input, i), expected, "{input:?}");
+        }
+        // Classical linear logic is not conservative over ILL with `0`: the
+        // classical proof splits the `⊸L` with the goal on the antecedent's
+        // side, which the two-sided search never does.
+        let schellinx = "((a * top) & (b * top)) -o 0 |- (a -o c) + (b -o c)";
+        assert!(provable(schellinx, Mode::CLASSICAL));
+        assert!(!provable(schellinx, i));
+        // Affine mode weakens hypotheses at the leaves, never the goal, and
+        // lets promotion discard the linear context.
+        for (input, expected) in [
+            ("a, b |- a", true),
+            ("a |- b", false),
+            ("a |- 1", true),
+            ("!a, b |- !a", true),
+            ("a, b |- a * b", true),
+            ("top |- a", false),
+            ("a, top |- a", true),
+            ("a & b |- a", true),
+            ("!(a -o a * a), a |- a * a * a", true),
+        ] {
+            assert_eq!(provable(input, i.affine()), expected, "{input:?}");
+        }
     }
 
     /// The classic MELL sequents: dereliction, weakening, contraction with

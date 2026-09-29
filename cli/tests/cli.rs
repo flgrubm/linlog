@@ -111,8 +111,8 @@ fn prove_verdicts_and_exit_statuses() {
     for (args, error) in [
         (&["prove", "A * |- A"][..], "cannot parse the sequent"),
         (
-            &["prove", "-i", "A |- A"],
-            "no engine for MLL in intuitionistic mode yet",
+            &["prove", "-i", "|- A par B"],
+            "not an intuitionistic sequent",
         ),
         (
             &["prove", "--fragment", "mll", "A & B |- A"],
