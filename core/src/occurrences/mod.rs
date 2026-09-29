@@ -1,9 +1,12 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
+/// The intuitionistic reading of a sequent.
+pub mod reading;
 /// Bitsets over occurrence ids.
 pub mod set;
 
+pub use reading::{DescribedShape, IllFormula, Position, Reading, ShapeError};
 pub use set::{Flip, OccSet, Submasks, submasks};
 
 use crate::Error;

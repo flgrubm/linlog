@@ -28,12 +28,17 @@ impl<'a> Deserialize<'a> for Fragment {
     /// which contains every fragment of that name.
     fn deserialize<D: Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
         let name = String::deserialize(deserializer)?;
-        NAMED.into_iter().find(|f| f.name() == name).ok_or_else(|| {
-            serde::de::Error::custom(format!(
-                "unknown fragment {name:?}, expected one of {}",
-                NAMED.map(|f| format!("{:?}", f.name())).join(", ")
-            ))
-        })
+        // The intuitionistic names put an `I` in front: `ILL`, `IMLL`, …
+        let classical = name.strip_prefix('I').unwrap_or(&name);
+        NAMED
+            .into_iter()
+            .find(|f| f.name() == classical)
+            .ok_or_else(|| {
+                serde::de::Error::custom(format!(
+                    "unknown fragment {name:?}, expected one of {}",
+                    NAMED.map(|f| format!("{:?}", f.name())).join(", ")
+                ))
+            })
     }
 }
 
@@ -119,8 +124,8 @@ struct Outcome {
     /// Why the search could not decide.
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<Why>,
-    /// The fragment searched in.
-    fragment: Fragment,
+    /// The fragment searched in, by its name in the mode.
+    fragment: &'static str,
     /// The mode searched in.
     mode: Mode,
     /// The engine that ran.
@@ -145,7 +150,7 @@ impl Serialize for Out {
         Outcome {
             verdict,
             reason,
-            fragment: self.fragment,
+            fragment: self.fragment.name_in(self.mode),
             mode: self.mode,
             engine: self.engine,
             statistics: self.statistics,

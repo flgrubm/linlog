@@ -236,6 +236,11 @@ fn fragment_and_mode_json_format() {
         assert!(back.contains(fragment) && back.name() == name, "{name}");
     }
     assert!(serde_json::from_str::<Fragment>(r#""mll""#).is_err());
+    // The intuitionistic names read back as the classical fragments.
+    for (name, fragment) in [("IMLL", Fragment::MLL), ("ILL", Fragment::LL)] {
+        let back: Fragment = serde_json::from_str(&format!("{name:?}")).unwrap();
+        assert_eq!(back, fragment);
+    }
 
     let mode = Mode::CLASSICAL.affine();
     let json = r#"{"intuitionistic":false,"affine":true,"mix":false}"#;

@@ -100,7 +100,7 @@ pub use errors::ParseError;
 pub use errors::Error;
 pub use fragment::{Fragment, Mode};
 pub use nets::{NetError, ProofStructure, Scratch};
-pub use occurrences::{Forest, OccId, OccSet, Polarity, Sign};
+pub use occurrences::{Forest, OccId, OccSet, Polarity, Position, Reading, ShapeError, Sign};
 pub use proofs::{CheckError, Derivation, InfId, Inference, Node, NodeId, Proof, Rule, Side};
 pub use search::{Engine, Options, Outcome, Reason, Statistics, Verdict, prove, prove_until};
 pub use sequents::{Atom, Formula, Kind, Sequent, Term, TermId};

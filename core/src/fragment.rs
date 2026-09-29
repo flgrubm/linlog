@@ -104,6 +104,25 @@ impl Fragment {
             (false, false, _) => "MLL",
         }
     }
+
+    /// Returns the fragment's name in a mode: the classical
+    /// [`name`](Self::name), or in intuitionistic mode the intuitionistic
+    /// one, `IMLL`, `IMLL with units`, `IALL`, `IMALL`, `IMELL` or `ILL`.
+    pub const fn name_in(self, mode: Mode) -> &'static str {
+        if !mode.intuitionistic {
+            return self.name();
+        }
+        let additive = self.has_additives() || self.has_additive_units();
+        let multiplicative = self.has_multiplicatives() || self.has_multiplicative_units();
+        match (self.has_exponentials(), additive, multiplicative) {
+            (true, true, _) => "ILL",
+            (true, false, _) => "IMELL",
+            (false, true, true) => "IMALL",
+            (false, true, false) => "IALL",
+            (false, false, _) if self.has_multiplicative_units() => "IMLL with units",
+            (false, false, _) => "IMLL",
+        }
+    }
 }
 
 impl BitOr for Fragment {
@@ -304,6 +323,33 @@ mod tests {
             (F::LL, "LL"),
         ] {
             assert_eq!(fragment.to_string(), name, "{fragment:?}");
+        }
+    }
+
+    /// The intuitionistic names put an `I` in front of the classical ones.
+    #[test]
+    fn intuitionistic_names() {
+        use Fragment as F;
+        for (fragment, name) in [
+            (F::EMPTY, "IMLL"),
+            (F::MLL, "IMLL"),
+            (F::MLL_WITH_UNITS, "IMLL with units"),
+            (F::ALL, "IALL"),
+            (F::MALL, "IMALL"),
+            (F::MELL, "IMELL"),
+            (F::LL, "ILL"),
+        ] {
+            assert_eq!(fragment.name_in(Mode::INTUITIONISTIC), name, "{fragment:?}");
+            assert_eq!(
+                fragment.name_in(Mode::INTUITIONISTIC.affine()),
+                name,
+                "{fragment:?}"
+            );
+            assert_eq!(
+                fragment.name_in(Mode::CLASSICAL),
+                fragment.name(),
+                "{fragment:?}"
+            );
         }
     }
 
