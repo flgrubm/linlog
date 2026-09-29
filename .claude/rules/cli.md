@@ -28,7 +28,10 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   `--output` or standard output.
 - `prove.rs`: `prove` and `check`, and the `net` format's refusal of
   sequents outside unit-free MLL and of affine or intuitionistic mode
-  (`nets_exist`), before the search runs. `--format net` prints the net the
+  (`nets_exist`), before the search runs. `--copies` (default
+  `Options::DEFAULT_COPIES`) is the per-branch copy bound of the focused
+  engine's iterative deepening; `unknown … the copy bound of N was reached`
+  is exit status 3 like every other unknown. `--format net` prints the net the
   net engine found (`Outcome::net`) and otherwise the net read off the
   proof; `--stats` prints the counters of the engine that ran
   (`statistics`, one arm per engine with its own counters).
@@ -74,9 +77,9 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   `net` has. A format that renders the derivation builds it inside the
   `on_large_stack` closure, as the text format does; `net` builds the net
   there too, though desequentialization does not recurse.
-- **The copy bound**: `--copies` is parsed but hidden and refused; wiring it
-  is unhiding it and passing it to the `Options` setter the exponential
-  engine adds.
+- **A new `Reason`**: its arm in `verdict_line`, which turns a generic
+  phrase into advice (`RecursionLimit` and `CopyBound` name the flag to
+  raise); the default arm prints `Reason`'s `Display`.
 - Stay out of `core`'s way: no clap types or exit statuses in `core`, and
   the CLI never re-implements what `core` computes (fragment names, the
   mode's words, the JSON form).

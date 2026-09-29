@@ -218,12 +218,15 @@ a test change.
 `search/mod.rs` is what a front end calls: `prove(&sequent, mode,
 &options)` and `prove_until(…, stop)` return `Result<Outcome, Error>`, where
 `Outcome` carries the `Verdict` (`Proved(Box<Proof>)`, `Unprovable` only
-after an exhaustive search, `Unknown(Reason)`), the `Fragment` searched in,
+after an exhaustive search, which with exponentials means a deepening
+level that never hit the copy bound, `Unknown(Reason)`, with
+`Reason::CopyBound` when every level hit it), the `Fragment` searched in,
 the `Mode`, the `Engine` that ran, the `Statistics`, and `net`, the
 `ProofStructure` the net engine found (`None` from the focused engine).
 `Options` has private fields and setters (`memo_limit`, `recursion_limit`,
-`engine`, `fragment`, `test_period`) and the constants `DEFAULT_MEMO_LIMIT`
-and `DEFAULT_RECURSION_LIMIT`, which the CLI shows as its defaults;
+`engine`, `fragment`, `test_period`, `copies`) and the constants
+`DEFAULT_MEMO_LIMIT`, `DEFAULT_RECURSION_LIMIT` and `DEFAULT_COPIES`, which
+the CLI shows as its defaults;
 `Reason`, `Statistics`, `Engine` and `Outcome` are `#[non_exhaustive]` so
 later steps add variants and fields without a breaking change.
 `Statistics` has one set of counters for both engines: `nodes` is stable
@@ -232,18 +235,19 @@ sequents for `focus` and literals chosen for `net`; `memo_hits`,
 the net engine's, and the others stay zero.
 
 - The dispatch is plan decision D8. Unit-free MLL (the empty fragment
-  included) goes to `net` when no literal occurs more than
-  `NET_MULTIPLICITY` (2) times (`prefers_net`: equal literals are
+  included) in classical mode goes to `net` when no literal occurs more
+  than `NET_MULTIPLICITY` (2) times (`prefers_net`: equal literals are
   interchangeable partners, and the linking search pays a permutation's
   worth of nodes for every wrong choice among them, which the focused
   engine's counts refute at once), else to `focus`; every other classical
-  input without exponentials to `focus`; intuitionistic and affine modes and
-  exponentials are `Error::NoEngine`, an error and not an `Unknown`, until
-  steps 7 and 8 fill the rows. `Options::engine` forces an engine;
+  input, exponentials included, and everything in affine mode to `focus`;
+  intuitionistic mode is `Error::NoEngine`, an error and not an `Unknown`,
+  until step 8 fills the rows. `Options::engine` forces an engine;
   `Engine::Net` on a fragment outside unit-free MLL, asserted or detected,
-  is `Error::NetFragment`. A new engine gets an `Engine` variant (its
-  `Display` is its name in text and JSON), a row in `prove_until`, and a
-  value of `--engine` in the CLI (`.claude/rules/cli.md`).
+  is `Error::NetFragment`, and in affine mode `Error::NetMode`. A new
+  engine gets an `Engine` variant (its `Display` is its name in text and
+  JSON), a row in `prove_until`, and a value of `--engine` in the CLI
+  (`.claude/rules/cli.md`).
 - `Options::fragment` asserts a fragment: a sequent outside it is
   `Error::FragmentMismatch`, and the search runs in the asserted fragment,
   which switches off the prunes that only hold in the smaller one and
@@ -260,87 +264,177 @@ the net engine's, and the others stay zero.
 
 ## The focused engine
 
-`search/focus/mod.rs` is the spec's MALL-Seq, one engine for every fragment
-up to MALL with units and Mix as rule switches (`Rules`, from `Fragment`
-and `Mode`). Its functions are the spec's rules: `asynchronous` (the phase
-`⊢ Γ ⇑ L`), `prove` (a stable sequent), `focus` (`⊢ Γ ⇓ F`), `split`
-(the `⊗` rule), `mix`. What it relies on:
+`search/focus/mod.rs` is the spec's MALL-Seq and MELL-Seq in one engine, for
+every classical fragment up to full LL, with units, Mix, the exponentials
+and affine mode as rule switches (`Rules`, from `Fragment` and `Mode`). Its
+functions are the spec's rules: `asynchronous` (the phase `⊢ Θ ; Γ ⇑ L`),
+`quest` (`?` into `Θ`), `prove` (a stable sequent), `focus` (`⊢ Θ ; Γ ⇓ F`),
+`initial` (the two initial rules), `split` (the `⊗` rule), `mix`. What it
+relies on:
 
+- **Dyadic sequents.** `Θ`, the unrestricted zone, is an `OccSet` of the
+  subformulas of the `?` formulas decomposed on the branch; it only grows
+  along a branch, is shared by every premise, and a `?A` whose `A` is
+  already there changes nothing. `Γ`, the linear zone, is a `Context`
+  (`focus/context.rs`): a bitset plus a sorted list of the extra copies of
+  occurrences present more than once, empty until a copy repeats an
+  occurrence (a copied `~a ⅋ ~a` releases the same `~a` twice), which is
+  the one allocation on the hot path. Member lists (`gamma.iter()`) carry
+  repeats, and a split enumerates positions, so its Gray-code toggling
+  uses the mask bit, never `contains`.
 - **Stable sequents only.** The asynchronous phase runs to completion (`⅋`
   opens, `⊥` drops, `⊤` closes with a `Top` node and the pending `⅋`/`⊥`
-  nodes wrapped around it, `&` branches on copies of the state); what
-  reaches `prove` is a set of positive formulas and negative literals, and
-  only those are memoized. `?` is unreachable until step 7 adds the dyadic
-  zone.
-- **Memo validity.** An entry is a fact about an occurrence set:
-  `Proved(NodeId)` into the engine's arena, which a hit reuses as a shared
-  subproof (the arena is append-only, so clearing the memo never dangles),
-  or `Failed`. In fragments without exponentials it holds unconditionally,
-  because cut-free provability depends on the set alone; step 7 must add
-  the copy bound to the entry. When the memo is full it is cleared
-  (`Options::memo_limit`; zero switches it off). Never memoize across
-  forests.
+  nodes wrapped around it, `&` branches on copies of the state, `?` moves
+  its subformula into `Θ` under a `Quest` node); what reaches `prove` is
+  `Θ` plus a `Γ` of positive formulas and negative literals, and only those
+  are memoized. `search_goal` starts from any multiset of occurrences with
+  an empty `Θ` (an interactive prover's open goal); `search` starts from
+  the roots.
+- **The copy budget.** A copy (rule D2: focus on a `Θ` member, which stays
+  there, under a `Copy` node) costs one unit of a per-branch budget passed
+  down the calls; so does the initial rule `⊢ Θ, p⊥ ; · ⇓ p`, emitted as
+  `Copy(p⊥)` above `Ax(p, p⊥)`, so that the bound counts every `?d` of the
+  derivation. `run` deepens the budget from 0 to `Options::copies`. A
+  level whose search skipped a copy for lack of budget sets `exhausted`;
+  `Unprovable` is answered only by a level that ends with the flag clear,
+  and `Reason::CopyBound` when every level set it. The flag is saved and
+  cleared around each stable sequent's decision so the memo entry can say
+  whether *that* subtree was cut. Without exponentials there is one level
+  with budget 0 and nothing can set the flag.
+- **Memo contract with the bound** (`focus/memo.rs`). The key is both
+  zones. `Proved(NodeId)` is a fact at any budget (a proof is a proof; one
+  found with more copies than the current level allows is still returned,
+  the bound is a search device, not a property of the answer).
+  `Failed(Complete)` (the subtree was explored to the end without hitting
+  the budget, and without a prune that depends on an ancestor, below) is a
+  fact at any budget, since more budget adds nothing that was not tried.
+  `Failed(Exhausted(r))`, cut by the budget with `r` copies left, applies
+  only when at most `r` are left now (`Memo::get`), and its hit sets
+  `exhausted`; a later entry only raises `r`, and `Complete` or `Proved`
+  replace it. Entries survive across levels; that is where the
+  re-exploration of deepening is recovered. Never memoize across forests.
+- **The loop check and the affine prune** share the branch stack of stable
+  sequents (`stack`, live up to `stack_len`, entries reused): a stable
+  sequent equal to an ancestor (linear) or containing one as a multiset on
+  both zones (affine, `OccSet::is_subset` and `Context::includes`) is
+  pruned, because a smallest proof of the ancestor never passes through it
+  (weaken the surplus away, or cut the loop). Such a failure is a fact
+  about the branch, not the sequent: `dependency` records the shallowest
+  ancestor depth a prune below relied on, a failure that carries a
+  dependency on an ancestor is not memoized, and the dependency is
+  discharged at that ancestor, whose own failure is genuine (if the pruned
+  sequent were provable, so would the ancestor be). Order in
+  `prove_stable`: a `Proved` or `Complete` memo entry answers first; then
+  the stack; then an `Exhausted` entry, so that a repeated sequent is
+  pruned rather than reported as cut by the budget. The prune over
+  occurrence ids is weaker than one over formulas (the `~a` inside a copied
+  clause is not the `~a` of the root), and that is deliberate: the
+  occurrence multisets are a well-quasi-order, so every affine branch is
+  finite and affine mode runs one level with an unbounded budget and
+  decides; `Options::copies` has no effect there.
+- **Affine mode** has no relaxed rules in the term: a leaf (`Ax`, `One`,
+  `Bang`) weakens every leftover member of `Γ` below itself (`weakened`,
+  one `Weaken` per copy); weakening never goes above a promotion. Nothing
+  but `0` forces a split in affine mode (`forced_side`), every dual pair
+  or literal with its dual in `Θ` closes a stable sequent (`initial`), `1`
+  and `!` are candidates with any context, a `0` is not fatal (it is
+  weakened at a leaf), and the interval check and the count equation are
+  off (`Rules::intervals`, `Rules::equation`): weakening discards any
+  imbalance.
+- **The rules with `Θ`.** D1 candidates first (`⊗`, `⊕`; `1` and `!` only
+  when alone), then the copies from `Θ`: a member with an unconsumed copy
+  in `Γ` is skipped (a second copy cannot help before the first is used,
+  and the two are the same formula), those with a literal whose dual is a
+  member first (`meets`), then by id; a negative `Θ` member is copied and
+  released. `!A` in focus needs `Γ` empty and releases `A` into an empty
+  `Γ` under a `Bang`. A positive-literal factor of a `⊗` takes its dual
+  from `Γ` when there is one and otherwise leaves its side empty for the
+  `Θ` initial rule; the dual in `Γ` first loses nothing, since the copies
+  are the same formula and a proof that spends this one elsewhere and
+  copies here is the same proof with the roles swapped.
+- **Memo validity without exponentials** is unconditional, as before: cut-
+  free provability of a set of occurrences depends on the set alone, and
+  every entry is `Proved` or `Complete`. When the table is full it is
+  cleared (`Options::memo_limit`; zero switches it off; the arena is
+  append-only, so a `Proved` id never dangles).
 - **A `0` is fatal only without a `⊤`.** The spec calls a `0` in a stable
   sequent fatal, but `⊢ 0, ⊤ ⊕ b` is provable through the `⊕`; the
   immediate failure applies only when no member has a `⊤` below it
-  (`Tally::absorbs`). The other immediate tests: a dual pair succeeds; a
-  literal-only sequent fails without Mix; an unbalanced sequent fails.
+  (`Tally::absorbs`), and not in affine mode. The other immediate tests: a
+  dual pair succeeds; a literal-only sequent fails without Mix and with an
+  empty `Θ`; an unbalanced sequent fails.
 - **Counts** (`focus/counts.rs`): per occurrence a sparse row of intervals
   per atom (literals `±1`, `⊗`/`⅋` sum, `&`/`⊕` hull, units nothing), an
   `absorbs` flag (a `⊤` at or below it: the row is meaningless and any set
   containing the occurrence passes), and a `weight` `t − p − #1 + #⊥`. The
   interval check is sound in every fragment without exponentials (proof by
   induction on the rules, with `⊤` covered by the flag and `0` as `(0, 0)`).
-  The hull for `&` is the spec's choice; the intersection would be sound
-  too and stronger, and is a follow-up. The count equation
+  With exponentials, an atom with a literal below any `?` or `!` in the
+  problem gets no row entries anywhere (its copies and discards break the
+  balance; `Θ` members are not in the tally, and they contain only such
+  atoms), and a `⊤` below any `?` or `!` switches the check off altogether
+  (`absorbs_from_copies`: a copy of it absorbs any imbalance). The hull
+  for `&` is the spec's choice; the intersection would be sound too and
+  stronger, and is a follow-up. The count equation
   `c = t − p − #1 + #⊥ + 2` (`≥` with Mix, and `>` for a Mix to be worth
   trying) is only sound without additives, additive units or
-  exponentials, and `Rules::equation` switches it on for exactly those
-  fragments; `⊢ a ⊕ b, ~a` is the counterexample the spec names. A
-  `Tally` keeps a set's sums incrementally, so a split moves one row per
-  flip.
-- **Focus candidates.** Every `⊗` and `⊕` of a stable sequent; `1` only
-  when alone (it needs an empty context); never a literal (a positive
-  literal in focus succeeds only in the dual-pair case). Order: a `⊗` with
-  a forced split first, then `⊕`, then a `⊗` whose split is enumerated;
-  ascending ids within a class. This order is what makes the run
-  deterministic, with the memo, which is only looked up, never iterated.
+  exponentials and without weakening, and `Rules::equation` switches it on
+  for exactly those cases; `⊢ a ⊕ b, ~a` is the counterexample the spec
+  names. A `Tally` keeps a set's sums incrementally, so a split moves one
+  row per flip.
+- **Focus candidates.** Every `⊗` and `⊕` of a stable sequent; `1` and `!`
+  only when alone (they need an empty context; any, in affine mode); never
+  a literal (a positive literal in focus succeeds only in the initial
+  cases). Order: `1` and `!`, a `⊗` with a forced split, `⊕`, a `⊗` whose
+  split is enumerated; ascending ids within a class; then the copies.
+  This order is what makes the run deterministic, with the memo, which is
+  only looked up, never iterated.
 - **Forced splits.** A factor that is a positive literal takes exactly its
   dual from the context, and the first dual occurrence when there are
   several (they are the same formula, so the residues are equal
-  multisets); a factor `1` takes the empty context; a factor `0` fails the
-  candidate, not the sequent. `⊤`, `⊥` and negative literals force
-  nothing: `⊢ ⊥ ⊗ b, a, ~a, ~b` needs `{a, ~a}` on the `⊥` side.
+  multisets), or nothing when the context has none; a factor `1` or `!`
+  takes the empty context; a factor `0` fails the candidate, not the
+  sequent. `⊤`, `⊥` and negative literals force nothing: `⊢ ⊥ ⊗ b, a, ~a,
+  ~b` needs `{a, ~a}` on the `⊥` side.
 - **Free splits** enumerate the submasks of the compacted members in
   Gray-code order (`submasks`), the empty submask first, two tallies moved
   per flip, and both sides must pass the counts before either premise is
-  searched. More than 63 members is `Reason::ContextTooWide` for the whole
-  search, never a silent failure; the spec's lazy contexts (step 15) or a
-  branch-and-bound over the members are the ways past it.
-- **Mix** is tried last on a stable sequent, with the first member fixed on
-  the left so each partition comes up once, the trivial partition skipped,
-  and each part decided by `prove`, so the memo shares parts between
-  partitions. Refuting a wide sequent with Mix costs about `3^k` stable
-  sequents for `k` members.
+  searched. More than 63 members (copies counted) is
+  `Reason::ContextTooWide` for the whole search, never a silent failure;
+  the spec's lazy contexts (step 15) or a branch-and-bound over the
+  members are the ways past it.
+- **Mix** is tried last on a stable sequent, after the copies, with the
+  first member fixed on the left so each partition comes up once, the
+  trivial partition skipped, and each part decided by `prove` with the same
+  `Θ` and budget, so the memo shares parts between partitions. Refuting a
+  wide sequent with Mix costs about `3^k` stable sequents for `k` members.
 - **Recursion.** `prove`, `focus` and `asynchronous` count one level each
-  (at most three per occurrence); `Options::recursion_limit` stops the
-  search with `Reason::RecursionLimit`. Measured stack per level: under
-  2 KiB in debug builds, under 512 bytes in release, so the default of
-  2048 fits an 8 MiB main-thread stack.
-- **No allocation per node once warm**: sets, member lists and tallies come
-  from pools on the engine (`take_*`/`give_*`); a leaked buffer on an
-  error path only costs an allocation later. The memo insert clones its
-  key; that is the one allocation per stable sequent.
+  (at most three per occurrence, plus one per `?` and per copy);
+  `Options::recursion_limit` stops the search with `Reason::RecursionLimit`.
+  Measured stack per level: under 2 KiB in debug builds, under 512 bytes
+  in release, so the default of 2048 fits an 8 MiB main-thread stack.
+- **No allocation per node once warm**: sets, contexts, keys, member lists
+  and tallies come from pools on the engine (`take_*`/`give_*`); a leaked
+  buffer on an error path only costs an allocation later. The memo insert
+  clones its key, and a repeated occurrence grows a context's extra list;
+  those are the allocations per stable sequent.
 - **The atom bias hurts Horn clauses.** The forest makes the rarer literal
   positive, so clause bodies whose atoms also appear as hypotheses are
   usually negative and their `⊗` splits are enumerated instead of forced;
   the 3-Partition refutation in the tests takes about a minute in release
   mode for that reason. A bias override is step 14 material.
+- **The memo can change decisiveness within the bound, never a verdict.**
+  An `Exhausted` entry is a fact about the sequent alone, the loop check
+  about the branch, so a run with the memo may answer `Unknown` where a
+  memo-free run answers `Unprovable` (or the reverse); the generated tests
+  assert only that the two never contradict.
 - **Every proof passes the checker**: `debug_assert!` in `search`, and
   every test that gets a proof calls `check`. The test-only generator
   `search/generate.rs` builds random provable sequents (and mutants of
-  them) for every combination of units, additives and Mix; a new engine or
-  rule set extends it rather than writing new positives by hand.
+  them) for every combination of units, additives, Mix and exponentials,
+  and reports the most derelictions on one branch of the proof it read
+  the sequent off, which bounds the copies the engine needs; a new rule
+  set extends it rather than writing new positives by hand.
 
 ## Proof nets
 

@@ -28,9 +28,10 @@ Workspace crates:
   `net`. The tree and its
   `--help` text are the doc comments in `argument_parsing.rs`; `prove.rs`
   runs the search on a thread sized from `--recursion-limit` and owns the
-  output; exit status 0 proved/valid, 1 unprovable/invalid, 2 error,
-  3 unknown. Its invariants and extension points live in
-  `.claude/rules/cli.md`, which loads when a file under `cli/` is read.
+  output; `--copies` bounds the copies of `?` formulas per branch; exit
+  status 0 proved/valid, 1 unprovable/invalid, 2 error, 3 unknown. Its
+  invariants and extension points live in `.claude/rules/cli.md`, which
+  loads when a file under `cli/` is read.
 
 The core API the CLI builds on: `"…".parse::<Sequent>()`, `Display` for
 pretty-printing, serde behind `serialize`, `Sequent::fragment()` for the
@@ -44,9 +45,13 @@ closure) for proof search, which dispatches on the fragment and returns an
 (axiom-linking search over a proof structure, the default for unit-free MLL
 with or without Mix when no literal occurs more than twice, whose
 `Outcome` also carries the net found) and
-`search::focus` (the focused sequent engine for everything else up to MALL,
-with or without Mix); `Options::engine` forces one, and the other rows of
-the dispatch table are refused with `Error::NoEngine`.
+`search::focus` (the focused sequent engine for everything else: MLL with
+units, MALL, MELL and full LL on dyadic sequents with a per-branch copy
+bound that deepens iteratively, `Options::copies`, answering
+`Reason::CopyBound` when it binds, and affine mode, where a
+supermultiset-ancestor prune makes the search a decision procedure);
+`Options::engine` forces one, and intuitionistic mode is refused with
+`Error::NoEngine`.
 `ProofStructure` (`nets`) is a proof net of unit-free MLL over the forest:
 `from_links`, `link`/`unlink`, `is_correct()` (the Danos–Regnier criterion
 through Yeo's deletion test, independent of the search and the checker),

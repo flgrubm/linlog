@@ -43,10 +43,12 @@ Two engines exist: for MLL without units whose literals occur at most twice
 each, the *net engine* searches for an axiom linking that makes the
 sequent's formula trees a proof net, and for everything else the *focus
 engine* runs a focused sequent search over bitsets (on repeated literals
-its count-based pruning beats the linking search by orders of magnitude). `--mix`, `--affine` and `--intuitionistic` choose the logic,
-`--fragment` and `--engine focus|net` override what detection picks,
-`--timeout 10s` bounds the search, `--quiet` prints the verdict line only and
-`--stats` what the search cost, in the counters of the engine that ran:
+its count-based pruning beats the linking search by orders of magnitude).
+`--mix`, `--affine` and `--intuitionistic` choose the logic, `--fragment`
+and `--engine focus|net` override what detection picks, `--timeout 10s`
+and `--copies N` bound the search, `--quiet` prints the verdict line only
+and `--stats` what the search cost, in the counters of the engine that
+ran:
 
 ```console
 $ linlog prove --mix --stats "|- A par B, ~A, ~B"
@@ -88,13 +90,73 @@ $ linlog prove --engine net "A & B |- A"
 error: proof nets exist for MLL without units only, not for ALL
 ```
 
-The exit status tells scripts the verdict: 0 provable, 1 unprovable, 3
-unknown (the time limit or Ctrl-C stopped the search), 2 an error, such as a
-sequent no engine handles yet:
+With exponentials (MELL and full LL) the focus engine searches dyadic
+sequents, copying a `?` formula at most `--copies` times on any branch
+(3 by default) and deepening that bound from zero. The derivation shows the
+standard rules: dereliction, contraction, weakening and promotion.
 
 ```console
-$ linlog prove "!A |- A"
-error: no engine for MELL in classical mode yet
+$ linlog prove "!A |- A * A"
+provable (MELL, classical, focus engine)
+─────── ax    ─────── ax
+⊢ ~A, A       ⊢ ~A, A
+──────── ?d   ──────── ?d
+⊢ ?~A, A      ⊢ ?~A, A
+────────────────────── ⊗
+  ⊢ ?~A, ?~A, A ⊗ A
+  ───────────────── ?c
+    ⊢ ?~A, A ⊗ A
+$ linlog prove "!A, !(A -o B), !(B -o C) |- C"
+provable (MELL, classical, focus engine)
+              ─────── ax   ─────── ax
+              ⊢ ~B, B      ⊢ ~C, C
+─────── ax    ──────────────────── ⊗
+⊢ ~A, A         ⊢ ~B, B ⊗ ~C, C
+──────── ?d    ────────────────── ?d
+⊢ ?~A, A       ⊢ ~B, ?(B ⊗ ~C), C
+───────────────────────────────── ⊗
+   ⊢ ?~A, A ⊗ ~B, ?(B ⊗ ~C), C
+  ────────────────────────────── ?d
+  ⊢ ?~A, ?(A ⊗ ~B), ?(B ⊗ ~C), C
+```
+
+Provability in MELL has no known decision procedure, so the verdict is
+three-valued: "unprovable" is reported only when a bound was searched
+exhaustively without ever hitting it, and "unknown" when every bound up to
+`--copies` was hit:
+
+```console
+$ linlog prove -q --copies 1 "!A, !(A -o B), !(B -o C) |- C"
+unknown (MELL, classical, focus engine): the copy bound of 1 was reached; raise it with --copies
+$ linlog prove -q "A |- !A"
+unprovable (MELL, classical, focus engine): the search was exhaustive
+$ linlog prove -q "!(A -o A * A), A |- ?B"
+unknown (MELL, classical, focus engine): the copy bound of 3 was reached; raise it with --copies
+```
+
+`--affine` allows weakening: a hypothesis may go unused, which the
+derivation shows as `wk` below the leaf that leaves it over. Affine
+search terminates on its own (a sequent that contains one below it on its
+branch is pruned), so it decides every sequent, `--copies` included:
+
+```console
+$ linlog prove -a "A, B |- A"
+provable (MLL, classical affine, focus engine)
+  ─────── ax
+  ⊢ ~A, A
+─────────── wk
+⊢ ~A, ~B, A
+$ linlog prove -q -a "!(A -o A * A), A |- ?B"
+unprovable (MELL, classical affine, focus engine): the search was exhaustive
+```
+
+The exit status tells scripts the verdict: 0 provable, 1 unprovable, 3
+unknown (the copy bound, the time limit or Ctrl-C stopped the search), 2 an
+error, such as a sequent no engine handles yet:
+
+```console
+$ linlog prove -i "A |- A"
+error: no engine for MLL in intuitionistic mode yet
 ```
 
 `--format json` writes the outcome as one JSON object, which is also a proof
@@ -137,14 +199,18 @@ Built:
   checker that decides whether a term proves its sequent, and a derivation
   view that unfolds a term into the tree of the standard sequent calculus,
   printed as text.
-- Automatic proof search for MLL, MLL with units and MALL, with or without
-  Mix, returning a checked proof, "unprovable" after an exhaustive search,
-  or "unknown" with the reason: a focused sequent engine over occurrence
-  bitsets with a memo and count-based pruning, and for MLL without units a
+- Automatic proof search for every classical fragment, MLL to full LL,
+  with or without Mix, returning a checked proof, "unprovable" after an
+  exhaustive search, or "unknown" with the reason: a focused sequent
+  engine over dyadic sequents of occurrence bitsets with a memo,
+  count-based pruning, a per-branch bound on the copies of `?` formulas
+  that deepens iteratively, and a loop check; and for MLL without units a
   proof-net engine that searches the axiom linkings with count checks,
   constant-time cycle rejections, the exact acyclicity test and a symmetry
   break for repeated literal conclusions, then sequentializes the net it
   finds.
+- Affine mode, where weakening is allowed and the search is a decision
+  procedure for every fragment.
 - Proof nets for MLL, with or without Mix, as a representation of their
   own: proof structures over the subformula occurrences, an independent
   correctness criterion (Danos–Regnier, decided by Yeo's deletion test on
@@ -157,8 +223,6 @@ Built:
 
 Planned, in roughly this order:
 
-- The exponentials (MELL, full LL) with a bounded copy rule, and affine
-  mode as a decision procedure.
 - Intuitionistic linear logic, with two-sided printing and derivations.
 - Export of sequents, derivations and proof nets to LaTeX, Typst and SVG,
   and proof certificates for Rocq.
