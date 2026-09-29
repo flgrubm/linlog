@@ -48,8 +48,8 @@ with or without Mix when no literal occurs more than twice, whose
 `search::focus` (the focused sequent engine for everything else: MLL with
 units, MALL, MELL and full LL on dyadic sequents with a per-branch copy
 bound that deepens iteratively, `Options::copies`, answering
-`Reason::CopyBound` when it binds, and affine mode, where a
-supermultiset-ancestor prune makes the search a decision procedure);
+`Reason::CopyBound` when it binds, and affine mode, the same search with
+weakening at the leaves);
 `Options::engine` forces one, and intuitionistic mode is refused with
 `Error::NoEngine`.
 `ProofStructure` (`nets`) is a proof net of unit-free MLL over the forest:

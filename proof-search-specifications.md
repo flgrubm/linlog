@@ -35,6 +35,16 @@ written.
   split; `⊥` and `⊤` do not (`⊢ ⊥ ⊗ b, a, ~a, ~b` needs `{a, ~a}` on the
   `⊥` side, and a `⊤` side accepts any subset while the other side's
   provability is not monotone).
+- **MELL-Seq, affine variant.** The supermultiset-ancestor prune is unsound
+  for completeness: weakening turns a proof of the smaller sequent into
+  one of the larger, never the reverse, so a premise that contains a
+  sequent below it cannot be "shortened by weakening away the surplus".
+  `⊢ ?(a ⅋ ~a)` is provable only through `⊢ a ⅋ ~a ; a, ~a`, which
+  contains it, and the prune refutes it; a random sample of 5 200 affine
+  sequents gave 426 wrong `Unprovable` answers. The affine engine is the
+  bounded MELL engine with weakening, not a decision procedure.
+- **MELL-Seq, immediate failure (a `0` in a stable sequent).** Also not
+  fatal when a member of `Θ` has a `⊤` below it: a copy absorbs it.
 - **MLL-Net, sequentialization.** "Delete the `⊗` conclusion and count
   components under one arbitrary switching (exactly two ⇒ splitting)"
   cannot distinguish: a correct net without Mix is a tree under every

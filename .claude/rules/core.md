@@ -304,7 +304,9 @@ relies on:
 - **Memo contract with the bound** (`focus/memo.rs`). The key is both
   zones. `Proved(NodeId)` is a fact at any budget (a proof is a proof; one
   found with more copies than the current level allows is still returned,
-  the bound is a search device, not a property of the answer).
+  so the bound limits the search, not the proof: `Proved` at level `k`
+  does not mean a proof with at most `k` copies per branch, and a
+  reported minimum would have to be budget-aware).
   `Failed(Complete)` (the subtree was explored to the end without hitting
   the budget, and without a prune that depends on an ancestor, below) is a
   fact at any budget, since more budget adds nothing that was not tried.
@@ -313,33 +315,38 @@ relies on:
   `exhausted`; a later entry only raises `r`, and `Complete` or `Proved`
   replace it. Entries survive across levels; that is where the
   re-exploration of deepening is recovered. Never memoize across forests.
-- **The loop check and the affine prune** share the branch stack of stable
-  sequents (`stack`, live up to `stack_len`, entries reused): a stable
-  sequent equal to an ancestor (linear) or containing one as a multiset on
-  both zones (affine, `OccSet::is_subset` and `Context::includes`) is
-  pruned, because a smallest proof of the ancestor never passes through it
-  (weaken the surplus away, or cut the loop). Such a failure is a fact
-  about the branch, not the sequent: `dependency` records the shallowest
+- **The loop check** uses the branch stack of stable sequents (`stack`,
+  live up to `stack_len`, entries reused), on with exponentials only: a
+  stable sequent equal to an ancestor is pruned, because a smallest proof
+  of the ancestor never passes through it. Such a failure is a fact about
+  the branch, not the sequent: `dependency` records the shallowest
   ancestor depth a prune below relied on, a failure that carries a
   dependency on an ancestor is not memoized, and the dependency is
-  discharged at that ancestor, whose own failure is genuine (if the pruned
-  sequent were provable, so would the ancestor be). Order in
-  `prove_stable`: a `Proved` or `Complete` memo entry answers first; then
-  the stack; then an `Exhausted` entry, so that a repeated sequent is
-  pruned rather than reported as cut by the budget. The prune over
-  occurrence ids is weaker than one over formulas (the `~a` inside a copied
-  clause is not the `~a` of the root), and that is deliberate: the
-  occurrence multisets are a well-quasi-order, so every affine branch is
-  finite and affine mode runs one level with an unbounded budget and
-  decides; `Options::copies` has no effect there.
+  discharged at that ancestor, whose own failure is genuine (a proof of
+  the repeat would be a proof of the ancestor). Order in `prove_stable`: a
+  `Proved` or `Complete` memo entry answers first; then the stack; then an
+  `Exhausted` entry, so that a repeated sequent is pruned rather than
+  reported as cut by the budget. Pruned branches never set `exhausted`.
+- **The spec's affine prune is wrong and is not implemented.** It prunes a
+  stable sequent that *contains* an ancestor as a multiset, arguing that
+  weakening shortens the proof; but weakening turns a proof of the smaller
+  sequent into one of the larger, never the reverse, and `⊢ ?(a ⅋ ~a)` is
+  provable only through `⊢ a ⅋ ~a ; a, ~a`, which contains the root. A
+  review found 426 wrong `Unprovable` verdicts in 5 200 random affine
+  sequents with it. The same holds with the zones equal. So affine mode
+  is not a decision procedure here: it runs the bounded, loop-checked
+  search of linear mode with weakening, and answers `CopyBound` like it.
+  (The prune in the other direction, a sequent *contained in* an
+  ancestor, is sound but useless: it is the useful branch.)
 - **Affine mode** has no relaxed rules in the term: a leaf (`Ax`, `One`,
   `Bang`) weakens every leftover member of `Γ` below itself (`weakened`,
   one `Weaken` per copy); weakening never goes above a promotion. Nothing
   but `0` forces a split in affine mode (`forced_side`), every dual pair
-  or literal with its dual in `Θ` closes a stable sequent (`initial`), `1`
-  and `!` are candidates with any context, a `0` is not fatal (it is
-  weakened at a leaf), and the interval check and the count equation are
-  off (`Rules::intervals`, `Rules::equation`): weakening discards any
+  or literal with its dual in `Θ` closes a stable sequent (`initial`, which
+  goes on to the next pair when the budget refuses a copy), `1` and `!`
+  are candidates with any context, a `0` is not fatal (it is weakened at a
+  leaf), and the interval check and the count equation are off
+  (`Rules::intervals`, `Rules::equation`): weakening discards any
   imbalance.
 - **The rules with `Θ`.** D1 candidates first (`⊗`, `⊕`; `1` and `!` only
   when alone), then the copies from `Θ`: a member with an unconsumed copy
@@ -349,9 +356,12 @@ relies on:
   released. `!A` in focus needs `Γ` empty and releases `A` into an empty
   `Γ` under a `Bang`. A positive-literal factor of a `⊗` takes its dual
   from `Γ` when there is one and otherwise leaves its side empty for the
-  `Θ` initial rule; the dual in `Γ` first loses nothing, since the copies
+  `Θ` initial rule; the dual in `Γ` first loses no proof, since the copies
   are the same formula and a proof that spends this one elsewhere and
-  copies here is the same proof with the roles swapped.
+  copies here is the same proof with the roles swapped, but the swap moves
+  a copy to another branch, so a sequent may need one level more than its
+  best proof's copies per branch (`⊢ ?~p, ?p, ~p, p ⊗ ⊥` is proved at
+  bound 2, not 1).
 - **Memo validity without exponentials** is unconditional, as before: cut-
   free provability of a set of occurrences depends on the set alone, and
   every entry is `Proved` or `Complete`. When the table is full it is
@@ -428,6 +438,10 @@ relies on:
   about the branch, so a run with the memo may answer `Unknown` where a
   memo-free run answers `Unprovable` (or the reverse); the generated tests
   assert only that the two never contradict.
+- **`exhausted` and `dependency` are engine-wide flags** saved, cleared and
+  restored by hand inside `prove_stable`; an early return between the
+  decision and the restore, or a stack push anywhere else, silently
+  breaks the level's completeness claim.
 - **Every proof passes the checker**: `debug_assert!` in `search`, and
   every test that gets a proof calls `check`. The test-only generator
   `search/generate.rs` builds random provable sequents (and mutants of

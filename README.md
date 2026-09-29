@@ -135,9 +135,9 @@ unknown (MELL, classical, focus engine): the copy bound of 3 was reached; raise 
 ```
 
 `--affine` allows weakening: a hypothesis may go unused, which the
-derivation shows as `wk` below the leaf that leaves it over. Affine
-search terminates on its own (a sequent that contains one below it on its
-branch is pruned), so it decides every sequent, `--copies` included:
+derivation shows as `wk` below the leaf that leaves it over. With
+exponentials the affine search is bounded by `--copies` like the linear
+one:
 
 ```console
 $ linlog prove -a "A, B |- A"
@@ -147,7 +147,7 @@ provable (MLL, classical affine, focus engine)
 ─────────── wk
 ⊢ ~A, ~B, A
 $ linlog prove -q -a "!(A -o A * A), A |- ?B"
-unprovable (MELL, classical affine, focus engine): the search was exhaustive
+unknown (MELL, classical affine, focus engine): the copy bound of 3 was reached; raise it with --copies
 ```
 
 The exit status tells scripts the verdict: 0 provable, 1 unprovable, 3
@@ -209,8 +209,7 @@ Built:
   constant-time cycle rejections, the exact acyclicity test and a symmetry
   break for repeated literal conclusions, then sequentializes the net it
   finds.
-- Affine mode, where weakening is allowed and the search is a decision
-  procedure for every fragment.
+- Affine mode, where weakening is allowed, in every fragment.
 - Proof nets for MLL, with or without Mix, as a representation of their
   own: proof structures over the subformula occurrences, an independent
   correctness criterion (Danos–Regnier, decided by Yeo's deletion test on
