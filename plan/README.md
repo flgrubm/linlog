@@ -269,9 +269,13 @@ comes from deterministic layouts that the objects themselves suggest: a
 derivation is a tree laid out bottom-up by subtree width (as ebproof does),
 a proof net is its formula trees drawn downwards from the conclusions with
 the axiom links as arcs above the literals, a sequent is a line of text.
-Fonts are declared, not measured: a monospace font with a fixed advance per
-character makes the layout exact without font metrics. No graphviz, no
-browser-side layout. The same layouts feed the LaTeX and Typst exports where
+The font is Euler math (the author's choice, 2026-09-29: AMS Euler through
+`eulervm` in LaTeX, the Euler Math OpenType font in Typst, SVG and the
+web), so widths cannot come from a fixed advance: the SVG layout uses a
+table of per-character advances of Euler Math measured once and committed,
+a fixed fallback advance for a character outside it, and `textLength` on
+every text run so that a viewer without the font still fits the layout.
+No graphviz, no browser-side layout. The same layouts feed the LaTeX and Typst exports where
 a package needs coordinates (it does not for ebproof and curryst trees).
 
 **D13. Interactive proving is a partial derivation.** The state a client
@@ -481,3 +485,26 @@ full powerset; the step that adds the fifth feature makes that change in
   parallel layer serves `prove_goal`, the web front end's plan starts from
   the report's list of calls, and the interactive follow-ups (net engine
   on a sub-forest, stored positions, nullary Mix) are 15g'.
+- 2026-09-29: step 10 reviewed and accepted. Eight commits, "Print
+  formulas and sequents for LaTeX and Typst" to "Document the LaTeX and
+  Typst exports"; all checks pass including `nix flake check` with the
+  new `export` check (pdfLaTeX and Typst compile every snapshot and two
+  CLI outputs, offline); the formats were exercised by hand on `prove`,
+  `check`, `seq print` and `interact show`, and two Typst snapshots were
+  rendered to PNG and looked right. D6 and D14 held: one symbol table per
+  target over one printer with `Display`'s bracketing, an explicit-stack
+  walk so the emitters never recurse over the tree, `Form` for fragment
+  versus standalone, the `latex` and `typst` features, and the feature
+  check switched to `--each-feature` plus `--feature-powerset --depth 2`
+  as D14 asked at the fifth feature. Decisions accepted: an open goal is
+  its sequent under vertical dots with no bar in both targets (neither
+  package draws a dotted bar per inference), Typst connectives as Unicode
+  characters since Typst 0.15 renamed `times.circle`, the TeX Live
+  closure (435 MiB, from the cache) kept for the only proof that the LaTeX
+  compiles. Known limit: curryst refuses trees above about eleven
+  inferences, recorded as 15g''. The author chose Euler math for every
+  drawing of sequents and derivations (D12 amended): step 11 lays SVG out
+  from a committed advance table of Euler Math with `textLength` as the
+  safety net, and switches the step 10 standalone documents to `eulervm`
+  and the Euler Math font (item 1a). Prompts 11, 12, 13 (the cargo-hack
+  commands) and 15 amended.

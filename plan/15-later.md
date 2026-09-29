@@ -98,7 +98,8 @@ search vehicle. Assess first.
 feature (and without whichever optional features of D14 the client does not
 ship), the interactive state of step 9 as the client's state with its JSON
 as the wire form, the SVG of partial derivations from step 11 as the
-picture, and the JSON formats for import and export. Its own plan, which
+picture (Euler Math served through `@font-face`, the same advance table
+as the SVG), and the JSON formats for import and export. Its own plan, which
 starts from `plan/reports/09-interactive.md`, "For steps 10 to 12 and the
 web front end": the calls the client makes (`Interactive::new` or the JSON,
 `goals`/`goal`/`reading` to draw the goals with positions as click
@@ -106,6 +107,21 @@ targets, `rules` for the menu, `split_passes` to grey out a split,
 `apply`, `undo`, `close` with a node-counting stop closure since wasm has
 no clock in core, `derivation` for the picture, `proof` at the end), and
 the `linlog interact` command of step 9 as the reference behaviour.
+
+## 15g''. Export follow-ups
+
+Left open by step 10 (`plan/reports/10-latex-typst.md`, "Open questions").
+Typst refuses a curryst 0.6.0 tree more than about eleven inferences
+high ("maximum show rule depth exceeded", curryst nesting several layout
+elements per level), so the Typst export is for small proofs: report it
+upstream, and if it stays, write the tree with linlog's own layout (the
+subtree widths of step 11's SVG, emitted as a Typst `grid`/`stack` with
+explicit widths) instead of curryst, which also removes the package
+import. Greek atom names under pdfLaTeX (`α` to `\alpha` in one table)
+if users name atoms that way. `interact`'s `proof` could take a format
+with a spelling that does not collide with its file argument (`proof
+--latex`). The rule-label convention (upright `L`/`R`, subscript `1`/`2`,
+`?d`) is one table per target for a user who wants another.
 
 ## 15g'. Interactive follow-ups
 

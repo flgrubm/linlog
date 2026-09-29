@@ -18,7 +18,22 @@ end": a proof in progress is `Interactive::derivation()`, a `Derivation`
 whose open goals are inferences with `rule == Rule::Open`, no principal
 and no premises; the text renderer draws such a leaf as its sequent alone
 with no bar, and step 10 chose one shape for an open leaf in LaTeX and
-Typst (its report): draw the same thing in SVG. The SVG of a partial
+Typst (its report, "Decisions"): the sequent under vertical dots, with no
+inference line, because neither package draws a dotted bar per inference.
+Draw the same thing in SVG. `plan/reports/10-latex-typst.md`, "For step
+11 (SVG) and step 12": `export::notation::Notation` is the symbol table
+with the printers (`term`, `ill`, `one_sided`, `sequent`) that keep the
+bracketing of `Display`; a Unicode table with `&` and `<` escaped for XML
+is the SVG text of formulas, and `Rule::name` the label. `notation::walk`
+is the explicit-stack traversal with enter and exit events; subtree
+widths for the layout come from a post-order pass over the exits. Add
+`feature = "svg"` to the `cfg(any(…))` on `notation` and `Form`. In the
+CLI, `derivation(proof, mode, format, form)` in `prove.rs` has one arm
+per format, `note` writes the verdict as the target's comment (`<!-- …
+-->` for SVG) and `form` says which formats take `--standalone`; an SVG
+is always a whole document, so decide whether `--standalone` is accepted
+as a no-op or refused, and say why. `interact show` takes a format name
+(`show latex|typst`): add `svg`. The SVG of a partial
 derivation is what the web front end (step 15g) will draw after every
 `apply`, so the derivation function must be cheap to call repeatedly and
 pure (data in, string out); the report's list of what the front end will
@@ -37,12 +52,35 @@ string). Readable at the default size, scalable, with the text selectable.
 
 ## What to build
 
-1. **Layout without font metrics (D12).** A monospace font stack declared
-   in the SVG (`font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas,
-   monospace`) with a fixed advance per character and a fixed line height,
-   so widths are `chars × advance`; Unicode connectives count as one
-   character. Expose the advance, line height, margins and colours as a
-   `Style` struct with defaults.
+1. **Layout with a declared font and a committed advance table (D12).**
+   The font is Euler Math (the author's choice for every drawing of
+   sequents, derivations and nets): `font-family: "Euler Math", "Neo
+   Euler", serif` in the SVG, with the letters in italic as math sets
+   them and rule labels upright. Widths are the sum of per-character
+   advances from a table of Euler Math's advances (em units) for every
+   character the printers emit (Latin letters, digits, the connectives and
+   units, brackets, comma, space, `⊢`, `⊥` as a superscript, the dots of
+   an open goal), measured once from the font file and committed as a
+   constant with the measuring command in the report; a character outside
+   the table gets a fixed fallback advance. Every `<text>` run also
+   carries `textLength` (its computed width) with
+   `lengthAdjust="spacing"`, so a viewer without the font still fits the
+   layout, and the layout stays deterministic and metric-free at run time.
+   Get the font from nixpkgs if it is packaged (search for Euler Math,
+   Neo Euler; the OTF is Khaled Hosny's `euler-otf`, OFL) or as a flake
+   input pinned to a release, for the measurement and for a rendering
+   check; the SVG does not embed it. Expose the line height, gaps, margins
+   and colours as a `Style` struct with defaults.
+1a. **Euler in the step 10 documents.** The standalone documents of the
+   LaTeX and Typst exports set the same font: `\usepackage{eulervm}`
+   after `amssymb` in the LaTeX preamble (the texlive package `eulervm`
+   added to `modules/export.nix`; cmll's own connectives are unaffected)
+   and `#show math.equation: set text(font: "Euler Math")` in the Typst
+   page setup, with the font on `typst compile`'s `--font-path` in the
+   check so that no fallback warning hides a missing font. Re-bless the
+   snapshots (`BLESS=1 cargo test -p linlog --test export`) and keep the
+   fragments unchanged: a fragment takes the fonts of the document it is
+   pasted into.
 2. **Sequent**: text on one line, with the turnstile and connectives; a
    `<title>` with the plain text.
 3. **Derivation**: the classic bottom-up layout: each node's width is the

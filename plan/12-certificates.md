@@ -31,6 +31,20 @@ gives the checked `Proof`, and `proof.derivation()` (or
 `Rule::classical()` maps every two-sided name to its one-sided rule, which
 the Yalla mapping wants for the classical kernel.
 
+Step 10 (`plan/reports/10-latex-typst.md`, "The API" and "For step 11 and
+step 12") built the export scaffolding to reuse: `export::notation::walk`
+walks a derivation with an explicit stack and hands out enter and exit
+events, the exits in postfix order, which is the order of tactics for a
+script that proves premises before conclusions; `export::Form`
+(`Fragment` or `Standalone`) is the type for "a proof script to paste"
+versus "a whole `.v` file with its `Require`s", and the CLI's `form`
+decides which formats take `--standalone`, `note` writes the verdict as
+the format's comment (`(* … *)`) and `derivation(proof, mode, format,
+form)` in `prove.rs` has one arm per format. The symbol table `Notation`
+is for math notation and does not fit Rocq's constructors; write the
+formula printer of the kernel's syntax in `export::rocq`. Add
+`feature = "rocq"` to the `cfg(any(…))` on `Form`.
+
 ## Goal
 
 `export::rocq`, behind the cargo feature `rocq` (decision D14; on by

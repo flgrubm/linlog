@@ -100,8 +100,11 @@ engine prunes.
 
 - No `unsafe`; no lock held across a recursive call; no global state other
   than what the pool owns.
-- `cargo hack check --feature-powerset -p linlog` must pass with and without
-  `parallel`; `core` without the feature has no rayon in its tree.
+- `cargo hack check --each-feature -p linlog` and `cargo hack check
+  --feature-powerset --depth 2 -p linlog` (the feature check since step
+  10, D14) must pass; `--each-feature`'s `--all-features` run is the first
+  that differs from the defaults once `parallel` exists. `core` without
+  the feature has no rayon in its tree.
 - Keep the sequential code paths intact and readable; the parallel layer
   wraps them rather than forking them.
 
@@ -109,7 +112,8 @@ engine prunes.
 
 `cargo clippy --workspace --all-targets -- --deny warnings`,
 `cargo test --workspace` (with and without the feature),
-`cargo hack check --feature-powerset -p linlog`, `cargo deny check`,
+`cargo hack check --each-feature -p linlog`, `cargo hack check
+--feature-powerset --depth 2 -p linlog`, `cargo deny check`,
 `nix flake check` at the end (`jj st` first). Run the tests under a thread
 sanitizer if the toolchain makes it easy; else say so.
 
