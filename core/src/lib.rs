@@ -10,6 +10,61 @@
 //! view that renders them, and their serialization; and proof search, which
 //! decides a sequent with the engine its fragment calls for and returns a
 //! checked proof.
+//!
+//! # The common path
+//!
+//! Parse a sequent, see which fragment it lives in, prove it, print the
+//! derivation and serialize the proof:
+//!
+#![cfg_attr(all(feature = "parse", feature = "serialize"), doc = "```")]
+#![cfg_attr(not(all(feature = "parse", feature = "serialize")), doc = "```ignore")]
+//! use linlog::{Fragment, Mode, Options, Sequent, Verdict, prove};
+//!
+//! // Two-sided input becomes one-sided: ⊢ ~A, A ⊗ ~B, B.
+//! let sequent: Sequent = "A, A -o B |- B".parse()?;
+//! assert_eq!(sequent.fragment(), Fragment::MLL);
+//!
+//! let outcome = prove(&sequent, Mode::CLASSICAL, &Options::default())?;
+//! let Verdict::Proved(proof) = &outcome.verdict else {
+//!     panic!("the sequent is provable");
+//! };
+//! assert_eq!(
+//!     proof.derivation()?.to_string(),
+//!     "─────── ax   ─────── ax\n\
+//!      ⊢ ~A, A      ⊢ ~B, B\n\
+//!      ──────────────────── ⊗\n\
+//!     \x20 ⊢ ~A, A ⊗ ~B, B"
+//! );
+//!
+//! let json = serde_json::to_string(&proof)?;
+//! let back: linlog::Proof = serde_json::from_str(&json)?;
+//! back.check(Mode::CLASSICAL)?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! A [`Mode`] is three named flags, [`Options`] a builder with defaults, and
+//! [`prove_until`] takes a stop condition for a time limit or an
+//! interruption, since this crate has no clock:
+//!
+#![cfg_attr(feature = "parse", doc = "```")]
+#![cfg_attr(not(feature = "parse"), doc = "```ignore")]
+//! use linlog::{Fragment, Mode, Options, Verdict, prove_until};
+//!
+//! let mode = Mode { intuitionistic: false, affine: false, mix: true };
+//! let options = Options::default().fragment(Some(Fragment::MALL));
+//! let mut budget = 1000;
+//! let outcome = prove_until(&"|- A par B, ~A, ~B".parse()?, mode, &options, || {
+//!     budget -= 1;
+//!     budget == 0
+//! })?;
+//! assert!(matches!(outcome.verdict, Verdict::Proved(_)));
+//! assert_eq!(outcome.fragment, Fragment::MALL);
+//! # Ok::<(), linlog::Error>(())
+//! ```
+//!
+//! Errors are one type, [`Error`], whose messages say what is wrong with the
+//! input; a proof that fails the checker gives a [`CheckError`], which
+//! [`CheckError::describe`] prints with formulas.
 
 #![allow(dead_code)]
 #![allow(unused_variables)]
