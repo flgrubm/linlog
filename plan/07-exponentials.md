@@ -1,0 +1,102 @@
+# Step 7: exponentials (MELL, full LL) and affine mode
+
+You are working in the linlog repository. CLAUDE.md applies throughout: jj
+only (never git), thematic commits as soon as a unit is done, doc comments on
+every item, the verification table, no pushing. Read before you start:
+
+- `plan/README.md` (D6, D7, D8, D9) and every report in `plan/reports/`,
+  especially `02-proofs.md` (the dyadic terms and the translation to the
+  standard calculus) and `03-focused-engine.md` (the engine you extend).
+- `proof-search-specifications.md`: "MELL" in full (decidability status,
+  the MELL-Seq specification: dyadic sequents, rules, bound, loop check,
+  memo, copy heuristics, count prunes; the affine variant; pitfalls; data
+  layout), "Other fragments" § "Full propositional LL" and § "Contractive
+  fragments" (read, not implemented), and "Common infrastructure" §
+  "Memoization contract".
+- `.claude/rules/core.md`, `core/src/search/focus/**`, `core/src/proofs/**`.
+
+## Goal
+
+The focused engine handles exponentials: dyadic sequents `⊢ Θ ; Γ`, the
+D2 copy rule bounded per branch with iterative deepening, memo entries that
+carry the remaining bound, the loop check, and the three-valued outcome
+(`Proved`, `Unprovable` only after a level completed without hitting the
+bound, `Unknown` otherwise). Full LL is MELL plus the MALL rules already
+present. Affine mode adds weakening and the supermultiset-ancestor prune,
+which makes the engine a decision procedure for affine fragments. Every
+proof passes the step 2 checker and expands to a standard derivation with
+explicit dereliction, contraction, weakening and promotion.
+
+## What to build
+
+1. **Dyadic sequents** in the engine's state: `Θ` as a bitset, `Γ` as a
+   bitset with a lazily promoted count vector when a copy repeats an
+   occurrence (spec "Data layout"); memo key over both zones; the branch
+   stack of stable sequents for the loop check and the affine prune.
+2. **Rules**: `?` asynchronous into Θ; `!` in focus with empty `Γ` (affine:
+   any `Γ`), release; D1 and D2 as the spec states with D2 counting against
+   the per-branch bound; the two initial rules; units with Θ. The `&` rule
+   duplicates `Γ` and keeps `Θ`, each premise inheriting the remaining
+   budget.
+3. **The bound**: `b = 0, 1, 2, …` up to `Options::copies`, with a level's
+   result `Failed` versus `Exhausted` tracked exactly as the spec requires
+   for soundness of `Unprovable`. Memo entries survive across levels;
+   `Failed{bound_remaining}` hits only when the current remaining bound is
+   ≤ the stored one.
+4. **Copy heuristics** as the spec lists them (D1 before D2; prefer Θ
+   formulas whose literals match unmatched atoms; skip a D2 on a formula
+   with an unconsumed identical copy in Γ). Count prunes disabled for atoms
+   below any `?` or `!` in the problem.
+5. **Affine mode**: weakening in the initial rule, under `!` and `1`; the
+   supermultiset-ancestor prune against the branch stack; the affine memo
+   contract (say what changes and why it stays sound); termination test.
+   `Mode::affine` reaches the CLI's `--affine`.
+6. **Full LL**: confirm the additive rules and the dyadic rules compose
+   without new cases; test sequents mixing `&`/`⊕` with `!`/`?`.
+7. **Dispatch**: MELL and LL rows of D8, the affine row, `--copies`
+   (default: a documented small number, e.g. 3 as llprover uses, with
+   `Unknown` reported when it binds), `--timeout` honoured inside deepening.
+   The CLI's `Unknown` line says which limit bound.
+8. **Derivation view**: the dyadic proofs expand into standard derivations
+   (dereliction at D2, contraction where a Θ formula is used more than once,
+   weakening for unused Θ members at the leaves, promotion for `!`); the
+   step 2 checker validates the terms, the rendering shows the standard
+   rules. Tests compare against expected renderings for small MELL proofs.
+9. **Tests**: the spec's soundness pitfalls as tests (an `Exhausted` level
+   never yields `Unprovable`; memo reuse with a larger remaining bound is
+   refused), the classic MELL examples (`!a ⊢ a` by dereliction; `!a ⊢ 1`
+   by weakening; `!a ⊢ a ⊗ a` and `!a ⊢ !a ⊗ !a` needing two copies;
+   `⊢ !(a ⊸ a)`; `!a, !(a ⊸ b) ⊢ !b` with contraction under promotion;
+   `a ⊢ !a` and `?a ⊢ a` unprovable), the generator extended with `!`/`?`
+   rules (generated proofs
+   must be found within their copy count), affine examples (`a ⊢ 1`,
+   `a, b ⊢ a` provable only affinely), and a handful of ILLTP-style Horn
+   problems as ignored slow tests.
+10. **Documentation**: `.claude/rules/core.md` (dyadic invariants, the bound
+    and memo contract, the affine prune's soundness argument); CLAUDE.md
+    and README for the new flags.
+
+## Constraints
+
+- No `unsafe`; hot-path allocation only when a count vector is promoted.
+- Determinism with the same options.
+- `Unprovable` is a claim of completeness: make its conditions explicit in
+  code and doc comments, and test them.
+
+## Verification
+
+`cargo clippy --workspace --all-targets -- --deny warnings`,
+`cargo test --workspace`, `cargo hack check --feature-powerset -p linlog`,
+`cargo deny check` if a dependency changed, `nix flake check` at the end
+(`jj st` first). Report release timings on the slow tests and how the memo
+size grows with the bound.
+
+## Deliverables
+
+- Thematic jj commits ("Add dyadic sequents to the focused engine",
+  "Bound copies with iterative deepening", "Add affine mode", "Expand dyadic
+  proofs into standard derivations", …).
+- `plan/reports/07-exponentials.md`: API and option changes, the soundness
+  arguments in a few sentences each, timings, decisions, deviations, open
+  questions, what step 8 (two-sided engine reuses the dyadic machinery) and
+  step 12 (memo with bounds under concurrency) must know.
