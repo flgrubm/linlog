@@ -1,10 +1,11 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use crate::argument_parsing::InteractArgs;
+use crate::argument_parsing::{Format, InteractArgs};
 use crate::prove::{derivation, describe, on_large_stack};
 use crate::{Status, catch_interrupt, clear_interrupt, interrupted, io};
 use anyhow::{Context, Result, bail};
+use linlog::export::{Form, latex, typst};
 use linlog::search::{Options, Outcome, Reason, Verdict};
 use linlog::{InfId, Interactive, Position, Reading, Rule};
 use std::fmt::Write as _;
@@ -19,7 +20,7 @@ rules G P           the rules that act on formula P of goal G
 apply G P RULE [P…] apply a rule; further positions go to the left premise of a ⊗ or Mix
 undo                retract the last step
 close [G]           let the search close goal G, or every open goal
-show                the derivation so far
+show [latex|typst]  the derivation so far, as text or as a LaTeX or Typst proof tree
 proof [FILE]        check the finished proof and print it, or write it as JSON
 save FILE           write the session as JSON
 load FILE           resume a session written by save
@@ -179,7 +180,12 @@ impl Session {
                 }
                 text
             }
-            "show" => self.state.derivation().to_string(),
+            "show" => match rest.first() {
+                None => self.state.derivation().to_string(),
+                Some(&"latex") => latex::derivation(&self.state.derivation(), Form::Fragment),
+                Some(&"typst") => typst::derivation(&self.state.derivation(), Form::Fragment),
+                Some(other) => bail!("show {other}? the formats are latex and typst"),
+            },
             "proof" => {
                 let proof = self.state.proof()?;
                 let mode = self.state.mode();
@@ -188,7 +194,10 @@ impl Session {
                         io::write(Some(Path::new(path)), &serde_json::to_string(&proof)?)?;
                         format!("valid proof written to {path}")
                     }
-                    None => format!("valid proof ({mode})\n{}", derivation(&proof, mode)?),
+                    None => format!(
+                        "valid proof ({mode})\n{}",
+                        derivation(&proof, mode, Format::Text, Form::Fragment)?
+                    ),
                 }
             }
             "save" => {

@@ -1,10 +1,11 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use crate::argument_parsing::{CheckArgs, Format, ProveArgs};
+use crate::argument_parsing::{CheckArgs, Format, ProveArgs, SequentFormat};
 use crate::io;
 use crate::{Status, catch_interrupt, interrupted};
 use anyhow::{Context, Result, anyhow, bail};
+use linlog::export::{Form, latex, typst};
 use linlog::search::{Engine, Options, Outcome, Reason, Statistics, Verdict, prove_until};
 use linlog::{Error, Forest, Fragment, Mode, Proof, ProofStructure, Reading, Sequent};
 use std::fmt::Write;
@@ -60,29 +61,76 @@ enum Stop {
     Interrupt,
 }
 
-/// Returns the derivation of a proof as a text tree, two-sided in
-/// intuitionistic mode, or the checker's complaint with formulas.
-pub(crate) fn derivation(proof: &Proof, mode: Mode) -> Result<String> {
+/// Returns the derivation of a proof, two-sided in intuitionistic mode:
+/// a LaTeX or Typst proof tree in `form` for those formats, a text tree
+/// otherwise; or the checker's complaint with formulas.
+pub(crate) fn derivation(proof: &Proof, mode: Mode, format: Format, form: Form) -> Result<String> {
     let derivation = if mode.intuitionistic {
         proof.two_sided_derivation()
     } else {
         proof.derivation()
     };
     derivation
-        .map(|d| d.to_string())
+        .map(|d| match format {
+            Format::Latex => latex::derivation(&d, form),
+            Format::Typst => typst::derivation(&d, form),
+            Format::Text | Format::Json | Format::Net => d.to_string(),
+        })
         .map_err(|e| anyhow!("the proof is invalid: {}", e.describe(proof.forest())))
 }
 
 /// Returns a sequent as text: one-sided, or two-sided in intuitionistic
 /// mode when it has an intuitionistic reading.
 pub fn sequent_text(sequent: &Sequent, mode: Mode) -> Result<String> {
+    sequent_in(sequent, mode, SequentFormat::Text, Form::Fragment)
+}
+
+/// Returns a sequent in a format, one-sided, or two-sided in
+/// intuitionistic mode when it has an intuitionistic reading; LaTeX and
+/// Typst in `form`.
+pub fn sequent_in(
+    sequent: &Sequent,
+    mode: Mode,
+    format: SequentFormat,
+    form: Form,
+) -> Result<String> {
     if !mode.intuitionistic {
-        return Ok(sequent.to_string());
+        return Ok(match format {
+            SequentFormat::Text => sequent.to_string(),
+            SequentFormat::Latex => latex::sequent(sequent, form),
+            SequentFormat::Typst => typst::sequent(sequent, form),
+        });
     }
     let forest = Forest::new(sequent)?;
-    Reading::new(&forest)
-        .map(|r| r.to_string())
-        .map_err(|e| anyhow!("not an intuitionistic sequent: {}", e.describe(&forest)))
+    let reading = Reading::new(&forest)
+        .map_err(|e| anyhow!("not an intuitionistic sequent: {}", e.describe(&forest)))?;
+    Ok(match format {
+        SequentFormat::Text => reading.to_string(),
+        SequentFormat::Latex => latex::two_sided(&reading, form),
+        SequentFormat::Typst => typst::two_sided(&reading, form),
+    })
+}
+
+/// Returns the form `--standalone` asks for, which only the LaTeX and
+/// Typst formats (`exported`) have.
+pub fn form(standalone: bool, exported: bool) -> Result<Form> {
+    match (standalone, exported) {
+        (false, _) => Ok(Form::Fragment),
+        (true, true) => Ok(Form::Standalone),
+        (true, false) => bail!("--standalone needs --format latex or --format typst"),
+    }
+}
+
+/// Returns a line or lines of text as the format writes them next to its
+/// output: as they are, or as LaTeX or Typst comments.
+fn note(format: Format, text: &str) -> String {
+    let prefix = match format {
+        Format::Latex => "% ",
+        Format::Typst => "// ",
+        Format::Text | Format::Json | Format::Net => return text.to_owned(),
+    };
+    let lines: Vec<String> = text.lines().map(|l| format!("{prefix}{l}")).collect();
+    lines.join("\n")
 }
 
 /// Returns a search error with formulas where the library's message has
@@ -142,6 +190,10 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         .copies(args.copies);
     let format = args.output.format;
     let quiet = args.output.quiet;
+    let form = form(
+        args.output.standalone,
+        matches!(format, Format::Latex | Format::Typst),
+    )?;
     catch_interrupt();
 
     let (outcome, stop, elapsed, derivation) = on_large_stack(args.recursion_limit, || {
@@ -166,7 +218,9 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         .map_err(|e| describe(e, &sequent))?;
         let elapsed = start.elapsed();
         let derivation = match (&outcome.verdict, format, quiet) {
-            (Verdict::Proved(proof), Format::Text, false) => Some(derivation(proof, mode)?),
+            (Verdict::Proved(proof), Format::Text | Format::Latex | Format::Typst, false) => {
+                Some(derivation(proof, mode, format, form)?)
+            }
             (Verdict::Proved(proof), Format::Net, false) => Some(net_of(&outcome, proof, mode)?),
             _ => None,
         };
@@ -175,17 +229,17 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
 
     let text = match format {
         Format::Json => serde_json::to_string(&outcome)?,
-        Format::Text | Format::Net => {
-            let mut text = verdict_line(&outcome, args.fragment.is_some(), stop);
+        Format::Text | Format::Net | Format::Latex | Format::Typst => {
+            let mut text = note(
+                format,
+                &verdict_line(&outcome, args.fragment.is_some(), stop),
+            );
             if let Some(derivation) = derivation {
                 write!(text, "\n{derivation}")?;
             }
             if args.stats {
-                write!(
-                    text,
-                    "\n{}",
-                    statistics(outcome.engine, &outcome.statistics, elapsed)
-                )?;
+                let statistics = statistics(outcome.engine, &outcome.statistics, elapsed);
+                write!(text, "\n{}", note(format, &statistics))?;
             }
             text
         }
@@ -263,15 +317,25 @@ pub fn check(args: &CheckArgs) -> Result<Status> {
     let mode = args.mode.mode();
     let format = args.output.format;
     let quiet = args.output.quiet;
+    let form = form(
+        args.output.standalone,
+        matches!(format, Format::Latex | Format::Typst),
+    )?;
     let (valid, text) = on_large_stack(Options::DEFAULT_RECURSION_LIMIT, || {
-        check_text(&proof, mode, format, quiet)
+        check_text(&proof, mode, format, form, quiet)
     })??;
     io::write(args.output.output.as_deref(), &text)?;
     Ok(if valid { Status::Yes } else { Status::No })
 }
 
 /// Checks the proof and returns whether it is valid, with the output text.
-fn check_text(proof: &Proof, mode: Mode, format: Format, quiet: bool) -> Result<(bool, String)> {
+fn check_text(
+    proof: &Proof,
+    mode: Mode,
+    format: Format,
+    form: Form,
+    quiet: bool,
+) -> Result<(bool, String)> {
     let result = proof.check(mode);
     let text = match format {
         Format::Json => serde_json::json!({
@@ -280,24 +344,25 @@ fn check_text(proof: &Proof, mode: Mode, format: Format, quiet: bool) -> Result<
             "error": result.as_ref().err().map(|e| e.describe(proof.forest()).to_string()),
         })
         .to_string(),
-        Format::Text | Format::Net => {
+        Format::Text | Format::Net | Format::Latex | Format::Typst => {
             // A sequent with no intuitionistic reading is an invalid proof
             // in intuitionistic mode, printed one-sided.
             let sequent =
                 sequent_text(proof.sequent(), mode).unwrap_or_else(|_| proof.sequent().to_string());
+            let valid = note(format, &format!("valid proof of {sequent} ({mode})"));
             match &result {
-                Ok(()) if quiet => format!("valid proof of {sequent} ({mode})"),
+                Ok(()) if quiet => valid,
                 Ok(()) if format == Format::Net => {
                     nets_exist(proof.sequent(), mode)?;
-                    format!("valid proof of {sequent} ({mode})\n{}", net(proof, mode)?)
+                    format!("{valid}\n{}", net(proof, mode)?)
                 }
-                Ok(()) => format!(
-                    "valid proof of {sequent} ({mode})\n{}",
-                    derivation(proof, mode)?
-                ),
-                Err(e) => format!(
-                    "invalid proof of {sequent} ({mode}): {}",
-                    e.describe(proof.forest())
+                Ok(()) => format!("{valid}\n{}", derivation(proof, mode, format, form)?),
+                Err(e) => note(
+                    format,
+                    &format!(
+                        "invalid proof of {sequent} ({mode}): {}",
+                        e.describe(proof.forest())
+                    ),
                 ),
             }
         }

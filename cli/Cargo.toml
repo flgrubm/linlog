@@ -25,7 +25,11 @@ doc = false
 anyhow = "1.0.100"
 clap = { version = "4.5.54", features = ["derive", "unicode"] }
 ctrlc = "3.5.2"
-linlog = { version = "0.1.0", path = "../core", features = ["interactive"] }
+linlog = { version = "0.1.0", path = "../core", features = [
+  "interactive",
+  "latex",
+  "typst",
+] }
 serde_json = "1.0.149"
 
 [lints]

@@ -53,10 +53,11 @@ pub enum Command {
     /// formula P of goal G; `apply G P RULE [P…]` applies a rule, the
     /// further positions being the formulas that go to the left premise of
     /// a ⊗ or Mix; `undo` retracts the last step; `close [G]` lets the
-    /// search close goal G, or every open goal; `show` draws the derivation
-    /// so far; `proof [FILE]` checks the finished proof and prints it, or
-    /// writes it as JSON for `check`; `save FILE` and `load FILE` keep and
-    /// resume the session as JSON; `help`; `quit`. The exit status is 0
+    /// search close goal G, or every open goal; `show [latex|typst]` draws
+    /// the derivation so far, as text or as a LaTeX or Typst proof tree;
+    /// `proof [FILE]` checks the finished proof and prints it, or writes it
+    /// as JSON for `check`; `save FILE` and `load FILE` keep and resume the
+    /// session as JSON; `help`; `quit`. The exit status is 0
     /// when the session ends with a finished proof that checks, 1
     /// otherwise, and 2 for an error.
     #[command(after_help = SYNTAX)]
@@ -197,6 +198,13 @@ pub enum SeqCommand {
         /// reads it
         #[arg(short, long)]
         intuitionistic: bool,
+        /// The output format
+        #[arg(long, value_enum, value_name = "FORMAT", default_value_t = SequentFormat::Text)]
+        format: SequentFormat,
+        /// Write a document that compiles on its own instead of a fragment
+        /// to paste (latex and typst)
+        #[arg(long)]
+        standalone: bool,
         /// Write to this file instead of standard output
         #[arg(short, long, value_name = "PATH")]
         output: Option<PathBuf>,
@@ -279,9 +287,13 @@ pub struct OutputArgs {
     /// Write to this file instead of standard output
     #[arg(short, long, value_name = "PATH")]
     pub output: Option<PathBuf>,
-    /// Print only the verdict line, not the derivation (text format)
+    /// Print only the verdict line, not the derivation
     #[arg(short, long)]
     pub quiet: bool,
+    /// Write a document that compiles on its own instead of a fragment to
+    /// paste (latex and typst)
+    #[arg(long)]
+    pub standalone: bool,
 }
 
 /// The output formats of `prove` and `check`.
@@ -297,6 +309,23 @@ pub enum Format {
     /// numbers, and the verdict of the correctness criterion; for MLL
     /// without units, in classical mode with or without Mix
     Net,
+    /// The verdict as a comment, then the derivation as a LaTeX proof tree
+    /// of the ebproof package, with the connectives of cmll and amssymb
+    Latex,
+    /// The verdict as a comment, then the derivation as a Typst proof tree
+    /// of the curryst package
+    Typst,
+}
+
+/// The output formats of `seq print`.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SequentFormat {
+    /// Unicode text
+    Text,
+    /// LaTeX math, with the connectives of cmll and amssymb
+    Latex,
+    /// Typst math
+    Typst,
 }
 
 /// The fragments `--fragment` names.

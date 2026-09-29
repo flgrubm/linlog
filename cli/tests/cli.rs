@@ -401,6 +401,55 @@ fn net_format() {
     }
 }
 
+/// `--format latex` and `--format typst` print the verdict as a comment and
+/// the derivation as a proof tree, for `prove`, `check` and the session's
+/// `show`, and the sequent for `seq print`; `--standalone` makes a document
+/// and is refused for the other formats.
+#[test]
+fn latex_and_typst_formats() {
+    let (status, out, _) = linlog(&["prove", "--format", "latex", "A, A -o B |- B"], "");
+    assert_eq!(status, 0);
+    assert_eq!(
+        out,
+        "% provable (MLL, classical, net engine)\n\
+         \\begin{prooftree}\n\
+         \\infer0[$\\mathrm{ax}$]{\\vdash A^\\bot, A}\n\
+         \\infer0[$\\mathrm{ax}$]{\\vdash B^\\bot, B}\n\
+         \\infer2[$\\otimes$]{\\vdash A^\\bot, A \\otimes B^\\bot, B}\n\
+         \\end{prooftree}\n"
+    );
+    let (_, json, _) = linlog(&["prove", "-i", "--format", "json", "A, A -o B |- B"], "");
+    let (status, out, _) = linlog(&["check", "-i", "--format", "typst", "--standalone"], &json);
+    assert_eq!(status, 0);
+    assert!(
+        out.starts_with(
+            "// valid proof of A, A ⊸ B ⊢ B (intuitionistic)\n\
+             #import \"@preview/curryst:0.6.0\": prooftree, rule\n"
+        ),
+        "{out}"
+    );
+    let printed = linlog(
+        &["seq", "print", "-i", "--format", "latex", "A, A -o B |- B"],
+        "",
+    );
+    assert_eq!(
+        printed,
+        (0, "$A, A \\multimap B \\vdash B$\n".into(), String::new())
+    );
+    let (status, out, err) = linlog(&["prove", "--standalone", "A |- A"], "");
+    assert_eq!((status, out.as_str()), (2, ""));
+    assert!(err.contains("--standalone needs --format latex"), "{err}");
+    let (status, out, _) = linlog(&["interact", "A |- A"], "show latex\nquit\n");
+    assert_eq!(status, 1);
+    assert_eq!(
+        out,
+        "\\begin{prooftree}\n\
+         \\hypo{\\vdots}\n\
+         \\infer[no rule]1{\\vdash A^\\bot, A}\n\
+         \\end{prooftree}\n"
+    );
+}
+
 /// `seq` prints a sequent one-sided, as JSON that it reads back, and its
 /// fragment.
 #[test]

@@ -15,7 +15,7 @@ pub mod io;
 pub mod prove;
 
 use anyhow::Result;
-use argument_parsing::{Cli, Command, SeqCommand};
+use argument_parsing::{Cli, Command, SeqCommand, SequentFormat};
 use clap::Parser;
 use linlog::{Error, Mode};
 use std::fmt::Write;
@@ -106,13 +106,16 @@ fn run(cli: &Cli) -> Result<Status> {
                 SeqCommand::Print {
                     input,
                     intuitionistic,
+                    format,
+                    standalone,
                     output,
                 } => {
                     let mode = Mode {
                         intuitionistic: *intuitionistic,
                         ..Mode::CLASSICAL
                     };
-                    let text = prove::sequent_text(&input.sequent()?, mode)?;
+                    let form = prove::form(*standalone, *format != SequentFormat::Text)?;
+                    let text = prove::sequent_in(&input.sequent()?, mode, *format, form)?;
                     io::write(output.as_deref(), &text)?;
                 }
                 SeqCommand::Json {

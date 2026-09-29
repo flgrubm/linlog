@@ -29,9 +29,11 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
 - `interact.rs`: `interact`, a line-based session over `Interactive`:
   the state comes from the sequent argument or `--state FILE` (a session
   `save` wrote; the mode is then the file's), the commands from standard
-  input (`goals`, `rules`, `apply`, `undo`, `close`, `show`, `proof`,
-  `save`, `load`, `help`, `quit`; `HELP` is the list), every command's
-  output or `error: …` goes to standard output and the session goes on,
+  input (`goals`, `rules`, `apply`, `undo`, `close`, `show [latex|typst]`,
+  `proof`, `save`, `load`, `help`, `quit`; `HELP` is the list; `show`
+  with a format prints the export fragment of the partial derivation),
+  every command's output or `error: …` goes to standard output and the
+  session goes on,
   and the whole loop runs inside `on_large_stack` so that `close` and the
   derivation drawing have the stack `prove` has. `goal_line` prints a goal
   with the position of every formula, two-sided under the reading.
@@ -44,7 +46,14 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   is exit status 3 like every other unknown. `--format net` prints the net the
   net engine found (`Outcome::net`) and otherwise the net read off the
   proof; `--stats` prints the counters of the engine that ran
-  (`statistics`, one arm per engine with its own counters).
+  (`statistics`, one arm per engine with its own counters). `--format
+  latex` and `--format typst` print the verdict line and the statistics
+  as comments of the target (`note`) and the derivation through
+  `linlog::export` (`derivation(proof, mode, format, form)`, which also
+  draws the text tree); `--standalone` makes the derivation a document and
+  is refused, exit 2, for the other formats (`form`). `seq print
+  --format` (`SequentFormat`) prints through `sequent_in`, which
+  `sequent_text` wraps.
 
 ## Invariants
 
@@ -101,11 +110,15 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
 - **An `interact` command**: an arm in `Session::command`, a line in
   `HELP`, and the session test in `cli/tests/cli.rs`, which pins the
   exact output of a scripted session.
-- **An output format** (`latex`, `typst`, `svg`, `rocq`): a variant of
-  `Format` and its arm in `prove`'s and `check_text`'s `match format`, as
-  `net` has. A format that renders the derivation builds it inside the
-  `on_large_stack` closure, as the text format does; `net` builds the net
-  there too, though desequentialization does not recurse.
+- **An output format** (`svg`, `rocq`): a variant of `Format` and its
+  arm in `prove`'s and `check_text`'s `match format`, as `net`, `latex`
+  and `typst` have. A format that renders the derivation builds it inside
+  the `on_large_stack` closure, as the text format does (an arm in
+  `derivation`); `net` builds the net there too, though
+  desequentialization does not recurse. A format with a document form
+  takes `--standalone` (`form` lists which formats have one), and one
+  whose output is a source file writes the verdict as its comment
+  (`note`), so that the output still compiles.
 - **A new `Reason`**: its arm in `verdict_line`, which turns a generic
   phrase into advice (`RecursionLimit` and `CopyBound` name the flag to
   raise); the default arm prints `Reason`'s `Display`.
