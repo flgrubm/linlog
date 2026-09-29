@@ -428,7 +428,9 @@ impl Display for ProofStructure {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "parse")]
     use crate::fragment::Mode;
+    #[cfg(feature = "parse")]
     use crate::proofs::NodeId;
 
     /// Wraps a raw id.
