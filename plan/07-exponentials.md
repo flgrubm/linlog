@@ -15,6 +15,22 @@ every item, the verification table, no pushing. Read before you start:
   "Memoization contract".
 - `.claude/rules/core.md`, `core/src/search/focus/**`, `core/src/proofs/**`.
 
+## What step 2 fixed about the terms
+
+Read "How an engine constructs a proof" and "The dyadic-to-standard
+translation" in `plan/reports/02-proofs.md` before designing the dyadic
+state; the checker is the reference. In short: a `Quest` node where the
+asynchronous phase moves `?A` into `Θ`; a `Copy` node on the occurrence of
+`A` (the subformula of the `?`) for every D2 step; the initial rule with
+`p⊥ ∈ Θ` is `Copy(p⊥)` above `Ax(p, p⊥)`; `Bang` needs an empty linear
+zone; a `?` formula that goes unused needs no node (its `Quest` becomes
+`?w` in the view). In affine mode the term has no relaxed rules: the engine
+emits one `Weaken` node per surplus formula *below* the `ax`, `!` or `1`
+whose context it relaxes, never above a promotion. The checker derives the
+least unrestricted zone bottom-up, so it accepts any correct dyadic proof
+regardless of how the engine tracked `Θ`, and the derivation view puts
+`?d`, `?c` and `?w` where the translation table says.
+
 ## Goal
 
 The focused engine handles exponentials: dyadic sequents `⊢ Θ ; Γ`, the

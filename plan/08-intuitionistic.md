@@ -58,12 +58,20 @@ fast path of D8.
    convert the proof to a two-sided derivation; the spec says this
    embedding is conservative for this fragment only. Test agreement with
    the two-sided engine.
-5. **Checker and derivation view for ILL**: the step 2 checker validates the
-   two-sided rules in intuitionistic mode; the derivation view shows
-   two-sided sequents with the ILL rule names (`⊸L`, `⊸R`, `⊗L`, `⊗R`,
+5. **Checker and derivation view for ILL**: step 2 established (its
+   report, "No ILL rule tags") that on the lowered sequent every ILL rule is
+   a classical node, so the term type needs nothing; what is missing is the
+   one-succedent condition, which the checker currently refuses with
+   `Problem::Intuitionistic` because it needs the input/output side of every
+   occurrence, i.e. this step's reading. Replace that refusal with the test
+   (every derived sequent has exactly one output-shaped formula, a count
+   over the side map), and extend the derivation view (`Inference`, `Rule`
+   are the extension points) so intuitionistic derivations show two-sided
+   sequents `Γ ⊢ A` with the ILL rule names (`⊸L`, `⊸R`, `⊗L`, `⊗R`,
    `&L₁`, `&L₂`, `&R`, `⊕L`, `⊕R₁`, `⊕R₂`, `1L`, `1R`, `0L`, `⊤R`, `!L`,
-   `!R`, `!c`, `!w`, `ax`); rendering, JSON and the exports of steps 9 to 11
-   see the same view type.
+   `!R`, `!c`, `!w`, `ax`), mapped from the classical rules by the report's
+   table; rendering, JSON and the exports of steps 9 to 11 see the same view
+   type.
 6. **Additive fast path** (`search::additive`): the memoized recursive
    procedure on subformula pairs for additive-only sequents with exactly two
    roots, O(|A|·|B|), emitting a proof term; classical and intuitionistic;

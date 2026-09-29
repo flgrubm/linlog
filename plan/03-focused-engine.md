@@ -30,8 +30,16 @@ rejects the rest with a clear error (steps 6 to 8 fill the table).
 
 `Forest` and `OccSet` (`plan/reports/01-core-refactor.md` shows the API:
 `root_set`, `toggle`, `submasks` in Gray order over a compacted member list,
-`hash::HashMap<OccSet, _>` for the memo), the proof builder and checker of
-step 2 (`plan/reports/02-proofs.md`). Step 1 did not build the interval
+`hash::HashMap<OccSet, _>` for the memo), and the proof terms of step 2
+(`plan/reports/02-proofs.md`, "How an engine constructs a proof"): there is
+no builder type; the engine owns a `Vec<Node>` during search, pushes a node
+after its premises, keeps the `NodeId` of a proved stable sequent in the
+memo so a hit reuses the subproof, and at the end calls
+`Proof::new(forest.clone(), nodes, root)`, which drops the subproofs of
+failed branches. `Top(o)` carries no context. `proof.check(mode)` in a
+`debug_assert!` and in every test; the hand-written proofs in
+`core/src/proofs/check.rs` show what the terms of the classic examples look
+like. Step 1 did not build the interval
 counts or the count equations: they are this step's. `submasks` takes at
 most 63 members: a `⊗` split over a larger context must not panic; decide
 what happens (the spec's lazy contexts are step 14 material, so an

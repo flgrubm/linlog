@@ -56,8 +56,10 @@ of an MLL derivation into a net. Plus a textual representation of a net
    tests, `debug_assert!` in the function). With Mix, a structure may split
    into components without a splitting ⊗: emit Mix.
 4. **Desequentialization** (derivation → net): from a proof term of an MLL
-   derivation, read off the axiom links (each `Ax` node names its two
-   literal occurrences), build the structure and assert it is correct. Two
+   derivation, read off the axiom links (each `Node::Ax` names its two
+   literal occurrences; `Proof::nodes()` lists them, and the derivation
+   view's `Rule::Ax` inferences carry the same pairs), build the structure
+   and assert it is correct. Two
    derivations that differ only by rule permutations give the same net:
    test it.
 5. **Text form.** A readable listing of a net: the conclusions as

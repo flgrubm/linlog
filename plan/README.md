@@ -268,3 +268,19 @@ a package needs coordinates (it does not for ebproof and curryst trees).
   intuitionistic fragment names (step 8), a public `Sequent` builder (when
   a step needs it). Prompts 2, 3, 4 and 8 amended accordingly, and
   `conduct.md` added to every command.
+- 2026-09-29: step 2 reviewed and accepted. Five commits, "Add proof
+  terms" to "Document the proof model"; all checks pass including
+  `nix flake check`. `Proof` owns its `Forest`; `Node` is a 16-byte enum of
+  the dyadic rules plus `Weaken` and `Mix`; the checker runs bottom-up with
+  the least unrestricted zone and an absorbing-`⊤` flag, and was
+  differentially tested against an independent top-down checker by a
+  fresh-context reviewer (no disagreement on 1255 proofs, 75 300 mutants
+  and 600 000 random terms); the derivation view inserts `?d`/`?c`/`?w`
+  only where needed; JSON tags are frozen. Accepted deviations: multisets
+  as sorted vectors, no ILL rule tags (every ILL rule is a classical node
+  on the lowered sequent), intuitionistic checking refused until step 8
+  supplies the side reading, no postcard. Open items assigned: the ILL
+  one-succedent check and two-sided view (8), `CheckError` with formulas
+  and the `check` command's mode (4), affine `Weaken` placement and the
+  dyadic term shapes (7), axiom links from `Node::Ax` (5). Nullary Mix and
+  a canonical node order stay open until something needs them.

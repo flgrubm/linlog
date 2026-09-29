@@ -56,11 +56,20 @@ then performance.
      or serialize a sequent; `linlog seq fragment` prints the detected
      fragment; keep `--optimize` only if it still means something.
    - `linlog check PROOF` runs the checker on a serialized proof.
+     Deserialization does not run the checker (the file carries no mode),
+     so this command takes the mode flags and calls `Proof::check`; a
+     `CheckError` prints with occurrence ids only, so add the method step
+     2's report suggests that renders it with formulas through the forest,
+     and use it here and in `prove`.
    The `--help` text is the documentation: every argument's doc comment says
    what it does and, where not obvious, why one would use it.
 3. **Output text.** The default output for `Proved` is the derivation
-   rendering of step 2 preceded by one line with the verdict, the fragment
-   detected and the engine used (so a user sees the auto-detection at work);
+   rendering of step 2 (`proof.derivation()?.to_string()`) preceded by one
+   line with the verdict, the fragment detected and the engine used (so a
+   user sees the auto-detection at work). The derivation builder recurses
+   to the derivation's height and unfolds shared subproofs into a tree, so
+   run it on the same large-stack thread as the search and let `--quiet`
+   skip it;
    `Unprovable` and `Unknown` say why in one line. `--json` output carries
    the outcome, the fragment, the engine, the statistics and the proof.
    `Fragment` and `Mode` have no serde yet (step 1's report): give them a
