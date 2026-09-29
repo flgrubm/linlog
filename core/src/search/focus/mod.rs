@@ -235,15 +235,17 @@ impl<'a> Engine<'a> {
     /// Searches the goal with an empty unrestricted zone: the asynchronous
     /// phase on its formulas, once per copy bound from zero up to the
     /// configured one, until a level proves it or fails without ever
-    /// spending its budget. Without exponentials there is one level.
+    /// spending its budget. Without exponentials there is one level, and
+    /// in affine mode one level without a bound: the ancestor prune makes
+    /// the search finite on its own.
     fn run(&mut self, goal: &[OccId]) -> Search {
-        let levels = if self.rules.exponentials {
-            self.copies
-        } else {
-            0
+        let (first, levels) = match (self.rules.affine, self.rules.exponentials) {
+            (true, _) => (u32::MAX, u32::MAX),
+            (false, true) => (0, self.copies),
+            (false, false) => (0, 0),
         };
         let theta = self.take_set();
-        for budget in 0..=levels {
+        for budget in first..=levels {
             self.exhausted = false;
             self.dependency = NO_DEPENDENCY;
             let mut gamma = self.take_context();

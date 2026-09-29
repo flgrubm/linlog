@@ -257,7 +257,8 @@ impl Options {
     /// that has no proof within it is [`Reason::CopyBound`], unless some
     /// level finished without ever reaching its bound, which makes the
     /// sequent [`Verdict::Unprovable`]. Without exponentials the bound has
-    /// no effect.
+    /// no effect, and neither in affine mode, where the search is finite
+    /// without it.
     pub fn copies(self, copies: u32) -> Self {
         Self { copies, ..self }
     }
