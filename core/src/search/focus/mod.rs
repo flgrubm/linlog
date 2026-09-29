@@ -970,4 +970,49 @@ mod tests {
              ({provable_mutants} of them provable), at most {most_nodes} stable sequents per search"
         );
     }
+
+    /// Encodes a 3-Partition instance as a linear Horn program in the style
+    /// of Kanovich's encodings: bin `j` offers `size` units `bj` and three
+    /// slots `tj`; item `i` is a `&` over the bins of a clause taking its
+    /// units and a slot from that bin and producing `di`; the goal is the
+    /// tensor of every `di`. Every resource must be used exactly once, so
+    /// the sequent is provable if and only if the items split into triples
+    /// of sum `size`, one per bin.
+    fn three_partition(items: &[u32], bins: usize, size: u32) -> String {
+        let mut hypotheses = Vec::new();
+        for j in 1..=bins {
+            hypotheses.extend((0..size).map(|_| format!("b{j}")));
+            hypotheses.extend((0..3).map(|_| format!("t{j}")));
+        }
+        for (i, &a) in items.iter().enumerate() {
+            let clauses: Vec<String> = (1..=bins)
+                .map(|j| {
+                    let units = vec![format!("b{j}"); a as usize].join(" * ");
+                    format!("({units} * t{j} -o d{i})")
+                })
+                .collect();
+            hypotheses.push(clauses.join(" & "));
+        }
+        let goal: Vec<String> = (0..items.len()).map(|i| format!("d{i}")).collect();
+        format!("{} |- {}", hypotheses.join(", "), goal.join(" * "))
+    }
+
+    /// A 3-Partition instance with a solution is proved: the first bin
+    /// choices work out, so the search is short.
+    #[test]
+    fn three_partition_solved() {
+        let yes = three_partition(&[1, 2, 3, 1, 2, 3], 2, 6);
+        assert!(provable(&yes, Mode::CLASSICAL), "{yes}");
+    }
+
+    /// A 3-Partition instance without a solution is refuted. The atom bias
+    /// makes the clause bodies' literals negative, so every clause's `⊗`
+    /// split is enumerated rather than forced, and the refutation walks
+    /// billions of splits: about a minute in release mode.
+    #[test]
+    #[ignore = "about a minute in release mode; run with --release -- --ignored"]
+    fn three_partition_refuted() {
+        let no = three_partition(&[1, 1, 1, 3, 1, 1], 2, 4);
+        assert!(!provable(&no, Mode::CLASSICAL), "{no}");
+    }
 }
