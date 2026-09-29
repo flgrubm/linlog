@@ -86,7 +86,11 @@ explicit dereliction, contraction, weakening and promotion.
 7. **Dispatch**: MELL and LL rows of D8, the affine row, `--copies`
    (default: a documented small number, e.g. 3 as llprover uses, with
    `Unknown` reported when it binds), `--timeout` honoured inside deepening.
-   The CLI's `Unknown` line says which limit bound.
+   The CLI's `Unknown` line says which limit bound. In the CLI, `--copies`
+   already exists hidden and refused (`plan/reports/04-api-and-cli.md`, "The
+   copy bound"): remove `hide = true` and the refusal, pass the value to
+   the `Options` setter you add, and give the new `Reason` variant its line
+   in `core/src/serialize/search.rs`, which the compiler does not check.
 8. **Derivation view**: the dyadic proofs expand into standard derivations
    (dereliction at D2, contraction where a Θ formula is used more than once,
    weakening for unused Θ members at the leaves, promotion for `!`); the

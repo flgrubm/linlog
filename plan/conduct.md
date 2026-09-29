@@ -51,6 +51,13 @@ prompt, the plan, its steps or its decision numbers: they say what the
 code does or why, in terms a reader of the repository alone understands.
 The plan and the reports are where the organisation of the work lives.
 
+`README.md` is the public face of the repository and must describe what
+exists after your step: extend its usage section with the commands, flags
+and formats you added (real invocations with their output), and keep its
+"What exists and what is planned" section true, moving what you built from
+planned to built. Do not mention the plan, its steps or these sessions
+there.
+
 In the report and in your final message, lead with the outcome, then the
 decisions, then what is left open. Complete sentences, no working
 shorthand, and every file, type or flag you name gets its own clause saying

@@ -65,10 +65,14 @@ of an MLL derivation into a net. Plus a textual representation of a net
 5. **Text form.** A readable listing of a net: the conclusions as
    formulas, the links as pairs of literals with their positions (e.g.
    `a[3] — a⊥[7]`), the verdict of the criterion. This is what
-   `--format net` prints in the CLI (wire it: for a proved MLL sequent, the
-   derivation is desequentialized and the net printed; for
-   other fragments the format is rejected with a clear message). serde
-   for nets if it is a few lines (links plus the sequent).
+   `--format net` prints in the CLI: a variant of `Format` in
+   `cli/src/argument_parsing.rs` with a doc comment and its arm in the
+   `match format` of `prove` in `cli/src/prove.rs` (`plan/reports/04-api-and-cli.md`,
+   "What a later step does to add an engine or an output format"); the
+   rendering itself lives in `core`. For a proved MLL sequent the
+   derivation is desequentialized and the net printed; for other fragments
+   the format is rejected with a clear message. serde for nets if it is a
+   few lines (links plus the sequent).
 6. **Documentation.** `.claude/rules/core.md`: the net model, the graph
    colouring and why ⊗ premise edges must not share a colour, when each
    check is sound, the relation between nets and terms. CLAUDE.md if

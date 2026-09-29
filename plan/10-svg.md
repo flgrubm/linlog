@@ -46,7 +46,8 @@ string). Readable at the default size, scalable, with the text selectable.
    ⅋ share a colour or a style so that a reader can see the switchings).
    Optional: highlight a switching cycle or the disconnection when the net
    is incorrect (the criterion returns the witness).
-5. **CLI**: `--format svg` on `prove` (derivation, or the net with
+5. **CLI** (a `Format` variant and a `prove.rs` arm, built on the search
+   thread; `plan/reports/04-api-and-cli.md`): `--format svg` on `prove` (derivation, or the net with
    `--net`/`--format net-svg`: choose a shape consistent with step 4's
    design and say why), on `seq print`, and a `linlog net` subcommand if
    nets deserve their own entry point (draw a net from a serialized net or

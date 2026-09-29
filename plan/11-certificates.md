@@ -34,7 +34,8 @@ the certificates, in nix if feasible.
    basis of what builds with the current Rocq and what the generated script
    needs. State the choice, the version pinned and how a user installs it,
    in the report and in the CLI's `--help` for `--format rocq`.
-2. **The exporter**: atoms as variables of `formula`, formulas in the
+2. **The exporter** (`--format rocq` is a `Format` variant and a
+   `prove.rs` arm, `plan/reports/04-api-and-cli.md`): atoms as variables of `formula`, formulas in the
    kernel's constructors and notations, the goal `ll [conclusion]` (or the
    kernel's equivalent), one tactic per derivation node in the order the
    derivation tree gives, with the exchange steps the kernel's list-based

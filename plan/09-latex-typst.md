@@ -38,7 +38,13 @@ latex|typst`. Proof nets are drawn in step 10 (SVG), not here.
    Typst with `#import "@preview/curryst:<version>"`, version pinned in one
    constant) versus a bare fragment.
 3. **CLI**: `--format latex|typst` on `prove` and on `seq print`,
-   `--standalone` (or the reverse), `--output PATH`.
+   `--standalone` (or the reverse), `--output PATH`. A format is a variant
+   of `Format` in `cli/src/argument_parsing.rs` and an arm in `prove.rs`;
+   build the derivation inside the `on_large_stack` closure as the text
+   format does (`plan/reports/04-api-and-cli.md`). That report also notes
+   that the text renderer is slow on huge derivations because every line
+   is as wide as the tree; an emitter that writes one inference at a time
+   does not have that problem, so do not copy the renderer's structure.
 4. **Compile check in nix**, if it is reasonable: a flake check that
    compiles one LaTeX sample (a small texlive set with ebproof and cmll) and
    one Typst sample (nixpkgs' `typst`; curryst must be available offline,

@@ -86,6 +86,11 @@ fast path of D8.
    dispatch row.
 7. **CLI**: `--intuitionistic` reaches everything; error messages when the
    input is not an ILL sequent name the offending root or subformula.
+   `linlog check -i` is refused in the CLI before the checker is asked
+   (`plan/reports/04-api-and-cli.md`, "For later steps"): remove that
+   refusal once the checker handles intuitionistic mode. The new engines
+   are `Engine` variants plus `EngineArg` variants in
+   `cli/src/argument_parsing.rs`.
 8. **Tests**: the spec's pitfalls as tests (`0` on the left proves
    anything; `⊤` inert; promotion needs empty Δ unless affine; classical
    non-conservativity: a sequent provable classically but not in ILL, from

@@ -302,3 +302,19 @@ a package needs coordinates (it does not for ebproof and curryst trees).
   atom bias, tighter counts, memo key arena, the `3^k` cost of Mix) become
   step 13b, driven by step 13's numbers. Prompts 4, 6, 7, 8, 12 and 13
   amended.
+- 2026-09-29: step 4 reviewed and accepted. Ten commits, "Give fragments,
+  modes and search outcomes a JSON form" to "Refuse to check
+  intuitionistic proofs instead of calling them invalid"; all checks pass
+  including `nix flake check`; the CLI was exercised by hand. The binary
+  is `linlog` with `prove`, `check` and `seq print|json|fragment`; exit
+  statuses 0/1/2/3 for provable/unprovable/error/unknown; `--format json`
+  writes an outcome that `check` reads back; `ctrlc` is the one new
+  dependency; the search always runs on a spawned thread sized from
+  `--recursion-limit`. Extension points for engines and formats are in
+  the report and now cited by prompts 5, 7, 8, 9, 10 and 11. The README
+  was rewritten to describe what exists ("What exists and what is
+  planned") and to link the API documentation; `conduct.md` now asks
+  every step to keep it current. The repository's description and
+  homepage on GitHub point at the Pages site. Follow-ups left open: the
+  text renderer is slow on huge derivations (the export steps emit per
+  inference instead), `check` could fall back to the file's mode.
