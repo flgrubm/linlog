@@ -256,7 +256,7 @@ pub fn prove_goal(
 /// Returns the smallest fragment the goal's subformulas live in: the
 /// sequent's own fragment for the roots, and possibly a smaller one for an
 /// open goal deeper in the forest.
-fn goal_fragment(forest: &Forest, goal: &[OccId]) -> Fragment {
+pub(crate) fn goal_fragment(forest: &Forest, goal: &[OccId]) -> Fragment {
     let mut fragment = Fragment::EMPTY;
     for &o in goal {
         for x in forest.subtree(o) {

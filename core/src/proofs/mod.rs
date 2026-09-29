@@ -21,11 +21,16 @@ pub mod check;
 pub mod derivation;
 /// Text rendering of derivations.
 mod fmt;
+/// Step-by-step proving.
+#[cfg(feature = "interactive")]
+pub mod interactive;
 /// Multisets of occurrence ids.
 mod multiset;
 
 pub use check::{CheckError, Described, Dyadic, Problem};
 pub use derivation::{Derivation, InfId, Inference, Rule};
+#[cfg(feature = "interactive")]
+pub use interactive::{Interactive, Refusal};
 
 use crate::Error;
 use crate::fragment::Mode;

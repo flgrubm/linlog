@@ -121,6 +121,32 @@ pub(crate) fn search_goal(
     (result, engine.nodes, statistics)
 }
 
+/// Whether a split of a goal into the two premises of a `⊗`, each given
+/// with its subformula of the `⊗`, or of a Mix passes the count prunes the
+/// engine applies to every split: the interval check per atom and, in the
+/// multiplicative fragments, the count equation. A split that fails cannot
+/// close; one that passes may still fail. `fragment` is the goal's.
+pub(crate) fn split_passes(
+    forest: &Forest,
+    fragment: Fragment,
+    mode: Mode,
+    left: &[OccId],
+    right: &[OccId],
+) -> bool {
+    let counts = Counts::new(forest);
+    let rules = Rules::new(fragment, mode, &counts);
+    let tally = |members: &[OccId]| {
+        let mut tally = counts.tally();
+        for &m in members {
+            tally.add(&counts, m);
+        }
+        tally
+    };
+    let (left, right) = (tally(left), tally(right));
+    (!rules.intervals || (left.balanced() && right.balanced()))
+        && (!rules.equation || (left.equation(rules.mix) && right.equation(rules.mix)))
+}
+
 /// The rules in force beyond the core ones, switched by fragment and mode.
 #[derive(Clone, Copy, Debug)]
 struct Rules {
@@ -140,6 +166,26 @@ struct Rules {
     /// The stack of the branch's stable sequents, for the loop check when
     /// copies can repeat a sequent.
     stack: bool,
+}
+
+impl Rules {
+    /// The rules for a fragment and a mode: the count equation only in the
+    /// multiplicative fragments without weakening, the interval check
+    /// unless weakening or a `⊤` under an exponential defeats it.
+    fn new(fragment: Fragment, mode: Mode, counts: &Counts) -> Self {
+        let exponentials = fragment.has_exponentials();
+        Self {
+            mix: mode.mix,
+            equation: !mode.affine
+                && !fragment.has_additives()
+                && !fragment.has_additive_units()
+                && !exponentials,
+            intervals: !mode.affine && !counts.absorbs_from_copies(),
+            exponentials,
+            affine: mode.affine,
+            stack: exponentials,
+        }
+    }
 }
 
 /// The result of a search step: the node proving the sequent, `None` when
@@ -208,19 +254,8 @@ impl<'a> Engine<'a> {
         options: &Options,
         stop: &'a mut dyn FnMut() -> bool,
     ) -> Self {
-        let exponentials = fragment.has_exponentials();
         let counts = Counts::new(forest);
-        let rules = Rules {
-            mix: mode.mix,
-            equation: !mode.affine
-                && !fragment.has_additives()
-                && !fragment.has_additive_units()
-                && !exponentials,
-            intervals: !mode.affine && !counts.absorbs_from_copies(),
-            exponentials,
-            affine: mode.affine,
-            stack: exponentials,
-        };
+        let rules = Rules::new(fragment, mode, &counts);
         Self {
             forest,
             reading,

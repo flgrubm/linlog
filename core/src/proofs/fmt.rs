@@ -1,7 +1,7 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use super::derivation::{Derivation, InfId, Inference};
+use super::derivation::{Derivation, InfId, Inference, Rule};
 use crate::occurrences::{Forest, OccId, Position, Reading};
 use std::fmt::{Display, Formatter, Result as FmtResult, Write};
 
@@ -24,7 +24,11 @@ const GAP: usize = 3;
 /// Returns the text of a sequent: `⊢` and its formulas, comma-separated;
 /// two-sided under a reading, the hypotheses before `⊢` and the goal after
 /// it.
-fn sequent_text(forest: &Forest, reading: Option<&Reading>, sequent: &[OccId]) -> String {
+pub(crate) fn sequent_text(
+    forest: &Forest,
+    reading: Option<&Reading>,
+    sequent: &[OccId],
+) -> String {
     let mut text = String::new();
     let Some(reading) = reading else {
         text.push('⊢');
@@ -71,7 +75,8 @@ fn pad(s: &str, width: usize) -> String {
 impl Derivation<'_> {
     /// Renders the subtree at `id`: the premises side by side, bottom-aligned,
     /// a bar spanning their conclusions with the rule's name after it, and
-    /// the conclusion centred under the bar.
+    /// the conclusion centred under the bar. An open goal is its sequent
+    /// alone, with no bar above it.
     fn block(&self, id: InfId) -> Block {
         let Inference {
             sequent,
@@ -81,6 +86,15 @@ impl Derivation<'_> {
         } = self.inference(id);
         let conclusion = sequent_text(self.forest(), self.reading(), sequent);
         let width_of = |s: &str| s.chars().count();
+        if *rule == Rule::Open {
+            let width = width_of(&conclusion);
+            return Block {
+                lines: vec![conclusion],
+                width,
+                left: 0,
+                right: width,
+            };
+        }
 
         // The premises in a row.
         let blocks: Vec<Block> = premises.iter().map(|&p| self.block(p)).collect();

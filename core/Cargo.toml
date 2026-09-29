@@ -15,7 +15,8 @@ serde = { version = "1.0.228", features = ["derive"], optional = true }
 thiserror = "2.0.17"
 
 [features]
-default = ["parse", "serialize"]
+default = ["interactive", "parse", "serialize"]
+interactive = []
 parse = ["dep:chumsky"]
 serialize = ["dep:serde"]
 

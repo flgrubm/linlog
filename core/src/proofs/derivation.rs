@@ -124,6 +124,9 @@ pub enum Rule {
     BangContraction,
     /// `!w`: a weakening of a hypothesis `!A`.
     BangWeakening,
+    /// An open goal of a proof in progress: a leaf without a rule, which
+    /// only the derivation of an interactive state contains.
+    Open,
 }
 
 impl Rule {
@@ -164,6 +167,29 @@ impl Rule {
             BangRight => "!R",
             BangContraction => "!c",
             BangWeakening => "!w",
+            Open => "open",
+        }
+    }
+
+    /// Returns the classical rule an intuitionistic rule name stands for on
+    /// the one-sided sequent (`⊸L` and `⊗R` are `⊗`, `!L` is `?d`, and so
+    /// on), and every other rule unchanged.
+    pub const fn classical(self) -> Self {
+        use Rule::*;
+        match self {
+            ImpLeft | TensorRight => Tensor,
+            TensorLeft | ImpRight => Par,
+            PlusLeftRule | WithRight => With,
+            WithLeft1 | PlusRight1 => PlusLeft,
+            WithLeft2 | PlusRight2 => PlusRight,
+            OneLeft => Bot,
+            OneRight => One,
+            ZeroLeft | TopRight => Top,
+            BangLeft => Dereliction,
+            BangRight => Promotion,
+            BangContraction => Contraction,
+            BangWeakening => Weakening,
+            rule => rule,
         }
     }
 
@@ -312,6 +338,68 @@ impl<'a> Derivation<'a> {
             reading,
             inferences,
         })
+    }
+
+    /// Wraps inferences that already have the derivation's shape: premises
+    /// before conclusions, the root last, two-sided under a reading.
+    pub(crate) fn from_parts(
+        forest: &'a Forest,
+        reading: Option<Reading<'a>>,
+        inferences: Vec<Inference>,
+    ) -> Self {
+        debug_assert!(!inferences.is_empty());
+        Self {
+            forest,
+            reading,
+            inferences,
+        }
+    }
+
+    /// Unfolds a proof whose root concludes `goal` rather than the roots,
+    /// as the search from a goal returns it, into the inferences of its
+    /// derivation, premises before conclusions and the root last, two-sided
+    /// in intuitionistic mode. Fails as the checker would on a node that
+    /// misapplies its rule; that the root concludes the goal is the
+    /// engine's guarantee.
+    pub(crate) fn of_goal(
+        proof: &'a Proof,
+        goal: &[OccId],
+        mode: Mode,
+    ) -> Result<Vec<Inference>, CheckError> {
+        let reading = if mode.intuitionistic {
+            match Reading::new(proof.forest()) {
+                Ok(reading) => Some(reading),
+                Err(e) => {
+                    return Err(CheckError {
+                        node: proof.root(),
+                        rule: proof.node(proof.root()),
+                        premises: vec![],
+                        problem: check::Problem::Shape(e),
+                    });
+                }
+            }
+        } else {
+            None
+        };
+        let derived = check::derive(proof, mode.affine(), reading.as_ref())?;
+        let goal = Multiset::of(goal.iter().copied());
+        debug_assert!({
+            let d = &derived[proof.root().index()];
+            d.theta.is_empty()
+                && if d.any {
+                    d.gamma.is_subset(&goal)
+                } else {
+                    d.gamma == goal
+                }
+        });
+        let mut build = Build {
+            proof,
+            derived: &derived,
+            reading: reading.as_ref(),
+            inferences: Vec::with_capacity(derived.len()),
+        };
+        build.build(proof.root(), goal);
+        Ok(build.inferences)
     }
 
     /// Returns the forest the sequents' occurrences index.

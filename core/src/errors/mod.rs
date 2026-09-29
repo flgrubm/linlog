@@ -102,6 +102,20 @@ pub enum Error {
     /// only, not a goal deeper in the forest.
     #[error("the net engine decides the whole sequent only, not a goal within it")]
     NetGoal,
+    /// A rule does not apply to a goal of an interactive proof as asked.
+    #[cfg(feature = "interactive")]
+    #[error("{0}")]
+    Refused(#[from] crate::proofs::Refusal),
+    /// The parts of an interactive proof read back do not fit together, as
+    /// the message says.
+    #[cfg(feature = "interactive")]
+    #[error("not a proof in progress: {0}")]
+    InconsistentState(&'static str),
+    /// An interactive proof still has this many open goals, so there is no
+    /// proof term to make of it yet.
+    #[cfg(feature = "interactive")]
+    #[error("the proof is not finished: {0} goals are open")]
+    OpenGoals(usize),
     /// No engine handles the fragment in the mode yet.
     #[error("no engine for {fragment} in {mode} mode yet")]
     NoEngine {
