@@ -112,16 +112,6 @@ impl Context {
             std::iter::repeat_n(o, copies as usize)
         })
     }
-
-    /// Returns whether every member of `other` is a member here at least as
-    /// often: the multiset inclusion `other ⊆ self`.
-    pub(crate) fn includes(&self, other: &Self) -> bool {
-        other.set.is_subset(&self.set)
-            && other
-                .extra
-                .iter()
-                .all(|&(o, n)| self.slot(o).is_ok_and(|i| self.extra[i].1 >= n))
-    }
 }
 
 #[cfg(test)]
@@ -163,23 +153,5 @@ mod tests {
         assert_eq!(c, d);
         c.clear();
         assert!(c.is_empty());
-    }
-
-    /// Multiset inclusion counts copies.
-    #[test]
-    fn inclusion() {
-        let mut a = Context::empty(10);
-        let mut b = Context::empty(10);
-        a.insert(o(1));
-        a.insert(o(1));
-        a.insert(o(2));
-        b.insert(o(1));
-        assert!(a.includes(&b));
-        assert!(!b.includes(&a));
-        b.insert(o(1));
-        assert!(a.includes(&b));
-        b.insert(o(1));
-        assert!(!a.includes(&b));
-        assert!(a.includes(&a));
     }
 }

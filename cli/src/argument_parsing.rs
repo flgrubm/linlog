@@ -78,8 +78,7 @@ pub struct ProveArgs {
     /// exponentials that has no proof within the bound is unknown (exit
     /// status 3) unless a smaller bound already exhausted the search space,
     /// in which case it is unprovable. Sequents without exponentials are
-    /// not affected, and neither is affine mode, whose search is finite
-    /// without a bound.
+    /// not affected.
     #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_COPIES)]
     pub copies: u32,
     /// Give up after this long, such as 500ms, 10s, 2m or 1h

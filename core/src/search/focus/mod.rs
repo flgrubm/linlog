@@ -25,8 +25,7 @@
 //! sequent proved or refuted goes into the memo, so a `&` that duplicates
 //! the context, or a split that revisits a part, never pays twice. With
 //! Mix, a stable sequent no focus proves is split into two provable parts.
-//! In affine mode a leaf weakens whatever is left over, and a sequent that
-//! contains one below it on its branch is pruned.
+//! In affine mode a leaf weakens whatever is left over.
 //!
 //! The copies are bounded per branch and the bound deepens iteratively:
 //! `Unprovable` is answered only after a level that never hit its bound.
@@ -116,11 +115,10 @@ struct Rules {
     /// The exponential rules: `?` into the unrestricted zone, copies from it
     /// under the bound, `!` in focus.
     exponentials: bool,
-    /// Weakening: a leaf discards what is left over, and a stable sequent
-    /// that contains an ancestor is pruned.
+    /// Weakening: a leaf discards what is left over.
     affine: bool,
-    /// The stack of the branch's stable sequents: for the loop check when
-    /// copies can repeat a sequent, and for the affine prune.
+    /// The stack of the branch's stable sequents, for the loop check when
+    /// copies can repeat a sequent.
     stack: bool,
 }
 
@@ -198,7 +196,7 @@ impl<'a> Engine<'a> {
             intervals: !mode.affine && !counts.absorbs_from_copies(),
             exponentials,
             affine: mode.affine,
-            stack: exponentials || mode.affine,
+            stack: exponentials,
         };
         Self {
             forest,
@@ -235,17 +233,15 @@ impl<'a> Engine<'a> {
     /// Searches the goal with an empty unrestricted zone: the asynchronous
     /// phase on its formulas, once per copy bound from zero up to the
     /// configured one, until a level proves it or fails without ever
-    /// spending its budget. Without exponentials there is one level, and
-    /// in affine mode one level without a bound: the ancestor prune makes
-    /// the search finite on its own.
+    /// spending its budget. Without exponentials there is one level.
     fn run(&mut self, goal: &[OccId]) -> Search {
-        let (first, levels) = match (self.rules.affine, self.rules.exponentials) {
-            (true, _) => (u32::MAX, u32::MAX),
-            (false, true) => (0, self.copies),
-            (false, false) => (0, 0),
+        let levels = if self.rules.exponentials {
+            self.copies
+        } else {
+            0
         };
         let theta = self.take_set();
-        for budget in first..=levels {
+        for budget in 0..=levels {
             self.exhausted = false;
             self.dependency = NO_DEPENDENCY;
             let mut gamma = self.take_context();
@@ -417,21 +413,18 @@ impl<'a> Engine<'a> {
             }
             Some(Entry::Failed(Failure::Exhausted(_))) | None => {}
         }
-        // A sequent that repeats an ancestor on its branch, or in affine
-        // mode contains one, is pruned: a smallest proof of the ancestor
-        // never passes through it. The failure this causes above is a fact
-        // about the branch, so it is remembered as a dependency on the
-        // ancestor's depth and keeps the sequents between them out of the
-        // memo, until the ancestor itself is decided.
+        // A sequent that repeats an ancestor on its branch is pruned: a
+        // smallest proof of the ancestor never passes through it. The
+        // failure this causes above is a fact about the branch, so it is
+        // remembered as a dependency on the ancestor's depth and keeps the
+        // sequents between them out of the memo, until the ancestor itself
+        // is decided. (A sequent that merely contains an ancestor is not
+        // redundant, with or without weakening: a proof of the larger
+        // sequent proves nothing about the smaller one, and ⊢ ?(a ⅋ ~a) is
+        // proved only through ⊢ a ⅋ ~a ; a, ~a.)
         if self.rules.stack {
             for depth in 0..self.stack_len {
-                let ancestor = &self.stack[depth];
-                let contains = if self.rules.affine {
-                    ancestor.theta.is_subset(&key.theta) && key.gamma.includes(&ancestor.gamma)
-                } else {
-                    *ancestor == key
-                };
-                if contains {
+                if self.stack[depth] == key {
                     self.dependency = self.dependency.min(depth as u32);
                     self.give_key(key);
                     return Ok(None);
@@ -637,8 +630,10 @@ impl<'a> Engine<'a> {
                 && (affine || members.len() == 1)
             {
                 if budget == 0 {
+                    // Another pair may still close the sequent without a
+                    // copy.
                     self.exhausted = true;
-                    return Ok(None);
+                    continue;
                 }
                 let ax = self.push(Node::Ax(p, d));
                 let copy = self.push(Node::Copy(d, ax));
@@ -1453,15 +1448,25 @@ mod tests {
             assert_eq!(provable(input, Mode::CLASSICAL), linear, "{input:?}");
             assert_eq!(provable(input, affine), weakened, "{input:?} affinely");
         }
-        // The context grows with every copy, so linear mode gives up at the
-        // bound; affine mode prunes the grown context against its ancestor
-        // and decides.
+        // The context grows with every copy, so both modes give up at the
+        // bound: a sequent that contains an ancestor is not redundant, and
+        // affine mode is bounded like linear mode.
         let growing = "!(a -o a * a), a |- ?b";
-        assert!(matches!(
-            run(growing, Mode::CLASSICAL, &Options::default()).0,
-            Verdict::Unknown(Reason::CopyBound(3))
-        ));
-        assert!(!provable(growing, affine));
+        for mode in [Mode::CLASSICAL, affine] {
+            assert!(matches!(
+                run(growing, mode, &Options::default()).0,
+                Verdict::Unknown(Reason::CopyBound(3))
+            ));
+        }
+        // A sequent proved only through a larger one above it.
+        for input in [
+            "|- ?(a par ~a)",
+            "|- ?!1",
+            "!(a * ~a) |-",
+            "|- ?(a par ~a), b",
+        ] {
+            assert!(provable(input, affine), "{input:?}");
+        }
         // Weakening goes below a promotion, never above it.
         let (verdict, _) = run("b |- !(a -o a)", affine, &Options::default());
         let proof = verdict.proof().unwrap();
@@ -1662,6 +1667,14 @@ mod tests {
                     "{text:?} is provable in {mode} mode within {copies} copies, but the engine \
                      says {verdict:?}"
                 );
+                // A linear proof is an affine proof.
+                let (affine, _) = run(&text, mode.affine(), &options);
+                assert!(
+                    affine.proof().is_some(),
+                    "{text:?} is provable in {} mode within {copies} copies, but the engine \
+                     says {affine:?}",
+                    mode.affine()
+                );
                 sequents += 1;
                 most_nodes = most_nodes.max(statistics.nodes);
                 if generate::mutate(&mut rng, &mut formulas, 3) {
@@ -1758,9 +1771,8 @@ mod tests {
     /// Horn problems over reusable clauses: a chain of implications takes
     /// one copy per clause on one branch, the counter program reaches its
     /// goal within the copies its firings take and not below, an
-    /// unreachable marking is undecided within the bound in linear mode and
-    /// refuted in affine mode, which also reaches a goal that leaves a
-    /// token over.
+    /// unreachable marking is undecided within the bound in either mode,
+    /// and affine mode reaches a goal that leaves a token over.
     #[test]
     fn horn_programs() {
         let m = Mode::CLASSICAL;
@@ -1799,7 +1811,7 @@ mod tests {
                 &Options::default()
             )
             .0,
-            Verdict::Unprovable
+            Verdict::Unknown(Reason::CopyBound(3))
         ));
         let mut five = marking.clone();
         five.push("a");
