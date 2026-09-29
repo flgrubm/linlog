@@ -1634,15 +1634,18 @@ mod tests {
     }
 
     /// Proves `samples` generated sequents of up to `budget` rules per rule
-    /// set, each within the derelictions of its proof, and decides one mutant
-    /// of each with and without the memo. Returns how many sequents and
-    /// mutants were decided, how many mutants were provable, how many were
-    /// undecided within the copy bound, and the most stable sequents one
-    /// search visited.
-    fn generated(samples: u64, budget: usize) -> (u64, u64, u64, u64, u64) {
+    /// set with or without exponentials, each within the derelictions of
+    /// its proof, and decides one mutant of each with and without the memo.
+    /// Returns how many sequents and mutants were decided, how many mutants
+    /// were provable, how many were undecided within the copy bound, and
+    /// the most stable sequents one search visited.
+    fn generated(samples: u64, budget: usize, exponentials: bool) -> (u64, u64, u64, u64, u64) {
         let (mut sequents, mut mutants, mut provable_mutants, mut undecided, mut most_nodes) =
             (0, 0, 0, 0, 0);
         for (i, rules) in Rules::ALL.into_iter().enumerate() {
+            if rules.exponentials != exponentials {
+                continue;
+            }
             let mode = mode_for(rules);
             let mut rng = Rng::new(i as u64);
             for _ in 0..samples {
@@ -1689,26 +1692,38 @@ mod tests {
     /// without the memo.
     #[test]
     fn generated_sequents() {
-        let (sequents, mutants, _, undecided, _) = generated(40, 10);
-        assert_eq!(sequents, 640);
-        assert!(mutants > 400, "{mutants} mutants");
+        let (sequents, mutants, _, undecided, _) = generated(40, 10, false);
+        assert_eq!(sequents, 320);
+        assert!(mutants > 200, "{mutants} mutants");
+        assert_eq!(undecided, 0);
+        let (sequents, mutants, _, undecided, _) = generated(40, 10, true);
+        assert_eq!(sequents, 320);
+        assert!(mutants > 200, "{mutants} mutants");
         assert!(
             undecided < mutants / 4,
             "{undecided} of {mutants} mutants undecided"
         );
     }
 
-    /// The same on a larger sample of larger proofs; run it in release
-    /// mode and read the numbers it prints.
+    /// The same on a larger sample of larger proofs, fewer with
+    /// exponentials, where a few sequents of the full sample take minutes;
+    /// run it in release mode and read the numbers it prints.
     #[test]
     #[ignore = "a larger sample; run with --release -- --ignored --nocapture"]
     fn generated_large_sample() {
-        let (sequents, mutants, provable_mutants, undecided, most_nodes) = generated(500, 24);
-        println!(
-            "{sequents} generated sequents proved, {mutants} mutants decided consistently \
-             ({provable_mutants} of them provable, {undecided} undecided within the copy \
-             bound), at most {most_nodes} stable sequents per search"
-        );
+        for (samples, budget, exponentials) in [(500, 24, false), (100, 16, true)] {
+            let start = std::time::Instant::now();
+            let (sequents, mutants, provable_mutants, undecided, most_nodes) =
+                generated(samples, budget, exponentials);
+            println!(
+                "{} exponentials: {sequents} generated sequents proved, {mutants} mutants \
+                 decided consistently ({provable_mutants} of them provable, {undecided} \
+                 undecided within the copy bound), at most {most_nodes} stable sequents per \
+                 search, in {:.2?}",
+                if exponentials { "with" } else { "without" },
+                start.elapsed()
+            );
+        }
     }
 
     /// Encodes a Horn program with reusable clauses, as the ILLTP library
