@@ -26,7 +26,8 @@ Workspace crates:
   `--help` text are the doc comments in `argument_parsing.rs`; `prove.rs`
   runs the search on a thread sized from `--recursion-limit` and owns the
   output; exit status 0 proved/valid, 1 unprovable/invalid, 2 error,
-  3 unknown.
+  3 unknown. Its invariants and extension points live in
+  `.claude/rules/cli.md`, which loads when a file under `cli/` is read.
 
 The core API the CLI builds on: `"…".parse::<Sequent>()`, `Display` for
 pretty-printing, serde behind `serialize`, `Sequent::fragment()` for the

@@ -30,6 +30,9 @@ Current contents:
 - `rules/core.md` (`core/**`): the arena/NNF data model, fragments, the
   occurrence forest, proof terms, the checker and the derivation view, the
   search front door and the focused engine, and their invariants.
+- `rules/cli.md` (`cli/**`): the `linlog` command's layout, exit statuses,
+  search thread, stop polling, and where a new engine or output format
+  plugs in.
 - `rules/ci.md` (`.github/**`): how the GitHub workflows are written and pinned.
 - `agents/crate-source-explorer.md`: read-only, answers dependency-API questions
   against the Cargo.lock-pinned sources in `~/.cargo/registry`, never the web.

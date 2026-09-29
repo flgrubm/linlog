@@ -219,22 +219,27 @@ a test change.
 &options)` and `prove_until(…, stop)` return `Result<Outcome, Error>`, where
 `Outcome` carries the `Verdict` (`Proved(Box<Proof>)`, `Unprovable` only
 after an exhaustive search, `Unknown(Reason)`), the `Fragment` searched in,
-the `Engine` that ran and the `Statistics`. `Options` has private fields
-and setters (`memo_limit`, `recursion_limit`, `engine`, `fragment`);
+the `Mode`, the `Engine` that ran and the `Statistics`. `Options` has
+private fields and setters (`memo_limit`, `recursion_limit`, `engine`,
+`fragment`) and the constants `DEFAULT_MEMO_LIMIT` and
+`DEFAULT_RECURSION_LIMIT`, which the CLI shows as its defaults;
 `Reason`, `Statistics`, `Engine` and `Outcome` are `#[non_exhaustive]` so
 later steps add variants and fields without a breaking change.
 
 - The dispatch is plan decision D8. Today every classical input without
   exponentials goes to `focus`; intuitionistic and affine modes and
   exponentials are `Error::NoEngine`, an error and not an `Unknown`, until
-  steps 7 and 8 fill the rows. A new engine gets an `Engine` variant, a
-  row in `prove_until` and a line in the CLI's output.
+  steps 7 and 8 fill the rows. A new engine gets an `Engine` variant (its
+  `Display` is its name in text and JSON), a row in `prove_until`, and a
+  value of `--engine` in the CLI (`.claude/rules/cli.md`).
 - `Options::fragment` asserts a fragment: a sequent outside it is
   `Error::FragmentMismatch`, and the search runs in the asserted fragment,
   which switches off the prunes that only hold in the smaller one.
 - The crate has no clock (D11): a time limit is a closure the caller gives
   `prove_until`, polled once per stable sequent; it answers `Unknown
-  (Reason::Stopped)`. The engine recurses on the caller's stack, bounded by
+  (Reason::Stopped)`. The crate docs in `lib.rs` show the common path
+  (parse, fragment, prove, derivation, JSON) as a doc test; keep it the
+  shortest correct program when the API moves. The engine recurses on the caller's stack, bounded by
   `Options::recursion_limit`; a caller that raises the limit runs the
   search on a thread with a larger stack.
 
