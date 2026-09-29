@@ -43,5 +43,5 @@ pub use errors::ParseError;
 pub use errors::Error;
 pub use fragment::{Fragment, Mode};
 pub use occurrences::{Forest, OccId, OccSet, Polarity, Sign};
-pub use proofs::{CheckError, Node, NodeId, Proof, Side};
+pub use proofs::{CheckError, Derivation, InfId, Inference, Node, NodeId, Proof, Rule, Side};
 pub use sequents::{Atom, Formula, Kind, Sequent, Term, TermId};

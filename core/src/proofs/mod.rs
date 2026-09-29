@@ -17,10 +17,15 @@
 
 /// The checker.
 pub mod check;
+/// The derivation view.
+pub mod derivation;
+/// Text rendering of derivations.
+mod fmt;
 /// Multisets of occurrence ids.
 mod multiset;
 
 pub use check::{CheckError, Dyadic, Problem};
+pub use derivation::{Derivation, InfId, Inference, Rule};
 
 use crate::Error;
 use crate::fragment::Mode;
@@ -231,6 +236,13 @@ impl Display for Node {
 /// ];
 /// let proof = Proof::new(forest, nodes, n(2))?;
 /// proof.check(Mode::CLASSICAL)?;
+/// assert_eq!(
+///     proof.derivation()?.to_string(),
+///     "─────── ax   ─────── ax\n\
+///      ⊢ ~A, A      ⊢ ~B, B\n\
+///      ──────────────────── ⊗\n\
+///     \x20 ⊢ ~A, A ⊗ ~B, B"
+/// );
 /// # Ok::<(), linlog::Error>(())
 /// ```
 #[derive(Clone, Debug)]
@@ -320,6 +332,13 @@ impl Proof {
     /// allows; see [`check::check`].
     pub fn check(&self, mode: Mode) -> Result<(), CheckError> {
         check::check(self, mode)
+    }
+
+    /// Unfolds the proof into the derivation of the standard sequent
+    /// calculus it stands for, or reports why it is not a proof; see
+    /// [`Derivation`].
+    pub fn derivation(&self) -> Result<Derivation<'_>, CheckError> {
+        Derivation::new(self)
     }
 }
 
