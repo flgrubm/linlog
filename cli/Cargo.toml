@@ -9,9 +9,17 @@ edition = "2024"
 license = "EUPL-1.2"
 
 # The command is `linlog`; the package keeps its name next to the library's.
+# The code is the library `linlog_cli`, so that rustdoc documents it under a
+# name of its own: the binary, one call into it, is named like the core
+# crate and would otherwise be written over it.
+[lib]
+name = "linlog_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "linlog"
 path = "src/main.rs"
+doc = false
 
 [dependencies]
 anyhow = "1.0.100"

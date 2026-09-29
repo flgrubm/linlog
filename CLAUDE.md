@@ -21,9 +21,11 @@ data structures are designed to be compact and cache-friendly.
 Workspace crates:
 - `core/` is package **`linlog`**: all logic.
   It has two optional default features, `parse` (chumsky) and `serialize` (serde).
-- `cli/` is package **`linlog-cli`**, binary **`linlog`**: a clap front end
-  with `prove`, `check` and `seq print|json|fragment`, and the output
-  formats `text`, `json` and `net`. The tree and its
+- `cli/` is package **`linlog-cli`**, library **`linlog_cli`** and binary
+  **`linlog`** (one call into the library; `doc = false` because it shares
+  the core crate's name): a clap front end with `prove`, `check` and
+  `seq print|json|fragment`, and the output formats `text`, `json` and
+  `net`. The tree and its
   `--help` text are the doc comments in `argument_parsing.rs`; `prove.rs`
   runs the search on a thread sized from `--recursion-limit` and owns the
   output; exit status 0 proved/valid, 1 unprovable/invalid, 2 error,

@@ -89,7 +89,7 @@ fn nets_exist(sequent: &Sequent, mode: Mode) -> Result<()> {
 /// Runs `prove`: reads the sequent, searches on a large stack, and prints
 /// the verdict line, the derivation or the proof net and the statistics,
 /// or the outcome as JSON.
-pub(crate) fn prove(args: &ProveArgs) -> Result<Status> {
+pub fn prove(args: &ProveArgs) -> Result<Status> {
     if args.copies.is_some() {
         bail!("--copies bounds the copies of ? formulas, which no engine searches yet");
     }
@@ -198,7 +198,7 @@ fn statistics(s: &Statistics, elapsed: Duration) -> String {
 
 /// Runs `check`: reads a proof, checks it in the mode the flags give, and
 /// prints the verdict and the derivation, or the verdict as JSON.
-pub(crate) fn check(args: &CheckArgs) -> Result<Status> {
+pub fn check(args: &CheckArgs) -> Result<Status> {
     let text = io::read(args.proof.as_deref(), "proof")?;
     let proof: Proof = serde_json::from_str(&text).context("not a proof in JSON")?;
     let mode = args.mode.mode();

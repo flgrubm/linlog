@@ -10,7 +10,7 @@ use std::path::Path;
 
 /// Reads all of a file, or of standard input for `None` or `-`. Refuses to
 /// wait on a terminal, where the user most likely forgot the input.
-pub(crate) fn read(path: Option<&Path>, what: &str) -> Result<String> {
+pub fn read(path: Option<&Path>, what: &str) -> Result<String> {
     match path {
         Some(path) if path != Path::new("-") => {
             fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))
@@ -32,7 +32,7 @@ pub(crate) fn read(path: Option<&Path>, what: &str) -> Result<String> {
 impl SequentInput {
     /// Reads the sequent from the argument, the file or standard input, as
     /// text or as JSON.
-    pub(crate) fn sequent(&self) -> Result<Sequent> {
+    pub fn sequent(&self) -> Result<Sequent> {
         let text = match &self.sequent {
             Some(text) => text.clone(),
             None => read(self.file.as_deref(), "sequent")?,
@@ -48,7 +48,7 @@ impl SequentInput {
 
 /// Writes `text` and a newline to the file, or to standard output for
 /// `None`.
-pub(crate) fn write(path: Option<&Path>, text: &str) -> Result<()> {
+pub fn write(path: Option<&Path>, text: &str) -> Result<()> {
     match path {
         Some(path) => fs::write(path, format!("{text}\n"))
             .with_context(|| format!("cannot write {}", path.display())),

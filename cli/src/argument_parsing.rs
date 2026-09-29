@@ -22,15 +22,15 @@ groups to the right.";
 /// Decide, print and convert sequents of linear logic.
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None, after_help = SYNTAX)]
-pub(crate) struct Cli {
+pub struct Cli {
     /// What to do.
     #[command(subcommand)]
-    pub(crate) command: Command,
+    pub command: Command,
 }
 
 /// The commands.
 #[derive(Subcommand, Debug)]
-pub(crate) enum Command {
+pub enum Command {
     /// Decide whether a sequent is provable, and print a proof if it is
     ///
     /// The fragment of the sequent (MLL, MALL, …) is detected and picks the
@@ -55,74 +55,74 @@ pub(crate) enum Command {
 
 /// The arguments of `prove`.
 #[derive(Args, Debug)]
-pub(crate) struct ProveArgs {
+pub struct ProveArgs {
     /// The sequent.
     #[command(flatten)]
-    pub(crate) input: SequentInput,
+    pub input: SequentInput,
     /// The logic.
     #[command(flatten)]
-    pub(crate) mode: ModeArgs,
+    pub mode: ModeArgs,
     /// Search in this fragment instead of the detected one
     ///
     /// A sequent outside it is an error. A larger fragment than the detected
     /// one switches off the prunes that only hold in the smaller one, which
     /// is a way to compare them.
     #[arg(long, value_enum, value_name = "FRAGMENT")]
-    pub(crate) fragment: Option<FragmentArg>,
+    pub fragment: Option<FragmentArg>,
     /// The engine to search with
     #[arg(long, value_enum, value_name = "ENGINE", default_value_t = EngineArg::Auto)]
-    pub(crate) engine: EngineArg,
+    pub engine: EngineArg,
     /// How often a `?` formula may be copied on one branch
     #[arg(long, value_name = "N", hide = true)]
-    pub(crate) copies: Option<u32>,
+    pub copies: Option<u32>,
     /// Give up after this long, such as 500ms, 10s, 2m or 1h
     ///
     /// The verdict is then unknown (exit status 3). Without it, the search
     /// runs until it decides or is interrupted with Ctrl-C.
     #[arg(long, value_name = "DURATION", value_parser = parse_duration)]
-    pub(crate) timeout: Option<Duration>,
+    pub timeout: Option<Duration>,
     /// The most decided sequents the search remembers at once
     ///
     /// When the memo is full it is emptied, which costs time but not
     /// correctness; lower the limit if memory runs out. Zero switches the memo
     /// off.
     #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_MEMO_LIMIT)]
-    pub(crate) memo_limit: usize,
+    pub memo_limit: usize,
     /// The deepest nesting of rules on one branch before the search gives up
     ///
     /// Raise it for sequents with thousands of connectives; the search runs on
     /// a thread whose stack grows with the limit.
     #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_RECURSION_LIMIT)]
-    pub(crate) recursion_limit: u32,
+    pub recursion_limit: u32,
     /// Where and how to write the result.
     #[command(flatten)]
-    pub(crate) output: OutputArgs,
+    pub output: OutputArgs,
     /// Also print what the search cost: sequents visited, memo use, splits
     /// tried and time
     ///
     /// JSON output always carries the counts; the time is printed only as
     /// text.
     #[arg(long)]
-    pub(crate) stats: bool,
+    pub stats: bool,
 }
 
 /// The arguments of `check`.
 #[derive(Args, Debug)]
-pub(crate) struct CheckArgs {
+pub struct CheckArgs {
     /// The proof file, or standard input when absent or `-`
     #[arg(value_name = "PROOF")]
-    pub(crate) proof: Option<PathBuf>,
+    pub proof: Option<PathBuf>,
     /// The logic the proof must hold in.
     #[command(flatten)]
-    pub(crate) mode: ModeArgs,
+    pub mode: ModeArgs,
     /// Where to write the result.
     #[command(flatten)]
-    pub(crate) output: OutputArgs,
+    pub output: OutputArgs,
 }
 
 /// The subcommands of `seq`.
 #[derive(Subcommand, Debug)]
-pub(crate) enum SeqCommand {
+pub enum SeqCommand {
     /// Print a sequent one-sided, in negation normal form
     ///
     /// `A, A -o B |- B` prints as `⊢ ~A, A ⊗ ~B, B`: hypotheses are negated
@@ -163,36 +163,36 @@ pub(crate) enum SeqCommand {
 
 /// Where a sequent comes from.
 #[derive(Args, Debug)]
-pub(crate) struct SequentInput {
+pub struct SequentInput {
     /// The sequent, such as "A, A -o B |- B"; read from --file or standard
     /// input when absent
     #[arg(value_name = "SEQUENT", conflicts_with = "file")]
-    pub(crate) sequent: Option<String>,
+    pub sequent: Option<String>,
     /// Read the sequent from this file, or `-` for standard input
     #[arg(short, long, value_name = "PATH")]
-    pub(crate) file: Option<PathBuf>,
+    pub file: Option<PathBuf>,
     /// Read the sequent as JSON, as `seq json` writes it, instead of as text
     #[arg(long)]
-    pub(crate) json_input: bool,
+    pub json_input: bool,
 }
 
 /// The logic a sequent is proved in.
 #[derive(Args, Debug)]
-pub(crate) struct ModeArgs {
+pub struct ModeArgs {
     /// Intuitionistic linear logic: one formula on the right of ⊢
     #[arg(short, long)]
-    pub(crate) intuitionistic: bool,
+    pub intuitionistic: bool,
     /// Affine logic: a hypothesis may go unused (weakening)
     #[arg(short, long)]
-    pub(crate) affine: bool,
+    pub affine: bool,
     /// Allow the Mix rule, which proves ⊢ Γ, Δ from ⊢ Γ and ⊢ Δ
     #[arg(long)]
-    pub(crate) mix: bool,
+    pub mix: bool,
 }
 
 impl ModeArgs {
     /// Returns the mode the flags ask for.
-    pub(crate) fn mode(&self) -> Mode {
+    pub fn mode(&self) -> Mode {
         Mode {
             intuitionistic: self.intuitionistic,
             affine: self.affine,
@@ -203,21 +203,21 @@ impl ModeArgs {
 
 /// Where and how a command writes its result.
 #[derive(Args, Debug)]
-pub(crate) struct OutputArgs {
+pub struct OutputArgs {
     /// The output format
     #[arg(long, value_enum, value_name = "FORMAT", default_value_t = Format::Text)]
-    pub(crate) format: Format,
+    pub format: Format,
     /// Write to this file instead of standard output
     #[arg(short, long, value_name = "PATH")]
-    pub(crate) output: Option<PathBuf>,
+    pub output: Option<PathBuf>,
     /// Print only the verdict line, not the derivation (text format)
     #[arg(short, long)]
-    pub(crate) quiet: bool,
+    pub quiet: bool,
 }
 
 /// The output formats of `prove` and `check`.
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Format {
+pub enum Format {
     /// The verdict on one line, then the derivation as a text tree
     Text,
     /// One JSON object: verdict, fragment, mode, engine, statistics, and the
@@ -232,7 +232,7 @@ pub(crate) enum Format {
 
 /// The fragments `--fragment` names.
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum FragmentArg {
+pub enum FragmentArg {
     /// Multiplicatives: ⊗ ⅋
     Mll,
     /// Multiplicatives and their units: ⊗ ⅋ 1 ⊥
@@ -263,7 +263,7 @@ impl From<FragmentArg> for Fragment {
 
 /// The engines `--engine` names.
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum EngineArg {
+pub enum EngineArg {
     /// The engine the fragment and the mode call for
     Auto,
     /// Focused sequent search, for MLL and MALL with or without units and Mix

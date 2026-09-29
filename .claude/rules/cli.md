@@ -17,8 +17,12 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   `SYNTAX` string shown after the help of every command that reads a
   sequent. `Cli::command().debug_assert()` in its tests catches
   inconsistent definitions.
-- `main.rs`: dispatch, the exit status, the Ctrl-C flag, and the parse
-  error with a caret under the failing character.
+- `lib.rs`: the package's library `linlog_cli`, which holds everything
+  (public modules, so rustdoc documents them next to the core crate under
+  a name of their own): dispatch, the exit status, the Ctrl-C flag, and
+  the parse error with a caret under the failing character. `main.rs` is
+  one call into it and is `doc = false`: the binary is named `linlog` like
+  the core crate, and documenting it would overwrite the library's docs.
 - `io.rs`: input from the argument, `--file` (`-` is standard input) or
   standard input, refused when standard input is a terminal; output to
   `--output` or standard output.
