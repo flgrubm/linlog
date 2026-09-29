@@ -28,7 +28,7 @@ pub mod interactive;
 mod multiset;
 
 pub use check::{CheckError, Described, Dyadic, Problem};
-pub use derivation::{Derivation, InfId, Inference, Rule};
+pub use derivation::{Derivation, InfId, Inference, Rule, UnknownRule};
 #[cfg(feature = "interactive")]
 pub use interactive::{Interactive, Refusal};
 

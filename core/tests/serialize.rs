@@ -1,14 +1,17 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-//! The JSON forms of a sequent, of a proof and of a proof net, through the
-//! public API. The formats are interchange formats, so the strings pinned
-//! here must not change.
+//! The JSON forms of a sequent, of a proof, of a proof net and of a proof
+//! in progress, through the public API. The formats are interchange
+//! formats, so the strings pinned here must not change.
 
 #![cfg(all(feature = "parse", feature = "serialize"))]
 
 use linlog::search::{Engine, Options, prove, prove_until};
-use linlog::{Forest, Fragment, Mode, Node, NodeId, OccId, Proof, ProofStructure, Sequent, Side};
+use linlog::{
+    Forest, Fragment, InfId, Interactive, Mode, Node, NodeId, OccId, Proof, ProofStructure, Rule,
+    Sequent, Side,
+};
 
 /// Parses `input` and serializes it as compact JSON.
 fn json(input: &str) -> String {
@@ -331,4 +334,134 @@ fn net_json_format_and_round_trip() {
     let json = format!(r#"{{"sequent":{sequent},"mix":true,"links":[[0,2]]}}"#);
     let partial: ProofStructure = serde_json::from_str(&json).unwrap();
     assert!(!partial.is_complete() && partial.mix());
+}
+
+/// A proof in progress serializes as its sequent, mode, inferences (the
+/// root first; an open goal is its sequent alone) and the goals its steps
+/// closed, and reads back with the same goals, undo history and derivation;
+/// an inference whose premises are not what its rule yields is rejected.
+#[test]
+fn interactive_json_format_and_round_trip() {
+    let s: Sequent = "A, A -o B |- B".parse().unwrap();
+    let mut state = Interactive::new(&s, Mode::INTUITIONISTIC).unwrap();
+    let root = InfId::new(0);
+    let goals = state.apply(root, 1, Rule::ImpLeft, &[0]).unwrap();
+    state.apply(goals[0], 0, Rule::Ax, &[]).unwrap();
+    let json = serde_json::to_string(&state).unwrap();
+    let sequent = serde_json::to_string(&s).unwrap();
+    assert_eq!(
+        json,
+        format!(
+            r#"{{"sequent":{sequent},"mode":{{"intuitionistic":true,"affine":false,"mix":false}},"inferences":[{{"sequent":[0,1,4],"rule":"⊸L","principal":1,"premises":[1,2]}},{{"sequent":[0,2],"rule":"ax"}},{{"sequent":[3,4]}}],"history":[0,1]}}"#
+        )
+    );
+    let back: Interactive = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.inferences(), state.inferences());
+    assert_eq!(back.goals().collect::<Vec<_>>(), vec![goals[1]]);
+    assert_eq!(
+        back.derivation().to_string(),
+        state.derivation().to_string()
+    );
+    let mut back = back;
+    assert_eq!(back.undo(), Some(goals[0]));
+    assert_eq!(back.undo(), Some(root));
+    assert_eq!(back.undo(), None);
+
+    // The rule names read back from their ASCII spellings too; a premise
+    // that the rule does not yield, a rule on the wrong connective, a
+    // history naming an open goal, and an occurrence outside the forest are
+    // rejected.
+    let ok = format!(
+        r#"{{"sequent":{sequent},"mode":{{"intuitionistic":true,"affine":false,"mix":false}},"inferences":[{{"sequent":[0,1,4],"rule":"-oL","principal":1,"premises":[1,2]}},{{"sequent":[0,2]}},{{"sequent":[3,4]}}],"history":[0]}}"#
+    );
+    assert!(serde_json::from_str::<Interactive>(&ok).is_ok());
+    for (broken, why) in [
+        (
+            ok.replace(r#""sequent":[0,2]}"#, r#""sequent":[0,4]}"#),
+            "wrong premise",
+        ),
+        (
+            ok.replace(r#""rule":"-oL""#, r#""rule":"&R""#),
+            "wrong rule",
+        ),
+        (
+            ok.replace(r#""history":[0]"#, r#""history":[1]"#),
+            "open goal in the history",
+        ),
+        (
+            ok.replace(r#""sequent":[3,4]}"#, r#""sequent":[3,9]}"#),
+            "occurrence outside the forest",
+        ),
+        (
+            ok.replace(r#""premises":[1,2]"#, r#""premises":[1,1]"#),
+            "a premise used twice",
+        ),
+        (
+            ok.replace(r#""history":[0]"#, r#""history":[0,0]"#),
+            "a step twice in the history",
+        ),
+        (
+            ok.replace(r#""principal":1,"#, ""),
+            "a ⊗ without its principal formula",
+        ),
+    ] {
+        assert!(
+            serde_json::from_str::<Interactive>(&broken).is_err(),
+            "{why}"
+        );
+    }
+
+    // States with a chain of steps on one branch, a Mix, a search graft
+    // and a repeated formula read back with their history.
+    let mix = Mode::CLASSICAL.with_mix();
+    let s: Sequent = "|- ~a par ~b, a * b, c, ~c, ?d".parse().unwrap();
+    let mut state = Interactive::new(&s, mix).unwrap();
+    // The position of the formula printed as `text` in an open goal.
+    let at = |state: &Interactive, goal: InfId, text: &str| {
+        state
+            .goal(goal)
+            .unwrap()
+            .iter()
+            .position(|&o| state.forest().formula(o).to_string() == text)
+            .unwrap()
+    };
+    let g = state
+        .apply(root, at(&state, root, "?d"), Rule::Weakening, &[])
+        .unwrap()[0];
+    let g = state
+        .apply(g, at(&state, g, "~a ⅋ ~b"), Rule::Par, &[])
+        .unwrap()[0];
+    let goals = state
+        .apply(g, at(&state, g, "c"), Rule::Mix, &[at(&state, g, "~c")])
+        .unwrap();
+    let g = goals[1];
+    let goals = state
+        .apply(
+            g,
+            at(&state, g, "a ⊗ b"),
+            Rule::Tensor,
+            &[at(&state, g, "~a")],
+        )
+        .unwrap();
+    state
+        .close(goals[0], &Options::default(), || false)
+        .unwrap();
+    let json = serde_json::to_string(&state).unwrap();
+    let mut back: Interactive = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.inferences(), state.inferences());
+    assert_eq!(back.steps(), 5);
+    let closed = back.close_all(&Options::default(), || false).unwrap();
+    assert_eq!(closed.len(), 2);
+    assert_eq!(back.proof().unwrap().check(mix), Ok(()));
+    while back.undo().is_some() {}
+    assert_eq!(back.goals().collect::<Vec<_>>(), vec![root]);
+    let s: Sequent = "|- ?(a par ~a)".parse().unwrap();
+    let mut state = Interactive::new(&s, mix).unwrap();
+    let g = state.apply(root, 0, Rule::Contraction, &[]).unwrap()[0];
+    let g = state.apply(g, 0, Rule::Dereliction, &[]).unwrap()[0];
+    let g = state.apply(g, 0, Rule::Dereliction, &[]).unwrap()[0];
+    state.apply(g, 1, Rule::Mix, &[]).unwrap();
+    let json = serde_json::to_string(&state).unwrap();
+    let back: Interactive = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.inferences(), state.inferences());
 }

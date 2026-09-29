@@ -456,6 +456,11 @@ impl Interactive {
         self.history.len()
     }
 
+    /// Returns the goals the steps closed, in order.
+    pub(crate) fn history(&self) -> &[InfId] {
+        &self.history
+    }
+
     /// Returns the sequent of an open goal, or the refusal.
     fn open(&self, id: InfId) -> Result<&[OccId], Refusal> {
         self.goal(id).ok_or(Refusal::NoGoal(id))

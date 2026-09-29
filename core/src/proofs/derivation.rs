@@ -231,6 +231,69 @@ impl Display for Rule {
     }
 }
 
+/// The text is not the name of a rule.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnknownRule(pub String);
+
+impl Display for UnknownRule {
+    /// Writes which text was not a rule name.
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{:?} is not the name of a rule", self.0)
+    }
+}
+
+impl std::error::Error for UnknownRule {}
+
+impl std::str::FromStr for Rule {
+    type Err = UnknownRule;
+
+    /// Parses a rule from its [`name`](Self::name) or an ASCII spelling of
+    /// it: `*` for `⊗`, `par` or `|` for `⅋`, `+1` and `+2` for `⊕₁` and
+    /// `⊕₂`, `bot` and `top` for `⊥` and `⊤`, `-oL` for `⊸L`, `*L` for
+    /// `⊗L`, `&L1` for `&L₁`, `+L` for `⊕L`, `+R1` for `⊕R₁`, `topR` for
+    /// `⊤R`, and so on.
+    fn from_str(text: &str) -> Result<Self, UnknownRule> {
+        use Rule::*;
+        Ok(match text {
+            "ax" => Ax,
+            "⊗" | "*" => Tensor,
+            "⅋" | "par" | "|" => Par,
+            "1" => One,
+            "⊥" | "bot" => Bot,
+            "&" => With,
+            "⊕₁" | "+1" => PlusLeft,
+            "⊕₂" | "+2" => PlusRight,
+            "⊤" | "top" => Top,
+            "!" => Promotion,
+            "?d" => Dereliction,
+            "?c" => Contraction,
+            "?w" => Weakening,
+            "mix" => Mix,
+            "wk" => AffineWeakening,
+            "⊸L" | "-oL" => ImpLeft,
+            "⊸R" | "-oR" => ImpRight,
+            "⊗L" | "*L" => TensorLeft,
+            "⊗R" | "*R" => TensorRight,
+            "&L₁" | "&L1" => WithLeft1,
+            "&L₂" | "&L2" => WithLeft2,
+            "&R" => WithRight,
+            "⊕L" | "+L" => PlusLeftRule,
+            "⊕R₁" | "+R1" => PlusRight1,
+            "⊕R₂" | "+R2" => PlusRight2,
+            "1L" => OneLeft,
+            "1R" => OneRight,
+            "0L" => ZeroLeft,
+            "⊤R" | "topR" => TopRight,
+            "!L" => BangLeft,
+            "!R" => BangRight,
+            "!c" => BangContraction,
+            "!w" => BangWeakening,
+            "open" => Open,
+            _ => return Err(UnknownRule(text.to_owned())),
+        })
+    }
+}
+
 /// One inference of a derivation: the sequent it concludes, the rule, and
 /// the inferences of its premises.
 #[derive(Clone, Debug, PartialEq, Eq)]
