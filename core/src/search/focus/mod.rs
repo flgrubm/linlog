@@ -1327,6 +1327,286 @@ mod tests {
         ));
     }
 
+    /// The classic MELL sequents: dereliction, weakening, contraction with
+    /// and without promotion, and what is unprovable, all within the
+    /// default copy bound.
+    #[test]
+    fn classic_exponentials() {
+        let m = Mode::CLASSICAL;
+        for (input, expected) in [
+            ("!a |- a", true),
+            ("!a |- 1", true),
+            ("!a |- a * a", true),
+            ("!a |- !a * !a", true),
+            ("|- !(a -o a)", true),
+            ("!a, !(a -o b) |- !b", true),
+            ("!a, !a |- a", true),
+            ("!a |- !!a", true),
+            ("!!a |- !a", true),
+            ("!a * !b |- !(a * b)", true),
+            ("!a, !(a -o b), !(b -o c) |- !c", true),
+            ("|- ?a, ?~a", true),
+            ("!a, !~a |- 1", true),
+            ("?a |- ?a par ?a", true),
+            ("|- !1", true),
+            ("a |- !a", false),
+            ("?a |- a", false),
+            ("!a |- b", false),
+            ("!a, !(a -o b) |- c", false),
+            ("|- ?a", false),
+            ("|- ?a, ?b, ~a", true),
+            ("|- ?a, b, ~a", false),
+        ] {
+            assert_eq!(provable(input, m), expected, "{input:?}");
+        }
+        // Unprovable, but every copy grows the context, so no level of the
+        // bound finishes: the honest answer is unknown.
+        for input in [
+            "!(a * b) |- !a * !b",
+            "!(a + b) |- !a + !b",
+            "!(a * b) |- a",
+        ] {
+            assert!(
+                matches!(
+                    run(input, m, &Options::default()).0,
+                    Verdict::Unknown(Reason::CopyBound(3))
+                ),
+                "{input:?}"
+            );
+        }
+    }
+
+    /// Full LL: the additive and the dyadic rules compose, with and
+    /// without Mix.
+    #[test]
+    fn full_ll() {
+        for (input, expected) in [
+            ("!(a & b) |- !a * !b", true),
+            ("!a * !b |- !(a & b)", true),
+            ("?a par ?b |- ?(a + b)", true),
+            ("?(a + b) |- ?a par ?b", true),
+            ("!(a & b) |- !a & !b", true),
+            ("!(a & b) |- !(a * b)", true),
+            ("!a & !b |- !(a & b)", false),
+            ("!a, !(a -o b & c) |- b * c", true),
+            ("!(a -o top) |- b", false),
+            ("!(a -o top), a |- b", false),
+            ("!(a -o top), a |- top", true),
+            ("!(0 -o a) |- a", false),
+            ("!a, !(a -o 0) |- b", true),
+        ] {
+            assert_eq!(provable(input, Mode::CLASSICAL), expected, "{input:?}");
+        }
+        // The opponent chooses the side of the `&`: unprovable, and the
+        // context grows with every copy, so undecided within the bound.
+        assert!(matches!(
+            run(
+                "!a, !(a -o b + c) |- b * c",
+                Mode::CLASSICAL,
+                &Options::default()
+            )
+            .0,
+            Verdict::Unknown(Reason::CopyBound(3))
+        ));
+        let mix = Mode::CLASSICAL.with_mix();
+        for (input, without, with) in [
+            ("!a |- a, 1", false, true),
+            ("!a, !b |- a * b, a", false, true),
+            ("!a |- a, b", false, false),
+        ] {
+            assert_eq!(provable(input, Mode::CLASSICAL), without, "{input:?}");
+            assert_eq!(provable(input, mix), with, "{input:?} with Mix");
+        }
+    }
+
+    /// Affine mode proves what needs weakening and nothing more, in every
+    /// fragment, and decides what linear mode cannot.
+    #[test]
+    fn affine() {
+        let affine = Mode::CLASSICAL.affine();
+        for (input, linear, weakened) in [
+            ("a |- 1", false, true),
+            ("a, b |- a", false, true),
+            ("a * b |- a", false, true),
+            ("|- a, ~a, b", false, true),
+            ("a & b |- 1", false, true),
+            ("a |- 0 + 1", false, true),
+            ("|- 0, a, ~a", false, true),
+            ("!a, b |- a", false, true),
+            ("a |- !1", false, true),
+            ("a |- !b", false, false),
+            ("|- a, b", false, false),
+            ("|- 0", false, false),
+            ("a * b |- a * b", true, true),
+            ("a |- a * a", false, false),
+            ("!a |- a * a", true, true),
+            ("a & b |- a + b", true, true),
+            ("(a * b) par c |- a, b, c", false, true),
+            ("a -o b |- b", false, false),
+        ] {
+            assert_eq!(provable(input, Mode::CLASSICAL), linear, "{input:?}");
+            assert_eq!(provable(input, affine), weakened, "{input:?} affinely");
+        }
+        // The context grows with every copy, so linear mode gives up at the
+        // bound; affine mode prunes the grown context against its ancestor
+        // and decides.
+        let growing = "!(a -o a * a), a |- ?b";
+        assert!(matches!(
+            run(growing, Mode::CLASSICAL, &Options::default()).0,
+            Verdict::Unknown(Reason::CopyBound(3))
+        ));
+        assert!(!provable(growing, affine));
+        // Weakening goes below a promotion, never above it.
+        let (verdict, _) = run("b |- !(a -o a)", affine, &Options::default());
+        let proof = verdict.proof().unwrap();
+        let Node::Weaken(_, below) = proof.node(proof.root()) else {
+            panic!("the leftover is weakened at the root");
+        };
+        assert!(matches!(proof.node(below), Node::Bang(..)));
+    }
+
+    /// The copy bound: a level that hit its bound never answers
+    /// `Unprovable`, a level that did not answers it, a failure recorded at
+    /// a smaller remaining budget is not reused at a larger one, and the
+    /// bound is per branch.
+    #[test]
+    fn copy_bound() {
+        let m = Mode::CLASSICAL;
+        let with = |copies| Options::default().copies(copies);
+        // ⊢ ?~a, a needs one copy: bound 0 is hit, bound 1 proves.
+        assert!(matches!(
+            run("!a |- a", m, &with(0)).0,
+            Verdict::Unknown(Reason::CopyBound(0))
+        ));
+        assert!(run("!a |- a", m, &with(1)).0.proof().is_some());
+        // ⊢ ?~a, a ⊗ a: the stable sequent ⊢ ~a ; a fails at level 0 for
+        // lack of budget and must be searched again at level 1.
+        assert!(run("!a |- a * a", m, &with(1)).0.proof().is_some());
+        // The clause and one `~a` are copied on every branch to an `a`:
+        // bound 2, however many branches there are; and the two branches
+        // of ⊢ ?~a, (a ⊗ a) ⊗ a take one copy each.
+        assert!(matches!(
+            run("!a, !(a -o a -o a -o b) |- b", m, &with(1)).0,
+            Verdict::Unknown(Reason::CopyBound(1))
+        ));
+        assert!(
+            run("!a, !(a -o a -o a -o b) |- b", m, &with(2))
+                .0
+                .proof()
+                .is_some()
+        );
+        assert!(run("!a |- (a * a) * a", m, &with(1)).0.proof().is_some());
+        // Unprovable, decided at a level that never hit the bound: after
+        // one copy of ~a nothing is left to copy. (⊢ ?~a, b is refuted by
+        // the balance of b before any copy.)
+        assert!(matches!(run("!a |- b", m, &with(0)).0, Verdict::Unprovable));
+        assert!(matches!(
+            run("!a |- ?b", m, &with(1)).0,
+            Verdict::Unknown(Reason::CopyBound(1))
+        ));
+        assert!(matches!(
+            run("!a |- ?b", m, &with(2)).0,
+            Verdict::Unprovable
+        ));
+        // The loop check decides a sequent whose copies repeat a stable
+        // sequent, without a bound to hit.
+        assert!(matches!(
+            run("!(a -o a), a |- b", m, &with(1)).0,
+            Verdict::Unprovable
+        ));
+        // A growing context is never decided within a bound.
+        for copies in [0, 2, 5] {
+            assert!(matches!(
+                run("!(a -o a * a), a |- ?b", m, &with(copies)).0,
+                Verdict::Unknown(Reason::CopyBound(c)) if c == copies
+            ));
+        }
+        assert_eq!(
+            Reason::CopyBound(3).to_string(),
+            "the copy bound of 3 was reached"
+        );
+    }
+
+    /// The memo makes no difference to a MELL verdict, with and without
+    /// the copy bound binding, and the entries survive across levels.
+    #[test]
+    fn memo_across_levels() {
+        for input in [
+            "!a, !(a -o b), !(b -o c) |- c * c * c",
+            "!(a -o a * a), a |- b",
+            "!a, !(a -o b) |- c",
+            "!(a & b) |- !a * !b",
+        ] {
+            for copies in [1, 3] {
+                let options = Options::default().copies(copies);
+                let (with, stats) = run(input, Mode::CLASSICAL, &options);
+                let (without, _) = run(input, Mode::CLASSICAL, &options.clone().memo_limit(0));
+                assert_eq!(
+                    std::mem::discriminant(&with),
+                    std::mem::discriminant(&without),
+                    "{input:?} at {copies} copies: {with:?} with the memo, {without:?} without"
+                );
+                if copies == 3 && input.contains("c * c * c") {
+                    assert!(with.proof().is_some());
+                    assert!(stats.memo_hits > 0, "{input:?}: the memo was used");
+                }
+            }
+        }
+    }
+
+    /// The dyadic proofs the engine finds unfold into the standard
+    /// derivations, with dereliction, contraction, weakening and promotion
+    /// where they belong.
+    #[test]
+    fn exponential_derivations() {
+        let render = |input: &str, mode: Mode| {
+            let (verdict, _) = run(input, mode, &Options::default());
+            verdict.proof().unwrap().derivation().unwrap().to_string()
+        };
+        assert_eq!(
+            render("!A |- A", Mode::CLASSICAL),
+            ["─────── ax", "⊢ ~A, A", "──────── ?d", "⊢ ?~A, A"].join("\n")
+        );
+        assert_eq!(
+            render("!A |- 1", Mode::CLASSICAL),
+            ["  ─── 1", "  ⊢ 1", "──────── ?w", "⊢ ?~A, 1"].join("\n")
+        );
+        assert_eq!(
+            render("!A |- A * A", Mode::CLASSICAL),
+            [
+                "─────── ax    ─────── ax",
+                "⊢ ~A, A       ⊢ ~A, A",
+                "──────── ?d   ──────── ?d",
+                "⊢ ?~A, A      ⊢ ?~A, A",
+                "────────────────────── ⊗",
+                "  ⊢ ?~A, ?~A, A ⊗ A",
+                "  ───────────────── ?c",
+                "    ⊢ ?~A, A ⊗ A",
+            ]
+            .join("\n")
+        );
+        assert_eq!(
+            render("!A, !(A -o B) |- !B", Mode::CLASSICAL),
+            [
+                "─────── ax",
+                "⊢ ~A, A",
+                "──────── ?d   ─────── ax",
+                "⊢ ?~A, A      ⊢ ~B, B",
+                "───────────────────── ⊗",
+                "  ⊢ ?~A, A ⊗ ~B, B",
+                " ─────────────────── ?d",
+                " ⊢ ?~A, ?(A ⊗ ~B), B",
+                " ──────────────────── !",
+                " ⊢ ?~A, ?(A ⊗ ~B), !B",
+            ]
+            .join("\n")
+        );
+        assert_eq!(
+            render("A, B |- A", Mode::CLASSICAL.affine()),
+            ["  ─────── ax", "  ⊢ ~A, A", "─────────── wk", "⊢ ~A, ~B, A",].join("\n")
+        );
+    }
+
     /// The mode a generated sequent is proved in.
     fn mode_for(rules: Rules) -> Mode {
         if rules.mix {

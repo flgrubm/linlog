@@ -80,6 +80,17 @@ fn prove_verdicts_and_exit_statuses() {
             0,
             "provable (MALL as asserted, classical, focus engine)",
         ),
+        (
+            &["prove", "-q", "--copies", "0", "!A |- A"],
+            3,
+            "unknown (MELL, classical, focus engine): the copy bound of 0 was reached; \
+             raise it with --copies",
+        ),
+        (
+            &["prove", "-q", "-a", "A, B |- A"],
+            0,
+            "provable (MLL, classical affine, focus engine)",
+        ),
     ] {
         assert_eq!(
             linlog(args, ""),
