@@ -1,12 +1,14 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-//! The linlog command line interface: `linlog prove`, `linlog check` and
-//! `linlog seq`, as a library so that the binary is one call and this
-//! documentation exists.
+//! The linlog command line interface: `linlog prove`, `linlog check`,
+//! `linlog interact` and `linlog seq`, as a library so that the binary is
+//! one call and this documentation exists.
 
 /// The command line arguments.
 pub mod argument_parsing;
+/// The `interact` command.
+pub mod interact;
 /// Reading input and writing output.
 pub mod io;
 /// The `prove` and `check` commands.
@@ -54,6 +56,11 @@ pub fn interrupted() -> bool {
     INTERRUPTED.load(Ordering::Relaxed)
 }
 
+/// Forgets a Ctrl-C that stopped a search, so that the next search runs.
+pub fn clear_interrupt() {
+    INTERRUPTED.store(false, Ordering::Relaxed);
+}
+
 /// Makes the first Ctrl-C stop the search, so that its verdict is unknown
 /// and the statistics still print, and a second one end the program as
 /// Ctrl-C usually does.
@@ -93,6 +100,7 @@ fn run(cli: &Cli) -> Result<Status> {
     match &cli.command {
         Command::Prove(args) => prove::prove(args),
         Command::Check(args) => prove::check(args),
+        Command::Interact(args) => interact::interact(args),
         Command::Seq { command } => {
             match command {
                 SeqCommand::Print {

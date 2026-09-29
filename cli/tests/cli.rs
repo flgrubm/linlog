@@ -2,7 +2,8 @@
 // Licensed under the EUPL
 
 //! The `linlog` binary end to end: verdicts, exit statuses, the JSON round
-//! trip from `prove` to `check`, the `seq` commands and the help text.
+//! trip from `prove` to `check`, the interactive session, the `seq`
+//! commands and the help text.
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -246,6 +247,85 @@ fn intuitionistic_mode() {
     assert_eq!((status, out.as_str()), (0, "ILL\n"));
 }
 
+/// `interact` reads commands from standard input: rules are listed and
+/// applied by goal and position, refused with a reason, undone, goals are
+/// closed by the search, the session is saved and resumed, and the finished
+/// proof is checked, which decides the exit status.
+#[test]
+fn interactive_session() {
+    let dir = std::env::temp_dir().join(format!("linlog-cli-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let session = dir.join("session.json");
+    let proof = dir.join("proof.json");
+    let script = format!(
+        "goals\nrules 0 1\napply 0 1 par\napply 0 1 * 0\napply 1 0 ax\nundo\nsave {s}\nquit\n",
+        s = session.display()
+    );
+    let (status, out, err) = linlog(&["interact", "A, A -o B |- B"], &script);
+    assert_eq!(
+        out,
+        format!(
+            "goal 0: ⊢ 0: ~A, 1: A ⊗ ~B, 2: B\n\
+             ⊗ (with a split)\n\
+             error: the rule ⅋ does not act on formula 1\n\
+             opened goal 1: ⊢ 0: ~A, 1: A\n\
+             opened goal 2: ⊢ 0: ~B, 1: B\n\
+             closed\n\
+             reopened goal 1: ⊢ 0: ~A, 1: A\n\
+             session written to {}\n",
+            session.display()
+        )
+    );
+    assert_eq!((status, err.as_str()), (1, ""));
+    let script = format!(
+        "close 1\napply 2 1 ax\nshow\nproof {p}\n",
+        p = proof.display()
+    );
+    let (status, out, err) = linlog(&["interact", "--state", session.to_str().unwrap()], &script);
+    assert_eq!(
+        out,
+        format!(
+            "goal 1: proved (MLL, classical, focus engine)\n\
+             closed; no goal is open: `proof` checks the proof\n\
+             ─────── ax   ─────── ax\n\
+             ⊢ ~A, A      ⊢ ~B, B\n\
+             ──────────────────── ⊗\n\
+            \x20 ⊢ ~A, A ⊗ ~B, B\n\
+             valid proof written to {}\n",
+            proof.display()
+        )
+    );
+    assert_eq!((status, err.as_str()), (0, ""));
+    let (status, _, _) = linlog(&["check", "-q", proof.to_str().unwrap()], "");
+    assert_eq!(status, 0);
+    std::fs::remove_dir_all(&dir).unwrap();
+
+    // Two-sided: the goals show both sides, the rules their ILL names, and
+    // a split that leaves two goals on a side is refused.
+    let script = "goals\nrules 0 1\napply 0 1 -oL 2\napply 0 1 -oL 0\nclose\nproof\n";
+    let (status, out, err) = linlog(&["interact", "-i", "A, A -o B |- B"], script);
+    assert_eq!(
+        out,
+        "goal 0: 0: A, 1: A ⊸ B ⊢ 2: B\n\
+         ⊸L (with a split)\n\
+         error: a premise would have 2 formulas on the right of ⊢ instead of one\n\
+         opened goal 1: 0: A ⊢ 1: A\n\
+         opened goal 2: 0: B ⊢ 1: B\n\
+         goal 1: proved (IMLL, intuitionistic, two-sided engine)\n\
+         goal 2: proved (IMLL, intuitionistic, two-sided engine)\n\
+         no goal is open: `proof` checks the proof\n\
+         valid proof (intuitionistic)\n\
+         ───── ax   ───── ax\n\
+         A ⊢ A      B ⊢ B\n\
+         ──────────────── ⊸L\n\
+        \x20 A, A ⊸ B ⊢ B\n"
+    );
+    assert_eq!((status, err.as_str()), (0, ""));
+    let (status, _, err) = linlog(&["interact"], "");
+    assert_eq!(status, 2);
+    assert!(err.contains("no sequent given"), "{err}");
+}
+
 /// The JSON output of `prove` is a proof file that `check` accepts in the
 /// mode it was found in and rejects in a stricter one.
 #[test]
@@ -343,7 +423,7 @@ fn seq_commands() {
 fn help_names_every_command() {
     let (status, out, _) = linlog(&["--help"], "");
     assert_eq!(status, 0);
-    for command in ["prove", "check", "seq"] {
+    for command in ["prove", "check", "interact", "seq"] {
         assert!(out.contains(&format!("\n  {command} ")), "{command}: {out}");
     }
     let (_, out, _) = linlog(&["seq", "--help"], "");

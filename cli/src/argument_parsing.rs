@@ -45,6 +45,22 @@ pub enum Command {
     /// proof was found with. The exit status is 0 for a valid proof, 1 for
     /// an invalid one, and 2 for an error.
     Check(CheckArgs),
+    /// Prove a sequent step by step, reading commands from standard input
+    ///
+    /// The session starts with the whole sequent as the one open goal.
+    /// Commands, one per line: `goals` lists the open goals with the
+    /// positions of their formulas; `rules G P` lists the rules that act on
+    /// formula P of goal G; `apply G P RULE [P…]` applies a rule, the
+    /// further positions being the formulas that go to the left premise of
+    /// a ⊗ or Mix; `undo` retracts the last step; `close [G]` lets the
+    /// search close goal G, or every open goal; `show` draws the derivation
+    /// so far; `proof [FILE]` checks the finished proof and prints it, or
+    /// writes it as JSON for `check`; `save FILE` and `load FILE` keep and
+    /// resume the session as JSON; `help`; `quit`. The exit status is 0
+    /// when the session ends with a finished proof that checks, 1
+    /// otherwise, and 2 for an error.
+    #[command(after_help = SYNTAX)]
+    Interact(InteractArgs),
     /// Print a sequent, convert it to JSON, or name its fragment
     Seq {
         /// What to do with the sequent.
@@ -111,6 +127,37 @@ pub struct ProveArgs {
     /// text.
     #[arg(long)]
     pub stats: bool,
+}
+
+/// The arguments of `interact`.
+#[derive(Args, Debug)]
+pub struct InteractArgs {
+    /// The sequent, as an argument or with --file, since standard input
+    /// carries the commands.
+    #[command(flatten)]
+    pub input: SequentInput,
+    /// Resume a session saved with `save` instead of starting from a
+    /// sequent; the mode is the file's
+    #[arg(long, value_name = "PATH", conflicts_with_all = ["sequent", "file"])]
+    pub state: Option<PathBuf>,
+    /// The logic.
+    #[command(flatten)]
+    pub mode: ModeArgs,
+    /// How often `?` formulas may be copied on one branch when the search
+    /// closes a goal; see `prove --copies`
+    #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_COPIES)]
+    pub copies: u32,
+    /// Give up on a `close` after this long, such as 500ms, 10s, 2m or 1h
+    #[arg(long, value_name = "DURATION", value_parser = parse_duration)]
+    pub timeout: Option<Duration>,
+    /// The most decided sequents a `close` remembers at once; see
+    /// `prove --memo-limit`
+    #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_MEMO_LIMIT)]
+    pub memo_limit: usize,
+    /// The deepest nesting of rules on one branch before a `close` gives
+    /// up; see `prove --recursion-limit`
+    #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_RECURSION_LIMIT)]
+    pub recursion_limit: u32,
 }
 
 /// The arguments of `check`.

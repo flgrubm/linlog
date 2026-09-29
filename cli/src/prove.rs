@@ -26,7 +26,10 @@ const POLLS_PER_CLOCK: u32 = 1024;
 
 /// Runs `f` on a thread whose stack fits `recursion_limit` levels, and
 /// returns its result.
-fn on_large_stack<T: Send>(recursion_limit: u32, f: impl FnOnce() -> T + Send) -> Result<T> {
+pub(crate) fn on_large_stack<T: Send>(
+    recursion_limit: u32,
+    f: impl FnOnce() -> T + Send,
+) -> Result<T> {
     let size = (recursion_limit as usize)
         .saturating_mul(STACK_PER_LEVEL)
         .max(MIN_STACK);
@@ -59,7 +62,7 @@ enum Stop {
 
 /// Returns the derivation of a proof as a text tree, two-sided in
 /// intuitionistic mode, or the checker's complaint with formulas.
-fn derivation(proof: &Proof, mode: Mode) -> Result<String> {
+pub(crate) fn derivation(proof: &Proof, mode: Mode) -> Result<String> {
     let derivation = if mode.intuitionistic {
         proof.two_sided_derivation()
     } else {
@@ -84,7 +87,7 @@ pub fn sequent_text(sequent: &Sequent, mode: Mode) -> Result<String> {
 
 /// Returns a search error with formulas where the library's message has
 /// occurrence ids.
-fn describe(error: Error, sequent: &Sequent) -> anyhow::Error {
+pub(crate) fn describe(error: Error, sequent: &Sequent) -> anyhow::Error {
     match (&error, Forest::new(sequent)) {
         (Error::NotIntuitionistic(e), Ok(forest)) => {
             anyhow!("not an intuitionistic sequent: {}", e.describe(&forest))
