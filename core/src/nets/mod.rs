@@ -29,6 +29,7 @@ pub use graph::Scratch;
 use crate::Error;
 use crate::fragment::Fragment;
 use crate::occurrences::{Forest, OccId};
+use crate::proofs::{Node, Proof};
 use crate::sequents::{Kind, Sequent};
 use graph::Graph;
 use skeleton::Skeleton;
@@ -222,6 +223,29 @@ impl ProofStructure {
         Ok(net)
     }
 
+    /// Desequentializes a proof of MLL: reads the axiom links off its `Ax`
+    /// nodes and builds their structure over a copy of the proof's forest.
+    /// Every proof the checker accepts gives a proof net; two proofs that
+    /// differ only in the order of their rules give the same one. Fails as
+    /// [`from_links`](Self::from_links) does, and with the criterion's
+    /// error if the links are not a proof net, which happens only for a
+    /// proof the checker rejects or one that uses Mix when `mix` is off.
+    /// The checker is not run: the net of a term the checker would reject
+    /// can still be a proof net, and is returned as one.
+    pub fn from_proof(proof: &Proof, mix: bool) -> Result<Self, Error> {
+        let links: Vec<(OccId, OccId)> = proof
+            .nodes()
+            .iter()
+            .filter_map(|n| match *n {
+                Node::Ax(x, y) => Some((x, y)),
+                _ => None,
+            })
+            .collect();
+        let net = Self::from_links(proof.forest().clone(), mix, &links)?;
+        net.is_correct()?;
+        Ok(net)
+    }
+
     /// Fails if `x` and `y` are not two unlinked dual literals of the
     /// forest.
     fn check_link(&self, x: OccId, y: OccId) -> Result<(), Error> {
@@ -378,7 +402,8 @@ impl ProofStructure {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sequents::Sequent;
+    use crate::fragment::Mode;
+    use crate::proofs::NodeId;
 
     /// Wraps a raw id.
     const fn o(id: u32) -> OccId {
@@ -419,6 +444,126 @@ mod tests {
         assert!(!net.same_component(o(0), o(3)));
         assert_eq!(net.unlink(), None);
         assert_eq!(net.unlinked().count(), 4);
+    }
+
+    /// Two derivations that differ only in the order of their rules give
+    /// the same net, and a proof that is not one of MLL is refused.
+    #[cfg(feature = "parse")]
+    #[test]
+    fn desequentialize() {
+        use Node::*;
+        let (n, mode) = (NodeId::new, Mode::CLASSICAL);
+        // ⊢ A ⊗ B, ~A, ~B ⊗ C, ~C: 0 ⊗, 1 A, 2 B, 3 ~A, 4 ⊗, 5 ~B, 6 C, 7 ~C.
+        let f = forest("|- A * B, ~A, ~B * C, ~C");
+        let first_tensor_first = Proof::new(
+            f.clone(),
+            vec![
+                Ax(o(1), o(3)),
+                Ax(o(2), o(5)),
+                Ax(o(6), o(7)),
+                Tensor(o(4), n(1), n(2)),
+                Tensor(o(0), n(0), n(3)),
+            ],
+            n(4),
+        )
+        .unwrap();
+        let second_tensor_first = Proof::new(
+            f.clone(),
+            vec![
+                Ax(o(1), o(3)),
+                Ax(o(2), o(5)),
+                Tensor(o(0), n(0), n(1)),
+                Ax(o(6), o(7)),
+                Tensor(o(4), n(2), n(3)),
+            ],
+            n(4),
+        )
+        .unwrap();
+        assert_eq!(first_tensor_first.check(mode), Ok(()));
+        assert_eq!(second_tensor_first.check(mode), Ok(()));
+        let a = ProofStructure::from_proof(&first_tensor_first, false).unwrap();
+        let b = ProofStructure::from_proof(&second_tensor_first, false).unwrap();
+        assert_eq!(links(&a), links(&b));
+        assert_eq!(links(&a), [(o(1), o(3)), (o(2), o(5)), (o(6), o(7))]);
+
+        // A proof with Mix desequentializes only when Mix is allowed.
+        let f = forest("|- A par B, ~A, ~B");
+        let with_mix = Proof::new(
+            f,
+            vec![
+                Ax(o(1), o(3)),
+                Ax(o(2), o(4)),
+                Mix(n(0), n(1)),
+                Par(o(0), n(2)),
+            ],
+            n(3),
+        )
+        .unwrap();
+        assert!(ProofStructure::from_proof(&with_mix, true).is_ok());
+        assert!(matches!(
+            ProofStructure::from_proof(&with_mix, false),
+            Err(Error::InvalidNet(NetError::Disconnected(_)))
+        ));
+        // Outside MLL there is no net.
+        let f = forest("|- A & A, ~A");
+        let additive = Proof::new(
+            f,
+            vec![Ax(o(1), o(3)), Ax(o(2), o(3)), With(o(0), n(0), n(1))],
+            n(2),
+        )
+        .unwrap();
+        assert!(matches!(
+            ProofStructure::from_proof(&additive, false),
+            Err(Error::NetFragment(_))
+        ));
+    }
+
+    /// Random derivations of MLL, with and without Mix, round-trip through
+    /// their net: the net is correct, the sequentialized proof passes the
+    /// checker, and it has the same net as the derivation it came from.
+    #[cfg(feature = "parse")]
+    #[test]
+    fn round_trip_random_derivations() {
+        use crate::search::generate::{self, Rng, Rules};
+        use crate::search::{Options, prove};
+        for (seed, mix) in [(3, false), (4, true)] {
+            let rules = Rules {
+                units: false,
+                additives: false,
+                mix,
+            };
+            let mode = if mix {
+                Mode::CLASSICAL.with_mix()
+            } else {
+                Mode::CLASSICAL
+            };
+            let mut rng = Rng::new(seed);
+            for _ in 0..60 {
+                let budget = 2 + rng.below(14);
+                let formulas = generate::provable(&mut rng, rules, 3, budget);
+                let text = generate::sequent(&formulas);
+                let s: Sequent = text.parse().unwrap();
+                let outcome = prove(&s, mode, &Options::default()).unwrap();
+                let proof = outcome.verdict.proof().expect("the sequent is provable");
+                assert_eq!(proof.check(mode), Ok(()), "{text:?}");
+                let net = ProofStructure::from_proof(proof, mix).unwrap_or_else(|e| panic!("{text:?}: {e}"));
+                let back = net.sequentialize().unwrap_or_else(|e| panic!("{text:?}: {e}"));
+                assert_eq!(back.check(mode), Ok(()), "{text:?}");
+                let again = ProofStructure::from_proof(&back, mix).unwrap();
+                assert_eq!(links(&again), links(&net), "{text:?}");
+            }
+        }
+    }
+
+    /// The links of a structure as sorted pairs, for comparing nets.
+    fn links(net: &ProofStructure) -> Vec<(OccId, OccId)> {
+        let mut links: Vec<(OccId, OccId)> = net
+            .links()
+            .iter()
+            .map(|&(x, y)| (x.min(y), x.max(y)))
+            .collect();
+        links.sort();
+        links
     }
 
     /// A list of links is validated: literals only, dual, each at most
