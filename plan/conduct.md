@@ -58,6 +58,16 @@ and formats you added (real invocations with their output), and keep its
 planned to built. Do not mention the plan, its steps or these sessions
 there.
 
+Everything you produce in one reply, including any reasoning or drafting
+before the reply, counts toward a single limit of about 128 000 tokens. If
+that limit is reached before the reply is finished, the whole turn is lost
+and the work has to start over. Composing an entire module in full as
+reasoning and then again as a reply would double the length of the turn
+without improving the result, so do not do that: spend the reasoning on
+understanding the requirements, checking the code your design depends on,
+and settling the structure and the hard decisions, then write the code
+into files and let the compiler and the tests take it from there.
+
 In the report and in your final message, lead with the outcome, then the
 decisions, then what is left open. Complete sentences, no working
 shorthand, and every file, type or flag you name gets its own clause saying
