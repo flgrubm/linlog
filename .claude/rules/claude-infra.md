@@ -30,9 +30,10 @@ Current contents:
 - `rules/core.md` (`core/**`): the arena/NNF data model, fragments, the
   occurrence forest and its intuitionistic reading, proof terms, the
   checker and the derivation view, interactive proving and its
-  translation back to terms, the search front door (sequents and goals),
-  the focused engine (one- and two-sided), the additive path, proof nets
-  and their criterion, and their invariants.
+  translation back to terms, the LaTeX and Typst exports, the search
+  front door (sequents and goals), the focused engine (one- and
+  two-sided), the additive path, proof nets and their criterion, and
+  their invariants.
 - `rules/cli.md` (`cli/**`): the `linlog` command's layout, exit statuses,
   search thread, stop polling, the interactive session, and where a new
   engine, output format or session command plugs in.

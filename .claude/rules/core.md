@@ -879,6 +879,51 @@ themselves, and neither weakening nor Mix can help a two-formula sequent
 `Statistics::nodes` is pairs visited, `memo_hits` and `memo_entries` the
 memo's.
 
+## Export
+
+`export/` writes sequents and derivations as LaTeX (ebproof trees, cmll and
+amssymb symbols) and Typst (curryst trees), pure functions to `String`,
+each in a `Form` (`Fragment` or `Standalone`). What the code relies on:
+- **One table per target, one printer.** `notation::Notation` is the
+  symbol table (connectives, units, dual mark, turnstile, the alignment
+  mark, the atom escaper); `Notation::term` and `Notation::ill` are the
+  bracketing of `Sequent`'s and `Reading`'s `Display` over it, and must
+  stay in step with them. A new target (SVG text, say) is a new table;
+  `latex::label` and `typst::label` are the rule-label tables.
+- **The walk keeps its own stack** (`notation::walk`, enter and exit
+  events): exits are ebproof's postfix order, enter/exit brackets
+  curryst's nesting. Nothing in the emitters recurses over the tree, so
+  the output is linear in the inferences (each prints its whole sequent)
+  and never as wide as the tree, unlike the text renderer. The formula
+  printers recurse to the formula's depth, as `Display` does.
+- **An open goal is one shape in both targets**: its sequent under
+  vertical dots with no inference line (`\hypo{\vdots}` then
+  `\infer[no rule]1{…}`; a curryst leaf that is a centred `grid` of
+  `dots.v` over the sequent). Neither package has a per-inference dotted
+  bar (ebproof 2.1.1 styles: simple, no rule, double, dashed; curryst
+  0.6.0 has one stroke per tree), which is why.
+- **Typst symbols are Unicode characters, not names**: Typst 0.15
+  removed `times.circle` and `plus.circle`, so names break across
+  versions and characters do not. `&` is `class("binary", \&)`, `?` is
+  `class("normal", ?)` (Typst spaces punctuation), letters in labels are
+  `upright(L)` (a string in math keeps the space before it). Only the
+  two-sided LaTeX tree aligns turnstiles (`&\vdash`); a one-sided
+  sequent would align at its left edge, so it stays centred.
+- **Limits of the packages, not of the emitters**: Typst 0.15 refuses a
+  curryst 0.6.0 tree more than about eleven inferences high ("maximum
+  show rule depth exceeded": curryst nests several layout elements per
+  level), while ebproof compiled a 120-high tree; TeX fails with
+  "Arithmetic overflow" on a sequent line wider than its largest
+  dimension (about 5.7 m). Neither can be fixed in the output.
+- **Snapshots**: `core/tests/export.rs` pins standalone documents in
+  `core/tests/snapshots/` (`BLESS=1` rewrites them); the flake's `export`
+  check compiles exactly those files plus two CLI outputs with pdfLaTeX
+  and Typst, which is what catches output that matches its snapshot but
+  does not compile. The crane source keeps that directory
+  (`modules/workspace.nix`), since `cleanCargoSource` alone drops it.
+  `typst::CURRYST` and the nixpkgs curryst in `modules/export.nix` move
+  together.
+
 ## Layout
 
 `sequents` (arena, printing), `parse`, `serialize`, `fragment`, `occurrences`
@@ -890,8 +935,9 @@ memo's.
 path in `additive`, the test-only `generate` with its classical and
 intuitionistic proof generators), `nets` (structures and the criterion's front door
 in `mod.rs`, the graph and the Yeo test in `graph`, the union-find in
-`skeleton`, `sequentialize`), and the empty `export` module that the plan
-fills in. `lib.rs` re-exports the public types, so users write
+`skeleton`, `sequentialize`), and `export` (the shared `notation`, and
+`latex` and `typst` behind the features of those names). `lib.rs`
+re-exports the public types, so users write
 `linlog::Sequent`, `linlog::Proof`, `linlog::prove`, and so on. `hash` is
 crate-private.
 

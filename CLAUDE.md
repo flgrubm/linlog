@@ -20,14 +20,16 @@ data structures are designed to be compact and cache-friendly.
 
 Workspace crates:
 - `core/` is package **`linlog`**: all logic.
-  It has three optional default features, `parse` (chumsky), `serialize`
-  (serde) and `interactive` (step-by-step proving, which the CLI enables).
+  It has five optional default features, `parse` (chumsky), `serialize`
+  (serde), `interactive` (step-by-step proving), and `latex` and `typst`
+  (the exports); the CLI enables the last three.
 - `cli/` is package **`linlog-cli`**, library **`linlog_cli`** and binary
   **`linlog`** (one call into the library; `doc = false` because it shares
   the core crate's name): a clap front end with `prove`, `check`,
   `interact` (a line-based session that reads commands from standard
   input, `interact.rs`) and `seq print|json|fragment`, and the output
-  formats `text`, `json` and `net`. The tree and its
+  formats `text`, `json`, `net`, `latex` and `typst` (with
+  `--standalone` for a document). The tree and its
   `--help` text are the doc comments in `argument_parsing.rs`; `prove.rs`
   runs the search on a thread sized from `--recursion-limit` and owns the
   output; `--copies` bounds the copies of `?` formulas per branch; exit
@@ -70,6 +72,12 @@ feature `interactive`) is a proof in progress: `new(&sequent, mode)`,
 `Rule::Open` leaves, `proof()` translating the finished derivation into a
 checked `Proof`, serde behind `serialize`, and `Refusal` saying why a rule
 does not apply.
+`export::latex` and `export::typst` (features of the same names) write
+`sequent(&sequent, form)`, `two_sided(&reading, form)` and
+`derivation(&derivation, form)` (finished or with open goals) as LaTeX for
+ebproof and Typst for curryst, each as a `Form::Fragment` or a
+`Form::Standalone` document; `core/tests/snapshots/` pins the derivations
+(`BLESS=1 cargo test -p linlog --test export` rewrites them).
 `ProofStructure` (`nets`) is a proof net of unit-free MLL over the forest:
 `from_links`, `link`/`unlink`, `is_correct()` (the Danos–Regnier criterion
 through Yeo's deletion test, independent of the search and the checker),
@@ -122,8 +130,12 @@ added to an imports list; a path segment starting with `_` is skipped. One
 aspect per file, contributing to every output it needs (`treefmt.nix` also puts
 treefmt in the shell). Modules share values through `_module.args`:
 `rustToolchain` and `craneLib` (`toolchain.nix`), `workspace` (the crane
-arguments, `workspace.nix`). `checks.nix`, `devshell.nix`, `treefmt.nix` and
-`systems.nix` are what their names say.
+arguments, `workspace.nix`, whose source is what `cleanCargoSource` keeps
+plus `core/tests/snapshots`). `checks.nix`, `devshell.nix`, `treefmt.nix`
+and `systems.nix` are what their names say; `export.nix` is the `export`
+check, which compiles the snapshots and a CLI proof with pdfLaTeX and with
+Typst and the curryst of nixpkgs (the version `export::typst::CURRYST`
+names), offline.
 
 ## CI
 

@@ -229,7 +229,7 @@ formula, `rules` names the rules that act on a formula, `apply` applies one
 (a `⊗` or Mix takes the positions of the formulas that go to its left
 premise), `undo` retracts the last step, `close` lets the search close one
 goal or all of them, `show` draws the derivation so far with the open
-goals as bare sequents, `save` and `load` keep a session as JSON, and
+goals as bare sequents (`show latex` and `show typst` as proof trees), `save` and `load` keep a session as JSON, and
 `proof` checks the finished proof independently and prints it or writes
 it for `check`. In intuitionistic mode the goals are two-sided and the
 rules carry the names of ILL:
@@ -284,6 +284,57 @@ $ linlog seq fragment "A & B |- 1"
 MALL
 ```
 
+`--format latex` and `--format typst` write the derivation of `prove` and
+`check` as a proof tree to paste into a paper or slides: LaTeX for the
+[ebproof](https://ctan.org/pkg/ebproof) package with the connectives of
+[cmll](https://ctan.org/pkg/cmll) and amssymb (turnstiles aligned in
+two-sided trees), Typst for the
+[curryst](https://typst.app/universe/package/curryst) package. The verdict
+line becomes a comment. `seq print` takes the same formats for a sequent:
+
+```console
+$ linlog prove -i --format latex "A, A -o B |- B"
+% provable (IMLL, intuitionistic, net engine)
+\begin{prooftree}
+\infer0[$\mathrm{ax}$]{A &\vdash A}
+\infer0[$\mathrm{ax}$]{B &\vdash B}
+\infer2[$\multimap\mathrm{L}$]{A, A \multimap B &\vdash B}
+\end{prooftree}
+$ linlog prove --format typst "A & B |- A + B"
+// provable (ALL, classical, additive engine)
+#prooftree(
+  rule(
+    name: $⊕_1$,
+    rule(
+      name: $⊕_1$,
+      rule(name: $"ax"$, $⊢ A^⊥, A$),
+      $⊢ A^⊥, A ⊕ B$,
+    ),
+    $⊢ A^⊥ ⊕ B^⊥, A ⊕ B$,
+  ),
+)
+$ linlog seq print -i --format latex "A * B -o C |- ~C -o ~(A * B)"
+$(A \otimes B) \multimap C \vdash (A \otimes B) \multimap C$
+$ linlog seq print --format typst "A * B -o C |- ~C -o ~(A * B)"
+$⊢ (A ⊗ B) ⊗ C^⊥, C ⅋ (A^⊥ ⅋ B^⊥)$
+```
+
+`--standalone` writes a document that compiles on its own instead, cropped
+to the tree: `pdflatex` needs the ebproof, cmll, amsfonts and standalone
+packages, `typst compile` fetches curryst 0.6.0 on first use. Typst
+refuses a curryst tree more than about eleven inferences high; the LaTeX
+tree has no such limit.
+
+```console
+$ linlog prove --format latex --standalone --output proof.tex "!A |- A * !A"
+$ pdflatex proof.tex
+```
+
+Names of more than one letter are set in italics (`\mathit{foo}`,
+`italic("foo")`), with the characters LaTeX or Typst treat specially
+escaped. In `interact`, `show latex` and `show typst` draw the derivation
+so far, an open goal as its sequent under vertical dots.
+
 The syntax: `*`/`⊗` tensor, `|`/`par`/`⅋` par, `&` with, `+`/`⊕` plus,
 `-o`/`⊸` linear implication, `~A` or `A^` negation, `!` and `?`, and the
 units `1`, `bot`/`⊥`, `top`/`⊤`, `0`; `|-` or `⊢` separates the sides.
@@ -333,13 +384,17 @@ Built:
   goal per premise in intuitionistic mode), undo, the search closing any
   goal, translation of the finished derivation into a term the checker
   validates, and a JSON form of the session.
+- Export of sequents and derivations, finished or in progress, to LaTeX
+  (ebproof proof trees) and Typst (curryst proof trees), as fragments or
+  standalone documents.
 - The `linlog` command: `prove`, `check`, `interact` and `seq`, with time
-  limits, Ctrl-C, statistics, JSON output and proof nets.
+  limits, Ctrl-C, statistics, JSON output, proof nets, and LaTeX and Typst
+  output.
 
 Planned, in roughly this order:
 
-- Export of sequents, derivations and proof nets to LaTeX, Typst and SVG,
-  and proof certificates for Rocq.
+- Drawings of derivations and proof nets as SVG, and proof certificates
+  for Rocq.
 - Parallel search, a benchmark harness with the standard problem
   libraries, and performance work driven by its numbers.
 - Later: proof nets with exponential boxes, essential nets for
@@ -374,4 +429,6 @@ and mode call for, sequent search, net search or the additive recursion,
 and returns a checked proof, that there is none, or why it could not tell.
 Interactive proving holds a derivation with open goals over the same
 forest, with the same inferences as the derivation view, and turns it back
-into a term for the checker once it is finished.
+into a term for the checker once it is finished. The exports write
+sequents and derivations, finished or not, as LaTeX and Typst source, one
+inference at a time.

@@ -15,6 +15,9 @@
 //! them itself and sizes the page to its content. curryst cannot align
 //! turnstiles, so every sequent is centred. An open goal of a proof in
 //! progress is its sequent under vertical dots, with no inference line.
+//! curryst nests its layout at every level of the tree, so Typst refuses a
+//! tree more than about eleven inferences high ("maximum show rule depth
+//! exceeded"); the LaTeX export has no such limit.
 //!
 //! An atom named by one letter is written as it is, in math italic; any
 //! other name is a string in `italic(…)`, with `"` and `\` escaped, since
