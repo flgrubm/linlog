@@ -301,7 +301,10 @@ impl<'a> Engine<'a> {
                 kind => unreachable!("{kind:?} in a stable sequent"),
             }
         }
-        if zero {
+        // A `0` has no rule, so only a `⊤` below some member can prove the
+        // sequent: ⊢ 0, ⊤ ⊕ b is provable. (The spec calls a `0` in a
+        // stable sequent fatal, which overlooks this.)
+        if zero && !tally.absorbs() {
             return Ok(None);
         }
         if let [p, q] = *members
@@ -772,6 +775,8 @@ mod tests {
             ("|- a & top, ~a", true),
             ("|- 0", false),
             ("|- 0, top", true),
+            ("|- 0, top + b", true),
+            ("|- 0 * a, ~a, top + b", true),
             ("|- 0 + a, ~a", true),
             ("|- 0 * a, ~a", false),
             ("0 |- a", true),
@@ -862,9 +867,17 @@ mod tests {
         );
         assert!(matches!(verdict, Verdict::Unknown(Reason::Stopped)));
 
-        let (verdict, _) = run(input, Mode::CLASSICAL, &Options::default().recursion_limit(2));
+        let (verdict, _) = run(
+            input,
+            Mode::CLASSICAL,
+            &Options::default().recursion_limit(2),
+        );
         assert!(matches!(verdict, Verdict::Unknown(Reason::RecursionLimit)));
-        let (verdict, _) = run(input, Mode::CLASSICAL, &Options::default().recursion_limit(8));
+        let (verdict, _) = run(
+            input,
+            Mode::CLASSICAL,
+            &Options::default().recursion_limit(8),
+        );
         assert!(verdict.proof().is_some());
 
         // A free split over 126 formulas, in MALL so that the count

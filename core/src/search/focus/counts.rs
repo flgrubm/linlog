@@ -288,10 +288,15 @@ impl Tally {
         self.weight += sign * counts.weight(o);
     }
 
+    /// Returns whether a member absorbs, that is, has a `⊤` below it.
+    pub(crate) fn absorbs(&self) -> bool {
+        self.absorbers > 0
+    }
+
     /// Returns whether the members pass the interval check: one of them
     /// absorbs, or zero lies in the summed interval of every atom.
     pub(crate) fn balanced(&self) -> bool {
-        self.absorbers > 0 || self.bad == 0
+        self.absorbs() || self.bad == 0
     }
 
     /// Returns whether the members pass the `MLL` count equation

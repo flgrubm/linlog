@@ -393,9 +393,6 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(outcome.verdict, Verdict::Unknown(Reason::Stopped)));
-        assert_eq!(
-            Reason::Stopped.to_string(),
-            "the search was stopped"
-        );
+        assert_eq!(Reason::Stopped.to_string(), "the search was stopped");
     }
 }
