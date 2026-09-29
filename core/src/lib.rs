@@ -37,5 +37,5 @@ pub use errors::ParseError;
 
 pub use errors::Error;
 pub use fragment::{Fragment, Mode};
-pub use occurrences::{Forest, OccId, Polarity, Sign};
+pub use occurrences::{Forest, OccId, OccSet, Polarity, Sign};
 pub use sequents::{Atom, Formula, Kind, Sequent, Term, TermId};

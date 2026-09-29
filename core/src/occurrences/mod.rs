@@ -1,6 +1,11 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
+/// Bitsets over occurrence ids.
+pub mod set;
+
+pub use set::{Flip, OccSet, Submasks, submasks};
+
 use crate::Error;
 use crate::sequents::{Atom, Formula, Kind, Sequent, TermId};
 use std::ops::Not;
