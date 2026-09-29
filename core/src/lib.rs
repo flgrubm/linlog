@@ -11,11 +11,17 @@
 mod errors;
 /// The hash tables of this crate.
 mod hash;
-/// Algorithms specific to one logic fragment, such as proof search.
-pub mod linear;
+/// Export to LaTeX, Typst, SVG and Rocq.
+pub mod export;
+/// Proof nets.
+pub mod nets;
 /// Parsing sequents from text.
 #[cfg(feature = "parse")]
 mod parse;
+/// Proof terms, the checker and derivations.
+pub mod proofs;
+/// Proof search.
+pub mod search;
 /// Sequents and the terms they are built from.
 pub mod sequents;
 /// Serde support for sequents.
