@@ -48,20 +48,39 @@
         );
 
         # The rustdoc site the Docs workflow publishes, which the `doc' check
-        # also builds. rustdoc writes no top-level index, so one redirects to
-        # the core crate.
-        doc = craneLib.cargoDoc (
+        # also builds. The library crate and the CLI's binary are both named
+        # `linlog', so one `cargo doc' would write both into doc/linlog/ and
+        # keep whichever came last: the CLI is documented first and its site
+        # moved aside, then the library, and the two are installed as
+        # share/doc (the library) and share/doc/cli. rustdoc writes no
+        # top-level index, so a landing page links both.
+        doc = craneLib.mkCargoDerivation (
           commonArgs
           // {
             inherit cargoArtifacts;
+            pname = "linlog";
+            version = (craneLib.crateNameFromCargoToml { cargoToml = ../core/Cargo.toml; }).version;
+            pnameSuffix = "-doc";
             env.RUSTDOCFLAGS = "--deny warnings";
-            postInstall = ''
+            doInstallCargoArtifacts = false;
+            buildPhaseCargoCommand = ''
+              cargoWithProfile doc --locked --no-deps --package linlog-cli
+              mv target/doc target/cli-doc
+              cargoWithProfile doc --locked --no-deps --package linlog
+            '';
+            installPhaseCommand = ''
+              mkdir -p $out/share
+              mv target/doc $out/share/doc
+              mv target/cli-doc $out/share/doc/cli
               cat > $out/share/doc/index.html <<'EOF'
               <!DOCTYPE html>
               <meta charset="utf-8">
               <title>linlog</title>
-              <meta http-equiv="refresh" content="0; url=linlog/">
-              <a href="linlog/">linlog</a>
+              <h1>linlog</h1>
+              <ul>
+                <li><a href="linlog/">The library <code>linlog</code></a></li>
+                <li><a href="cli/linlog/">The command line program <code>linlog</code></a></li>
+              </ul>
               EOF
             '';
           }
