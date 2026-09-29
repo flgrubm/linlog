@@ -17,6 +17,8 @@ pub mod export;
 pub mod fragment;
 /// Proof nets.
 pub mod nets;
+/// The occurrence forest of a sequent and sets over it.
+pub mod occurrences;
 /// Parsing sequents from text.
 #[cfg(feature = "parse")]
 mod parse;
@@ -35,4 +37,5 @@ pub use errors::ParseError;
 
 pub use errors::Error;
 pub use fragment::{Fragment, Mode};
+pub use occurrences::{Forest, OccId, Polarity, Sign};
 pub use sequents::{Atom, Formula, Kind, Sequent, Term, TermId};

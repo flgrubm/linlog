@@ -67,6 +67,14 @@ impl Sequent {
         &self.atoms[atom.index()]
     }
 
+    /// Returns the atom called `name`, if the sequent has one.
+    pub fn atom(&self, name: &str) -> Option<Atom> {
+        self.atoms
+            .iter()
+            .position(|n| n == name)
+            .map(|i| Atom::new(i as u32))
+    }
+
     /// Check whether the internal data structure is correct
     pub fn verify_integrity(&self) -> Result<(), crate::Error> {
         let num_atoms = self.atoms.len() as u32;

@@ -24,6 +24,10 @@ pub enum Error {
     /// (second).
     #[error("Term index not decreasing: term at index {1} has subterm at index {0} >= {1}")]
     SubtermIndexNotDecreasing(usize, usize),
+    /// A sequent has at least this many subformula occurrences, more than a
+    /// forest can index.
+    #[error("Sequent has at least {0} subformula occurrences, more than a forest can index")]
+    TooManyOccurrences(u64),
     /// The input is not a sequent, for each of the reasons listed.
     #[cfg(feature = "parse")]
     #[error("Parsing failed with errors: {0:?}")]
