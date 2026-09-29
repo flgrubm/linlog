@@ -16,6 +16,7 @@ use clap::Parser;
 use linlog::Error;
 use std::fmt::Write;
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// What a command found, which decides the exit status.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,9 +44,25 @@ impl From<Status> for ExitCode {
     }
 }
 
-/// Whether the user asked the search to stop; nothing sets it yet.
+/// Set by the first Ctrl-C.
+static INTERRUPTED: AtomicBool = AtomicBool::new(false);
+
+/// Whether the user pressed Ctrl-C to stop the search.
 pub(crate) fn interrupted() -> bool {
-    false
+    INTERRUPTED.load(Ordering::Relaxed)
+}
+
+/// Makes the first Ctrl-C stop the search, so that its verdict is unknown
+/// and the statistics still print, and a second one end the program as
+/// Ctrl-C usually does.
+pub(crate) fn catch_interrupt() {
+    // The handler runs on a thread of its own, once per signal, so it may
+    // exit. Without it Ctrl-C ends the program, which is a fine fallback.
+    let _ = ctrlc::set_handler(|| {
+        if INTERRUPTED.swap(true, Ordering::Relaxed) {
+            std::process::exit(130);
+        }
+    });
 }
 
 /// Returns a parse error as a message that points at the place in the input

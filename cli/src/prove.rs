@@ -3,7 +3,7 @@
 
 use crate::argument_parsing::{CheckArgs, Format, ProveArgs};
 use crate::io;
-use crate::{Status, interrupted};
+use crate::{Status, catch_interrupt, interrupted};
 use anyhow::{Context, Result, anyhow, bail};
 use linlog::search::{Options, Outcome, Reason, Statistics, Verdict, prove_until};
 use linlog::{Mode, Proof};
@@ -82,6 +82,7 @@ pub(crate) fn prove(args: &ProveArgs) -> Result<Status> {
         .fragment(args.fragment.map(Into::into));
     let format = args.output.format;
     let quiet = args.output.quiet;
+    catch_interrupt();
 
     let (outcome, stop, elapsed, derivation) = on_large_stack(args.recursion_limit, || {
         let start = Instant::now();
