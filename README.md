@@ -20,7 +20,7 @@ a proof follows as a derivation tree of the one-sided sequent calculus:
 
 ```console
 $ linlog prove "A, A -o B |- B"
-provable (MLL, classical, focus engine)
+provable (MLL, classical, net engine)
 ─────── ax   ─────── ax
 ⊢ ~A, A      ⊢ ~B, B
 ──────────────────── ⊗
@@ -36,42 +36,54 @@ provable (ALL, classical, focus engine)
 ⊢ ~A ⊕ ~B, A ⊕ B
 
 $ linlog prove "|- A par B, ~A, ~B"
-unprovable (MLL, classical, focus engine): the search was exhaustive
+unprovable (MLL, classical, net engine): the search was exhaustive
 ```
 
-`--mix`, `--affine` and `--intuitionistic` choose the logic, `--fragment` and
-`--engine` override what detection picks, `--timeout 10s` bounds the search,
-`--quiet` prints the verdict line only and `--stats` what the search cost:
+Two engines exist: for MLL without units the *net engine* searches for an
+axiom linking that makes the sequent's formula trees a proof net, and for
+everything else the *focus engine* runs a focused sequent search over
+bitsets. `--mix`, `--affine` and `--intuitionistic` choose the logic,
+`--fragment` and `--engine focus|net` override what detection picks,
+`--timeout 10s` bounds the search, `--quiet` prints the verdict line only and
+`--stats` what the search cost, in the counters of the engine that ran:
 
 ```console
 $ linlog prove --mix --stats "|- A par B, ~A, ~B"
-provable (MLL, classical with Mix, focus engine)
+provable (MLL, classical with Mix, net engine)
 ─────── ax   ─────── ax
 ⊢ A, ~A      ⊢ B, ~B
 ──────────────────── mix
    ⊢ A, B, ~A, ~B
    ─────────────── ⅋
    ⊢ A ⅋ B, ~A, ~B
-stable sequents visited: 3 (0 from the memo)
-memo entries at most: 3
-splits examined: 4
-time: 47.10µs
+literals chosen: 2
+links tried: 2
+exact tests run: 2
+time: 63.45µs
+$ linlog prove --engine focus --stats --quiet "|- A * B, C * (~A par ~B), ~C"
+provable (MLL, classical, focus engine)
+stable sequents visited: 2 (0 from the memo)
+memo entries at most: 2
+splits examined: 3
+time: 56.66µs
 ```
 
 `--format net` shows the proof as a proof net instead of a derivation: the
 sequent, the axiom links as pairs of literals with their positions in the
 sequent's subformula numbering, and the verdict of the correctness
-criterion. Proof nets exist for MLL without units, with or without Mix:
+criterion. With the net engine this is the net the search found; with the
+focus engine it is read off the proof. Proof nets exist for MLL without
+units, with or without Mix:
 
 ```console
 $ linlog prove --format net "|- A * B, C * (~A par ~B), ~C"
-provable (MLL, classical, focus engine)
+provable (MLL, classical, net engine)
 ⊢ A ⊗ B, C ⊗ (~A ⅋ ~B), ~C
 A[1] — ~A[6]
 B[2] — ~B[7]
 C[4] — ~C[8]
 proof net
-$ linlog prove --format net "A & B |- A"
+$ linlog prove --engine net "A & B |- A"
 error: proof nets exist for MLL without units only, not for ALL
 ```
 
@@ -90,7 +102,7 @@ logic flags):
 
 ```console
 $ linlog prove --format json "A |- A"
-{"verdict":"proved","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"focus","statistics":{"nodes":1,"memo_hits":0,"memo_entries":1,"splits":0},"sequent":{"terms":[{"D":0},{"V":0}],"ids":[0,1],"var_dict":["A"]},"proof":[{"ax":[0,1]}]}
+{"verdict":"proved","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"net","statistics":{"nodes":1,"memo_hits":0,"memo_entries":0,"splits":0,"links":1,"tests":1},"sequent":{"terms":[{"D":0},{"V":0}],"ids":[0,1],"var_dict":["A"]},"proof":[{"ax":[0,1]}]}
 $ linlog prove --format json "A |- A" | linlog check --quiet
 valid proof of ⊢ ~A, A (classical)
 ```
@@ -125,9 +137,13 @@ Built:
   view that unfolds a term into the tree of the standard sequent calculus,
   printed as text.
 - Automatic proof search for MLL, MLL with units and MALL, with or without
-  Mix: a focused sequent engine over occurrence bitsets with a memo and
-  count-based pruning, returning a checked proof, "unprovable" after an
-  exhaustive search, or "unknown" with the reason.
+  Mix, returning a checked proof, "unprovable" after an exhaustive search,
+  or "unknown" with the reason: a focused sequent engine over occurrence
+  bitsets with a memo and count-based pruning, and for MLL without units a
+  proof-net engine that searches the axiom linkings with count checks,
+  constant-time cycle rejections, the exact acyclicity test and a symmetry
+  break for repeated literal conclusions, then sequentializes the net it
+  finds.
 - Proof nets for MLL, with or without Mix, as a representation of their
   own: proof structures over the subformula occurrences, an independent
   correctness criterion (Danos–Regnier, decided by Yeo's deletion test on
@@ -140,7 +156,6 @@ Built:
 
 Planned, in roughly this order:
 
-- Proof-net search as the engine for unit-free MLL.
 - The exponentials (MELL, full LL) with a bounded copy rule, and affine
   mode as a decision procedure.
 - Intuitionistic linear logic, with two-sided printing and derivations.
@@ -173,5 +188,5 @@ whether it proves its sequent, and a derivation view unfolds it into the
 tree of explicit sequents of the standard sequent calculus. A proof net is
 the same forest with axiom links, checked by its own criterion and
 convertible to and from a proof term. Proof search decides a sequent with
-the engine its fragment calls for and returns a checked proof, that there
-is none, or why it could not tell.
+the engine its fragment calls for, sequent search or net search, and
+returns a checked proof, that there is none, or why it could not tell.

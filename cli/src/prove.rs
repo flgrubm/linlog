@@ -6,7 +6,7 @@ use crate::io;
 use crate::{Status, catch_interrupt, interrupted};
 use anyhow::{Context, Result, anyhow, bail};
 use linlog::proofs::Problem;
-use linlog::search::{Options, Outcome, Reason, Statistics, Verdict, prove_until};
+use linlog::search::{Engine, Options, Outcome, Reason, Statistics, Verdict, prove_until};
 use linlog::{Error, Fragment, Mode, Proof, ProofStructure, Sequent};
 use std::fmt::Write;
 use std::thread;
@@ -73,6 +73,15 @@ fn net(proof: &Proof, mode: Mode) -> Result<String> {
     Ok(ProofStructure::from_proof(proof, mode.mix)?.to_string())
 }
 
+/// Returns the proof net of an outcome as text: the net the net engine
+/// found, or the net of the proof another engine found.
+fn net_of(outcome: &Outcome, proof: &Proof, mode: Mode) -> Result<String> {
+    match &outcome.net {
+        Some(net) => Ok(net.to_string()),
+        None => net(proof, mode),
+    }
+}
+
 /// Fails unless proof nets exist for the sequent in the mode: unit-free
 /// MLL, classical, with or without Mix.
 fn nets_exist(sequent: &Sequent, mode: Mode) -> Result<()> {
@@ -129,7 +138,7 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         let elapsed = start.elapsed();
         let derivation = match (&outcome.verdict, format, quiet) {
             (Verdict::Proved(proof), Format::Text, false) => Some(derivation(proof)?),
-            (Verdict::Proved(proof), Format::Net, false) => Some(net(proof, mode)?),
+            (Verdict::Proved(proof), Format::Net, false) => Some(net_of(&outcome, proof, mode)?),
             _ => None,
         };
         anyhow::Ok((outcome, stop, elapsed, derivation))
@@ -143,7 +152,11 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
                 write!(text, "\n{derivation}")?;
             }
             if args.stats {
-                write!(text, "\n{}", statistics(&outcome.statistics, elapsed))?;
+                write!(
+                    text,
+                    "\n{}",
+                    statistics(outcome.engine, &outcome.statistics, elapsed)
+                )?;
             }
             text
         }
@@ -185,15 +198,25 @@ fn verdict_line(outcome: &Outcome, asserted: bool, stop: Option<Stop>) -> String
     }
 }
 
-/// Returns the statistics as text, one counter per line.
-fn statistics(s: &Statistics, elapsed: Duration) -> String {
-    format!(
-        "stable sequents visited: {} ({} from the memo)\n\
-         memo entries at most: {}\n\
-         splits examined: {}\n\
-         time: {elapsed:.2?}",
-        s.nodes, s.memo_hits, s.memo_entries, s.splits
-    )
+/// Returns the statistics as text, one counter per line: the counters the
+/// engine that ran keeps.
+fn statistics(engine: Engine, s: &Statistics, elapsed: Duration) -> String {
+    match engine {
+        Engine::Net => format!(
+            "literals chosen: {}\n\
+             links tried: {}\n\
+             exact tests run: {}\n\
+             time: {elapsed:.2?}",
+            s.nodes, s.links, s.tests
+        ),
+        _ => format!(
+            "stable sequents visited: {} ({} from the memo)\n\
+             memo entries at most: {}\n\
+             splits examined: {}\n\
+             time: {elapsed:.2?}",
+            s.nodes, s.memo_hits, s.memo_entries, s.splits
+        ),
+    }
 }
 
 /// Runs `check`: reads a proof, checks it in the mode the flags give, and

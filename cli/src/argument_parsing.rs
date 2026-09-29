@@ -97,8 +97,9 @@ pub struct ProveArgs {
     /// Where and how to write the result.
     #[command(flatten)]
     pub output: OutputArgs,
-    /// Also print what the search cost: sequents visited, memo use, splits
-    /// tried and time
+    /// Also print what the search cost: the sequents visited, memo use and
+    /// splits tried of the focus engine, or the literals chosen, links tried
+    /// and exact tests run of the net engine, and the time
     ///
     /// JSON output always carries the counts; the time is printed only as
     /// text.
@@ -268,6 +269,8 @@ pub enum EngineArg {
     Auto,
     /// Focused sequent search, for MLL and MALL with or without units and Mix
     Focus,
+    /// Proof-net search, for MLL without units, with or without Mix
+    Net,
 }
 
 impl From<EngineArg> for Option<Engine> {
@@ -276,6 +279,7 @@ impl From<EngineArg> for Option<Engine> {
         match e {
             EngineArg::Auto => None,
             EngineArg::Focus => Some(Engine::Focus),
+            EngineArg::Net => Some(Engine::Net),
         }
     }
 }

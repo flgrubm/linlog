@@ -39,7 +39,7 @@ fn prove_verdicts_and_exit_statuses() {
     assert_eq!(status, 0);
     assert_eq!(
         out,
-        "provable (MLL, classical, focus engine)\n\
+        "provable (MLL, classical, net engine)\n\
          ─────── ax   ─────── ax\n\
          ⊢ ~A, A      ⊢ ~B, B\n\
          ──────────────────── ⊗\n\
@@ -50,15 +50,27 @@ fn prove_verdicts_and_exit_statuses() {
         (
             &["prove", "-q", "--mix", "|- A par B, ~A, ~B"][..],
             0,
-            "provable (MLL, classical with Mix, focus engine)",
+            "provable (MLL, classical with Mix, net engine)",
         ),
         (
             &["prove", "|- A par B, ~A, ~B"],
             1,
-            "unprovable (MLL, classical, focus engine): the search was exhaustive",
+            "unprovable (MLL, classical, net engine): the search was exhaustive",
         ),
         (
-            &["prove", "--recursion-limit", "1", "A * B |- A * B"],
+            &["prove", "-q", "--engine", "focus", "A * B |- A * B"],
+            0,
+            "provable (MLL, classical, focus engine)",
+        ),
+        (
+            &[
+                "prove",
+                "--engine",
+                "focus",
+                "--recursion-limit",
+                "1",
+                "A * B |- A * B",
+            ],
             3,
             "unknown (MLL, classical, focus engine): the recursion limit was reached; \
              raise it with --recursion-limit",
@@ -75,6 +87,16 @@ fn prove_verdicts_and_exit_statuses() {
         );
     }
 
+    let (status, out, _) = linlog(&["prove", "-q", "--stats", "|- a * b, ~a par ~b"], "");
+    assert_eq!(status, 0);
+    assert!(
+        out.starts_with(
+            "provable (MLL, classical, net engine)\nliterals chosen: 2\nlinks tried: 2\n\
+             exact tests run: 2\ntime: "
+        ),
+        "{out}"
+    );
+
     for (args, error) in [
         (&["prove", "A * |- A"][..], "cannot parse the sequent"),
         (
@@ -84,6 +106,10 @@ fn prove_verdicts_and_exit_statuses() {
         (
             &["prove", "--fragment", "mll", "A & B |- A"],
             "outside the asserted fragment MLL",
+        ),
+        (
+            &["prove", "--engine", "net", "A & B |- A"],
+            "proof nets exist for MLL without units only, not for ALL",
         ),
     ] {
         let (status, out, err) = linlog(args, "");
@@ -121,15 +147,31 @@ fn check_reads_what_prove_writes() {
 /// classical mode.
 #[test]
 fn net_format() {
+    let expected = "⊢ ~A, A ⊗ ~B, B\n\
+                    ~A[0] — A[2]\n\
+                    ~B[3] — B[4]\n\
+                    proof net\n";
     let (status, out, _) = linlog(&["prove", "--format", "net", "A, A -o B |- B"], "");
     assert_eq!(status, 0);
     assert_eq!(
         out,
-        "provable (MLL, classical, focus engine)\n\
-         ⊢ ~A, A ⊗ ~B, B\n\
-         ~A[0] — A[2]\n\
-         ~B[3] — B[4]\n\
-         proof net\n"
+        format!("provable (MLL, classical, net engine)\n{expected}")
+    );
+    let (status, out, _) = linlog(
+        &[
+            "prove",
+            "--format",
+            "net",
+            "--engine",
+            "focus",
+            "A, A -o B |- B",
+        ],
+        "",
+    );
+    assert_eq!(status, 0);
+    assert_eq!(
+        out,
+        format!("provable (MLL, classical, focus engine)\n{expected}")
     );
     let (_, json, _) = linlog(&["prove", "--format", "json", "A, A -o B |- B"], "");
     let (status, out, _) = linlog(&["check", "--format", "net"], &json);
