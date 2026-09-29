@@ -50,6 +50,9 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   The time is not in the JSON (core has no clock, and the output stays
   reproducible); `--stats` prints it as text.
 - `check` takes the mode from its flags, never from the file's `mode` key.
+  A mode the checker refuses (`Problem::Intuitionistic`) is an error, exit
+  2, not an invalid proof; drop that refusal once the checker handles the
+  mode.
 
 ## Extension points
 
