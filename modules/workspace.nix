@@ -15,9 +15,15 @@
       ...
     }:
     let
-      # Manifests, the lock, *.rs and *.toml only: editing anything else
-      # rebuilds nothing.
-      src = craneLib.cleanCargoSource ../.;
+      # Manifests, the lock, *.rs and *.toml, and the export snapshots the
+      # core tests compare with: editing anything else rebuilds nothing.
+      src = lib.fileset.toSource {
+        root = ../.;
+        fileset = lib.fileset.unions [
+          (craneLib.fileset.commonCargoSources ../.)
+          ../core/tests/snapshots
+        ];
+      };
 
       commonArgs = {
         inherit src;

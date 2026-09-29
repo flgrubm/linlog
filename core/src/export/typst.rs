@@ -56,7 +56,8 @@ use crate::proofs::{Derivation, Rule};
 use crate::sequents::Sequent;
 
 /// The version of curryst a standalone document imports, the one the
-/// output is written for.
+/// output is written for. The flake's `export` check compiles the output
+/// with this version from nixpkgs, so the two change together.
 pub const CURRYST: &str = "0.6.0";
 
 /// The Typst spelling of formulas and sequents.

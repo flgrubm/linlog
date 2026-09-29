@@ -99,7 +99,7 @@ cargo hack check --feature-powerset --depth 2 -p linlog    # and every pair
 cargo deny check                                           # licenses, bans, sources + advisories (online)
 cargo run -p linlog-cli -- <args>
 
-nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), deadnix, actionlint, treefmt, claude-hooks
+nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), export (the LaTeX and Typst output compiles), deadnix, actionlint, treefmt, claude-hooks
 nix fmt           # nixfmt, rustfmt, taplo, shfmt, shellcheck (a hook runs it on each edited file)
 nix build         # linlog-cli, whose binary is result/bin/linlog
 nix build .#doc   # the rustdoc site, as the Docs workflow publishes it
