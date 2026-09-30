@@ -52,13 +52,24 @@ Commits, in order: "Read LLTP problems", "Generate the hard families",
 "Poll the stop condition during long split enumerations", "Add the
 benchmark harness", "Document the benchmarks", "Detach the baseline and
 check that the machine is idle", "Extend the baseline to an overnight
-run", "Record CPU time and run-queue wait per run", and this report.
+run", "Record CPU time and run-queue wait per run", this report, "Shield
+the benchmark cores and record the machine's state", and its amendment.
 
 ## Tonight: what the administrator does
 
 The machine is the baseline's from about 20:00 to 07:00. The run takes
-about eight hours.
+about eight and a half hours.
 
+0. Keep the laptop on mains power with its lid open and its vents free
+   (see "The machine and its noise": it throttles thermally, and a closed
+   lid is now inhibited but still worse for cooling). Optionally, as root,
+   keep the system's own services off the performance cores for the
+   night: `sudo systemctl set-property --runtime system.slice
+   AllowedCPUs=4-15` and the same for `init.scope`, undone in the morning
+   with `AllowedCPUs=` (or by a reboot); and pause the two sync clients,
+   which may hash files for minutes when something changes: `sudo
+   systemctl stop syncthing` and `systemctl --user stop
+   app-insync@autostart.service`, started again in the morning.
 1. Pause the scheduled jobs that fall into the slot: `nix-gc` (daily at
    00:00, up to 5 min later; 20–80 s, one core, 1–3 GB read) and
    `nix-optimise` (03:45, up to 30 min later; 15–40 s, 5 GB read, up to
@@ -93,11 +104,86 @@ alone):
 |---|---|---|
 | 1 | every family at its sizes (300 s each, fast runs thrice); focus against net on the MLL families and the problem file; the net engine's test period 1, 2, 8, 16; the intuitionistic mode of the counter, chain and 3-Partition families; the whole LLTP library intuitionistically and classically (5 s each) | 1 h 40 |
 | 2 | the largest sizes that time out at 300 s, once each with 20 min; the LLTP problems that ended at the copy bound again with a bound of 10; those that ended at the recursion limit again with a limit of 16384 | 1 h 30 |
-| 3 | the hard families on 2, 4, 8 and 16 threads (120 s); the net engine's cubes on the Partition table and the MLL 3-Partition; the LLTP problems that timed out or took 50 ms or more, on 16 threads with and without the portfolio | 4 h 30 |
+| 3 | the hard families on 1 (alone, the speedups' baseline), 2, 4, 8 and 16 threads (120 s); the net engine's cubes on the Partition table and the MLL 3-Partition; the LLTP problems that timed out or took 50 ms or more, on 16 threads with and without the portfolio | 5 h |
 
 Stage 2 and the LLTP part of stage 3 rerun only the problems a knob can
 change (the reruns select them from stage 1's rows), which is what keeps
 the night to eight hours rather than fourteen.
+
+## The machine and its noise
+
+The author asked whether the processor's cores and the system's services
+can distort the numbers. The facts, from `lscpu`, sysfs and the system
+flake's `power.nix` and `idle-lock.nix`:
+
+- **16 physical cores, no SMT**, of three kinds: CPUs 0–3 are performance
+  cores (up to 5.1 GHz, a 3 MB L2 each), 4–11 efficiency cores (4.0 GHz,
+  two clusters of four sharing a 4 MB L2), 12–15 low-power efficiency cores
+  (3.7 GHz, one shared L2 and no share of the 18 MB L3). "Eight physical
+  cores" would matter if the pinned streams shared cores through SMT; they
+  do not. The kernel reports SMT as not supported, and every CPU is its
+  own sibling.
+- **The four sequential streams share the L3 and the package's power and
+  heat**, so one stream is somewhat slower than it would be alone (less
+  turbo headroom). The effect is the same for every sequential row of a
+  stage, so their comparisons hold. For the speedups it does not hold,
+  since those compare a run under four-stream load with a run alone:
+  stage 3 therefore runs the hard families on one thread too, alone,
+  which is the baseline its parallel columns compare against.
+- **"Every core" is heterogeneous.** Sixteen threads include the four
+  low-power cores, which are slower and outside the L3. Speedups flatten
+  above eight threads for that reason, not only because of the search,
+  hence the eight-thread column.
+- **Heat.**
+  - The package has throttled 406 438 times, for 6 258 s in all, since
+    the last boot. That uptime included the morning's runs, and this is a
+    laptop under long all-core load.
+  - Throttling lowers the clocks in stage 3 above all, and it is not
+    constant over a night.
+  - Turbo stays on: without it the night's work would take roughly twice
+    as long and not fit the slot.
+  - The script records the throttling instead: the package's throttle
+    count and throttled seconds go into the journal every ten minutes and
+    into `RESULTS.md` for the whole run, with the platform profile,
+    governor, energy preference and turbo state (today `performance`,
+    `powersave`, `balance_performance`, on: TLP's profile on mains, which
+    lets the hardware pick the clock).
+  - A later baseline is comparable to this one only under the same
+    settings, which is why they are recorded.
+- **Background services.**
+  - The system runs NetworkManager, syncthing, journald, udisks, fwupd
+    and the nix daemon; the user session runs the compositor, the editor
+    daemon, insync (a Google Drive client), pipewire and portals. At rest
+    they cost a few percent of one core, in short bursts; the sync
+    clients can hash files for minutes when something changes.
+  - A detached run moves the user's other slices (`app.slice`,
+    `session.slice`, `background.slice`) onto CPUs 4–15 for its whole
+    duration. It gives them back in the unit's `ExecStopPost`, which runs
+    however the run ends (a stop killed the script before its own trap
+    could). The system slice needs root (step 0 above), and kernel
+    threads and interrupts stay where the kernel puts them.
+  - Every run records `wait_ms`, the time its thread was ready but
+    waiting for a CPU. The summary marks with `†` every sequential
+    problem whose run waited for over 1 % of its time, and counts them at
+    the top of `RESULTS.md`, so a disturbed number shows itself.
+  - Runs under two seconds are repeated three times and the median taken,
+    which absorbs a burst. Longer runs are taken once, and a few
+    milliseconds of noise are well under 1 % of them.
+- **Scheduled jobs**: see step 1 above. The script refuses to start while
+  one is due, and records those that fired.
+- **Suspend.**
+  - The idle manager suspends only on battery, after 20 minutes.
+  - Logind suspends on a closed lid even on mains (`HandleLidSwitch=
+    suspend`, no rule for external power).
+  - The unit holds a `sleep:idle:handle-lid-switch` inhibitor, and the
+    script refuses to start on battery. The journal line says `BATTERY`
+    if the power goes during the run.
+
+What remains uncontrolled: the kernel's own threads and interrupts, the
+package's heat, and whatever a service decides to do outside the pinned
+cores during stage 3. The records above make all three visible after the
+fact. A disturbed family instance can be rerun alone the next morning by
+deleting its rows and running the script again: it resumes.
 
 ## How it runs
 
@@ -425,6 +511,13 @@ A fresh-context reviewer, in two rounds:
 - **The detached path:** it was started once and stopped after a minute.
   The unit's limits, the pinning, the 12 GiB caps, the reversed classical
   pass and the time-left estimates were as intended.
+- **Shielding and inhibition:** tested the same way, twice.
+  - The first test found that the slices kept their restriction after a
+    stop: the script's trap was killed.
+  - The restore now lives in `ExecStopPost`. The second test showed the
+    slices restricted during the run and restored after the stop, the
+    inhibitor listed by `systemd-inhibit --list`, and the unit in
+    `linlog.slice`.
 - **The refusal path:** the script refused at 09:43 with the midday
   backup due.
 - **The harness verdicts:** no mismatch on any generated family in either
