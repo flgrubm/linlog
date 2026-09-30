@@ -1,0 +1,5 @@
+source,family,size,index,problem,mode,engine_requested,jobs,portfolio,test_period,timeout_s,run,copies,expected,verdict,reason,checked,engine,fragment,occurrences,multiplicity,time_ms,nodes,memo_hits,memo_entries,splits,links,tests,recursion_limit,cpu_ms,wait_ms
+family,3-partition-no,5,0,3-partition-no/5,classical,auto,1,false,,1200,0,3,unprovable,unprovable,,,focus,MALL,109,10,302421.713,5434141,5337238,96903,23005595829,0,0,2048,301840.000,180.096
+family,partition-no,5,0,partition-no/5,classical,auto,1,false,,1200,0,3,unprovable,unprovable,,,focus,MLL,206,22,811480.207,811,568,243,57956109915,0,0,2048,810180.000,394.336
+family,partition-yes,7,0,partition-yes/7,classical,auto,1,false,,1200,0,3,provable,unknown,timeout,,focus,MLL,266,28,1200000.865,8,0,0,75530469376,0,0,2048,1198140.000,541.136
+family,counter,16,0,counter/16,classical,auto,1,false,,1200,0,4,provable,unknown,timeout,,focus,MELL,41,16,1200033.428,17240480873,17240079532,311297,17358464670,0,0,2048,1198290.000,599.895

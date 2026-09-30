@@ -1,0 +1,5 @@
+source,family,size,index,problem,mode,engine_requested,jobs,portfolio,test_period,timeout_s,run,copies,expected,verdict,reason,checked,engine,fragment,occurrences,multiplicity,time_ms,nodes,memo_hits,memo_entries,splits,links,tests,recursion_limit,cpu_ms,wait_ms
+family,mix,11,0,mix/11,mix,auto,1,false,,1200,0,3,unprovable,unknown,timeout,,focus,MALL,110,1,1200281.392,5005757221,5004001608,1048576,38208496542,0,0,2048,1197360.000,1300.640
+family,wide-m3,36,0,wide-m3/36,classical,auto,1,false,,1200,0,3,provable,proved,,ok,focus,MLL,251,3,697422.691,109,0,109,45812984579,0,0,2048,696070.000,589.601
+family,wide-m4,36,0,wide-m4/36,classical,auto,1,false,,1200,0,3,provable,proved,,ok,focus,MLL,251,4,685066.806,109,0,109,45812984579,0,0,2048,683640.000,637.778
+family,qbf,24,0,qbf/24#0,classical,auto,1,false,,1200,0,3,unprovable,unknown,timeout,,focus,MALL,599,6,1200003.036,22041,9610,12406,105769537536,0,0,2048,1197460.000,1252.848
