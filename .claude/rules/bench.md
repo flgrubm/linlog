@@ -60,9 +60,17 @@ beyond clap and anyhow, which the CLI already has.
   and `error` (every other `Error`, a parse failure, a missing reading;
   these are findings, not configurations). `checked` is `ok` or the
   checker's message for a proof of the roots.
-- **`time_ms` is the search alone**: `prove_until`, forest construction
-  and pool start-up included, parsing, the proof check and process start
-  excluded. `nodes` on a parallel run is the sum over the threads.
+- **`time_ms` is wall-clock time of the search alone** (`Instant` around
+  `prove_until`): forest construction and pool start-up included, parsing,
+  the proof check and process start excluded; the time limit is
+  wall-clock too. `cpu_ms` is the process's CPU time over the same span
+  (`/proc/self/stat`, all threads, in 10 ms ticks), and `wait_ms` the
+  time the calling thread was ready but waited for a CPU
+  (`/proc/thread-self/schedstat`, nanoseconds): on a sequential run a
+  `wait_ms` well above zero says another process slowed it down, which is
+  how a run on a shared machine shows itself; on a parallel run the
+  calling thread mostly sleeps and its wait says little. `nodes` on a
+  parallel run is the sum over the threads.
 - **Timings mean something only from `baseline.sh`** on an otherwise idle
   machine: the sequential streams are pinned to performance cores with
   `taskset`, the parallel runs run alone. The `bench` flake check runs the

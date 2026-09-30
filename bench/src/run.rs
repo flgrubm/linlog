@@ -25,10 +25,10 @@ use std::time::{Duration, Instant};
 pub const HEADER: &str = "source,family,size,index,problem,mode,engine_requested,jobs,portfolio,\
                           test_period,timeout_s,run,copies,expected,verdict,reason,checked,engine,\
                           fragment,occurrences,multiplicity,time_ms,nodes,memo_hits,memo_entries,\
-                          splits,links,tests,recursion_limit";
+                          splits,links,tests,recursion_limit,cpu_ms,wait_ms";
 
 /// The columns the child prints.
-const TAIL: usize = 17;
+const TAIL: usize = 19;
 
 /// Which mode to run a problem in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -392,6 +392,7 @@ fn tail(args: &OneArgs) -> String {
     // driver polls once a millisecond.
     let every = if args.jobs > 1 { 1 } else { 64 };
     let mut polls = 0u64;
+    let (cpu_before, wait_before) = (cpu_ms(), wait_ms());
     let start = Instant::now();
     let deadline = start + Duration::from_secs_f64(args.timeout);
     let outcome = prove_until(&problem.sequent, mode, &options, || {
@@ -399,6 +400,15 @@ fn tail(args: &OneArgs) -> String {
         polls.is_multiple_of(every) && Instant::now() >= deadline
     });
     let time = start.elapsed().as_secs_f64() * 1000.0;
+    // The time the search took on the CPUs, and the time its thread was
+    // ready but waited for one: a run another process slowed down has the
+    // latter well above zero.
+    let since = |after: Option<f64>, before: Option<f64>| {
+        after
+            .zip(before)
+            .map_or(String::new(), |(a, b)| format!("{:.3}", a - b))
+    };
+    let (cpu, wait) = (since(cpu_ms(), cpu_before), since(wait_ms(), wait_before));
 
     let outcome = match outcome {
         Ok(outcome) => outcome,
@@ -461,6 +471,8 @@ fn tail(args: &OneArgs) -> String {
         s.links.to_string(),
         s.tests.to_string(),
         recursion.to_string(),
+        cpu,
+        wait,
     ]
     .join(",")
 }
@@ -472,6 +484,28 @@ fn row(filled: &[(usize, &str)]) -> String {
         fields[i] = value;
     }
     fields.join(",")
+}
+
+/// The CPU time of the process so far, in milliseconds: the user and system
+/// time of all its threads, dead ones included, from `/proc/self/stat`, in
+/// the kernel's ticks of 10 ms; `None` where there is no such file.
+fn cpu_ms() -> Option<f64> {
+    let stat = std::fs::read_to_string("/proc/self/stat").ok()?;
+    // After the command in parentheses, utime and stime are the 12th and
+    // 13th fields.
+    let mut fields = stat.rsplit_once(')')?.1.split_whitespace().skip(11);
+    let user: f64 = fields.next()?.parse().ok()?;
+    let system: f64 = fields.next()?.parse().ok()?;
+    Some((user + system) * 10.0)
+}
+
+/// How long the calling thread has been ready to run but waiting for a CPU,
+/// in milliseconds, from `/proc/thread-self/schedstat`; `None` where there
+/// is no such file.
+fn wait_ms() -> Option<f64> {
+    let stat = std::fs::read_to_string("/proc/thread-self/schedstat").ok()?;
+    let nanoseconds: f64 = stat.split_whitespace().nth(1)?.parse().ok()?;
+    Some(nanoseconds / 1e6)
 }
 
 /// The most occurrences of one literal, `a` or `~a`, in the forest: what
