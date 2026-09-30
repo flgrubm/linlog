@@ -718,3 +718,16 @@ into an option or names it as a follow-up.
   and efforts": 15h to Opus 5.5 at `xhigh`, 15d to `xhigh`, the rest
   unchanged); 15 gains 15k for the benchmark follow-ups and the routing
   feature for the net engine in 15b'.
+- 2026-09-30, later: the author pointed out that step 14 did not
+  complete, which is right and was understated above: the step owed a
+  baseline and recorded none. Three corrections. The rows of the run that
+  got furthest existed only in the step session's scratch directory under
+  `/tmp`; they are now committed as `bench/preliminary/` with their
+  summary, so the numbers the plan argues from have their data. The
+  report's header said the baseline was scheduled for a night that was
+  cancelled; it now says the step is incomplete in that respect and that
+  the baseline is 14c. And 14b no longer assumes a record of the engine
+  before its changes: it checks its set-up against the preliminary
+  counters and takes a whole sequential pass over the ILL library before
+  and after on one pinned core (item 1a), which is the LLTP-wide
+  comparison the missing baseline would have given.

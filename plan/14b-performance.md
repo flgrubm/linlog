@@ -30,8 +30,15 @@ wall time, CPU time, run-queue wait and the engine's counters;
 `linlog-bench summary` turns CSV files into tables, one column per
 configuration, the CSV file's name being part of the configuration. The
 full baseline (`bench/baseline.sh`) was never taken: it needs the machine
-to itself for a night, and the machine is shared now. The numbers in the
-report are from a morning run on a shared machine and are upper bounds.
+to itself for a night, and the machine is shared now, so step 14 is
+incomplete in that one respect and this step must not lean on a baseline.
+The numbers in the report are from a morning run on a shared machine and
+are upper bounds; their rows are kept in `bench/preliminary/*.csv`
+(summary in its README): every family on one thread, focus against net,
+the intuitionistic mode, and the LLTP library up to 4 022 of 4 495
+problems intuitionistically and 3 792 of 4 512 classically. Their times
+are noisy, but their verdicts and counters are exact, which makes them
+the record of the engine before your changes.
 
 So this step measures differently, and the rule binds everything below:
 
@@ -55,8 +62,11 @@ So this step measures differently, and the rule binds everything below:
   14 and the kernel killed the whole terminal with the session in it.
   Tell every sub-agent this in its brief, with the reason.
 - **Before and after are measured by you, in this session**, on the same
-  set with the same command: do not compare against the report's
-  preliminary times.
+  set with the same command: do not compare against the preliminary
+  times. The preliminary counters are another matter: a sequential row of
+  yours at the commit you start from must reproduce the `nodes` and
+  `splits` of the same row in `bench/preliminary/`, which is a check on
+  your set-up worth making once.
 
 ## Goal
 
@@ -87,8 +97,23 @@ sound in `.claude/rules/core.md`.
    and at the 63-member limit (pick them by name from a first pass and
    list the names in the script, so the sample is the same before and
    after). Sizes that time out before stay in the set: deciding them is
-   the point. Commit the script, the before file and, at the end, the
-   after file and a short table (`bench/TARGETS.md`).
+   the point. Take the LLTP names from
+   `bench/preliminary/lltp-intuitionistic.csv`, whose `reason` column says
+   how each problem ended. Commit the script, the before file and, at the
+   end, the after file and a short table (`bench/TARGETS.md`).
+1a. **The whole ILL library, before and after**, since no baseline will
+   say what the pass did to it: one sequential pass over `bench/lltp/ILL`
+   in intuitionistic mode at 5 s per problem, on one pinned performance
+   core, as a detached, memory-capped systemd user unit (the harness
+   resumes an interrupted pass with `--append --resume`), about two hours;
+   once at the commit you start from and once at the end, into the same
+   directory as the target files. The first pass also finishes what the
+   preliminary one never reached (its last 473 problems). Report, per
+   collection, the problems decided before and after and the reasons the
+   rest ended with; the solved count within a time limit depends on the
+   machine a little, which the `wait_ms` column and the counters of the
+   problems that moved let you qualify. Start the first pass at once and
+   work on item 2 while it runs.
 2. **Splits without enumeration.** Today `split` moves members one at a
    time through all `2^n` submasks in Gray-code order
    (`enumerate_split`, `submasks`) and tests the counts after every flip;

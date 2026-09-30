@@ -1,9 +1,17 @@
 # Step 14 report: benchmarks, LLTP input and the hard families
 
 Sessions of 2026-09-30. The code is done and checked; the baseline itself
-is not: it is scheduled for the night of 2026-09-30 to 10-01, when the
-machine is free (20:00 to 07:00), and this report gives the preliminary
-numbers of an interrupted run on a shared machine, marked as such.
+is not: it was scheduled for the night of 2026-09-30 to 10-01, and this
+report gives the preliminary numbers of an interrupted run on a shared
+machine, marked as such.
+
+**Note of the planning session, 2026-09-30:** the night's run was
+cancelled, since the machine is no longer free. The step is therefore
+incomplete in one respect: no baseline is recorded. "Tonight" below
+describes a run that did not happen and stays as the procedure for the
+night it does (step 14c of the plan, after 14b). The rows behind
+"Preliminary numbers" are committed as `bench/preliminary/*.csv` with
+their summary in `bench/preliminary/README.md`.
 
 ## Outcome
 
