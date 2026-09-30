@@ -153,7 +153,7 @@ bench/baseline.sh --detach --fresh   # the whole baseline as a systemd unit, abo
 
 nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), export (the LaTeX and Typst output compiles, the SVG renders), rocq (NanoYalla checks the certificates), bench (the harness on the smallest problems), deadnix, actionlint, treefmt, claude-hooks
 nix build .#checks.x86_64-linux.rocq   # the certificates alone: Rocq is a 1.2 GB closure from the binary cache
-nix fmt           # nixfmt, rustfmt, taplo, shfmt, shellcheck (a hook runs it on each edited file)
+nix fmt           # nixfmt, rustfmt, taplo, shfmt, shellcheck (a hook runs it on each file changed with Write or Edit; a file changed from the shell needs it run by hand before the commit, or the treefmt check fails)
 nix build         # linlog-cli, whose binary is result/bin/linlog
 nix build .#doc   # the rustdoc site, as the Docs workflow publishes it
 ```
@@ -216,10 +216,14 @@ even to read.** Every operation goes through `jj`, including lock updates:
 - **Commit thematically, without being asked**: one logical unit per change,
   committed as soon as it is done with `jj commit -m`, which describes `@` and
   opens a fresh change on top. `jj describe -m` only names `@`; `jj squash`
-  folds `@` into its parent (the amend). Never `jj new -m`: it describes a new,
+  folds `@` into its parent (the amend) and, when the parent is described,
+  needs `--use-destination-message` or `-m`: without one it opens an editor,
+  which hangs a session. Never `jj new -m`: it describes a new,
   empty change and leaves the work behind (a hook blocks it).
 - Edits land in `@` retroactively. If `@` already holds unrelated work, run
-  `jj new` before editing.
+  `jj new` before editing. Another session or the author may commit in the
+  same working copy meanwhile, so run `jj st` right before every commit
+  rather than assuming `@` and `@-` from the session's start.
 - nix sees only files in the git tree, which any jj command updates: run
   `jj st` after creating a file, before a `nix` command that must see it.
 - Subjects are short, imperative and capitalised, with no type prefix
