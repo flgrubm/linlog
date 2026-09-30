@@ -104,6 +104,28 @@ beyond clap and anyhow, which the CLI already has.
   largest files takes over 15 GB, and two such processes at once stay
   within the unit's limit; the classical LLTP pass runs `--reverse` so
   that the two LLTP passes do not parse those files at the same time.
+- **The machine** (an Intel Core Ultra X9 388H laptop, host `wired`, its
+  configuration in the author's system flake): 16 physical cores and no
+  SMT, of three kinds: CPUs 0–3 performance cores (5.1 GHz, own L2),
+  4–11 efficiency cores (4.0 GHz, two clusters of four sharing an L2),
+  12–15 low-power efficiency cores (3.7 GHz, shared L2 and no share of
+  the L3). The sequential streams are pinned to 0–3; "every core" in the
+  parallel stage includes the slow low-power ones, so speedups flatten
+  above eight threads for a reason of the hardware. It throttles
+  thermally under long loads (the package counter is recorded per run
+  and in the journal), turbo stays on (off, the night would not fit),
+  TLP's power profile is `performance` on mains. A detached run keeps the
+  user's other slices (`app.slice`, `session.slice`, `background.slice`)
+  on CPUs 4–15 for its whole duration and gives them back in the unit's
+  `ExecStopPost` (`baseline.sh --unshield`), since a stopped unit's
+  processes can be killed before a trap of theirs runs; it holds a
+  `sleep:idle:handle-lid-switch` inhibitor (logind suspends on a closed
+  lid even on mains here, the idle manager on battery) and refuses to
+  start on battery. The system's own services and kernel threads it
+  cannot move; `sudo systemctl set-property --runtime system.slice
+  AllowedCPUs=4-15` (and `init.scope`) does, until `AllowedCPUs=` or a
+  reboot. The summary marks with `†` a sequential problem whose run
+  waited for a CPU for over 1 % of its time.
 - **Scratch programs next to a running baseline** (a reviewer's checker, an
   exploratory run) go in a scope of their own, `systemd-run --user
   --scope -p MemoryMax=8G -p MemorySwapMax=0 taskset -c 4-15 …`, off the

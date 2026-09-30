@@ -472,7 +472,7 @@ $ linlog-bench summary runs.csv
 `bench/baseline.sh --detach --fresh` takes the whole baseline, every
 family, engine and thread count and the whole LLTP library, as a systemd
 user unit on an otherwise idle machine (it refuses a busy one) in about
-eight hours, and writes the tables to `bench/RESULTS.md` and
+eight and a half hours, and writes the tables to `bench/RESULTS.md` and
 the rows to `bench/results/`; `journalctl --user -fu linlog-baseline`
 follows it.
 

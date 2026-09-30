@@ -28,6 +28,9 @@ struct Runs<'a> {
     first: &'a Row,
     /// The time of every run, in milliseconds.
     times: Vec<f64>,
+    /// Whether a sequential run waited for a CPU for more than a hundredth
+    /// of its time and a millisecond: another process slowed it down.
+    disturbed: bool,
 }
 
 impl Runs<'_> {
@@ -66,7 +69,8 @@ impl Runs<'_> {
             (verdict, _) => verdict,
         };
         let wrong = if self.wrong() { " MISMATCH" } else { "" };
-        format!("{} {mark}{wrong}", time(self.median()))
+        let disturbed = if self.disturbed { " †" } else { "" };
+        format!("{} {mark}{wrong}{disturbed}", time(self.median()))
     }
 }
 
@@ -142,20 +146,35 @@ pub fn summary(files: &[PathBuf]) -> Result<()> {
             groups.len() - 1
         });
         let problems = &mut groups[at].problems;
-        let time = row.get("time_ms").parse().unwrap_or(0.0);
+        let time: f64 = row.get("time_ms").parse().unwrap_or(0.0);
+        let wait: f64 = row.get("wait_ms").parse().unwrap_or(0.0);
+        let disturbed = row.get("jobs") == "1" && wait > (time / 100.0).max(1.0);
         match problems.iter_mut().find(|(p, _)| p == problem) {
-            Some((_, runs)) => runs.times.push(time),
+            Some((_, runs)) => {
+                runs.times.push(time);
+                runs.disturbed |= disturbed;
+            }
             None => problems.push((
                 problem.to_owned(),
                 Runs {
                     first: row,
                     times: vec![time],
+                    disturbed,
                 },
             )),
         }
     }
 
+    let disturbed = groups
+        .iter()
+        .flat_map(|g| &g.problems)
+        .filter(|(_, r)| r.disturbed)
+        .count();
     println!("## Solved within the time limit\n");
+    println!(
+        "Sequential problems that waited for a CPU for over 1 % of their time \
+         (another process slowed them down; `†` in the tables below): {disturbed}.\n"
+    );
     println!(
         "| family | configuration | engines | problems | solved | proved | refuted | timeout | bound | other | mismatch | median solved | total solved |"
     );

@@ -10,8 +10,8 @@
 # LLTP problems that ended at the copy bound or the recursion limit with
 # those raised; then the thread counts 2, 4, 8 and every core on the hard
 # families, and every core with and without the portfolio on the LLTP
-# problems not decided at once. About eight hours on sixteen cores, on an
-# otherwise idle machine.
+# problems not decided at once. About eight and a half hours on sixteen
+# cores, on an otherwise idle machine.
 #
 #   nix build .#lltp -o bench/lltp          # once: the LLTP library
 #   bench/baseline.sh --detach --fresh       # from the devshell
@@ -45,6 +45,22 @@ cd "$(dirname "$0")/.."
 lltp=bench/lltp
 out=bench/results
 cores=(1 0 2 3)
+
+# The user slices a detached run keeps off the performance cores.
+slices=(app.slice session.slice background.slice)
+unshield() {
+  local slice
+  for slice in "${slices[@]}"; do
+    systemctl --user set-property --runtime "$slice" AllowedCPUs= || true
+  done
+}
+# The unit's ExecStopPost: the slices get every core back however the run
+# ended, since a stopped unit's processes may be killed before a trap of
+# theirs has run.
+if [ "${1:-}" = --unshield ]; then
+  unshield
+  exit
+fi
 
 detach=false fresh=false force=false
 for arg; do
@@ -88,12 +104,49 @@ timers() {
   done
 }
 
+# Whether the machine runs on mains power, or has no battery to run on: on
+# battery its idle manager suspends it after twenty minutes, and the
+# clocks follow the battery's profile.
+on_mains() {
+  local supply
+  for supply in /sys/class/power_supply/*; do
+    if [ "$(cat "$supply/type")" = Mains ] && [ "$(cat "$supply/online")" = 1 ]; then
+      return 0
+    fi
+  done
+  ! ls /sys/class/power_supply/*/capacity >/dev/null 2>&1
+}
+
+# The package's thermal throttling so far, as "EVENTS MILLISECONDS"; the
+# counters of CPU 0 are the whole package's.
+throttling() {
+  local dir=/sys/devices/system/cpu/cpu0/thermal_throttle
+  if [ -r "$dir/package_throttle_count" ]; then
+    echo "$(cat "$dir/package_throttle_count") $(cat "$dir/package_throttle_total_time_ms")"
+  else
+    echo "0 0"
+  fi
+}
+
+# The frequency settings, in words.
+settings() {
+  local cpu=/sys/devices/system/cpu/cpu0/cpufreq turbo=on
+  if [ "$(cat /sys/devices/system/cpu/intel_pstate/no_turbo 2>/dev/null)" = 1 ]; then
+    turbo=off
+  fi
+  echo "platform profile $(cat /sys/firmware/acpi/platform_profile 2>/dev/null), governor $(cat $cpu/scaling_governor 2>/dev/null), energy preference $(cat $cpu/energy_performance_preference 2>/dev/null), turbo $turbo"
+}
+
 read -r load _ </proc/loadavg
+if ! $force && ! on_mains; then
+  echo "the machine runs on battery: plug it in, or pass --force" >&2
+  exit 1
+fi
 if ! $force && awk -v l="$load" 'BEGIN { exit !(l > 1) }'; then
   echo "the machine is busy (load average $load; $(others)); start when it is idle, or pass --force" >&2
   exit 1
 fi
-# The whole baseline takes about eight hours; a scheduled job in that
+# The whole baseline takes about eight and a half hours; a scheduled job in that
 # window (nix-gc at midnight, nix-optimise before four, a backup) competes
 # with it for a minute or so of CPU and disk.
 now=$(date +%s)
@@ -107,15 +160,34 @@ if $fresh; then
 fi
 if $detach; then
   systemctl --user reset-failed linlog-baseline 2>/dev/null || true
-  systemd-run --user --unit=linlog-baseline --same-dir -p MemoryMax=24G -p MemorySwapMax=0 \
-    -p OOMPolicy=continue -p LimitCORE=0 --setenv=PATH="$PATH" \
+  # A slice of its own, so that the other user slices can be kept off the
+  # performance cores; an inhibitor, so that neither the idle manager nor a
+  # closed lid suspends the machine.
+  systemd-run --user --unit=linlog-baseline --slice=linlog.slice --same-dir -p MemoryMax=24G \
+    -p MemorySwapMax=0 -p OOMPolicy=continue -p LimitCORE=0 --setenv=PATH="$PATH" \
+    -p ExecStopPost="$PWD/bench/baseline.sh --unshield" \
     --setenv=CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target/baseline}" \
+    systemd-inhibit --what=sleep:idle:handle-lid-switch --who=linlog-baseline \
+    --why="the benchmark baseline" \
     "$PWD/bench/baseline.sh" --force
   echo "follow it with: journalctl --user -fu linlog-baseline"
   exit
 fi
 
-echo "started $(date '+%Y-%m-%d %H:%M'), load average $load, timers due: ${due:-none}"
+echo "started $(date '+%Y-%m-%d %H:%M'), load average $load, timers due: ${due:-none}, $(settings)"
+read -r throttled_before throttled_ms_before < <(throttling)
+
+# In its own slice, the run keeps the user's other slices (the desktop,
+# the editor, the sync clients) off the performance cores its sequential
+# streams are pinned to, and lets them back when it ends; the system's
+# services and kernel threads it cannot move (see the step 14 report).
+if grep -q linlog.slice /proc/self/cgroup; then
+  for slice in "${slices[@]}"; do
+    systemctl --user set-property --runtime "$slice" AllowedCPUs=4-15
+  done
+  echo "kept ${slices[*]} off CPUs ${cores[*]}"
+fi
+
 cargo build --release --locked --package linlog-bench
 bench=${CARGO_TARGET_DIR:-target}/release/linlog-bench
 mkdir -p "$out"
@@ -124,7 +196,10 @@ mkdir -p "$out"
 # of the time left), the load and whatever else uses a CPU.
 progress() {
   while sleep 600; do
-    echo "== $(date +%H:%M), $((SECONDS / 60)) min in, load $(cut -d' ' -f1-3 /proc/loadavg); others: $(others)"
+    local events ms power=mains
+    read -r events ms < <(throttling)
+    on_mains || power=BATTERY
+    echo "== $(date +%H:%M), $((SECONDS / 60)) min in, load $(cut -d' ' -f1-3 /proc/loadavg), $power, throttled $((events - throttled_before)) times for $(((ms - throttled_ms_before) / 1000)) s so far; others: $(others)"
     for log in "$out"/*.log; do
       local line
       line=$(grep -a '^\[' "$log" | tail -n 1 || true)
@@ -216,14 +291,15 @@ run "${cores[3]}" lltp-recursion --lltp "$lltp/ILL" --only "$(ended recursion_li
 streams+=($!)
 wait "${streams[@]}"
 
-# Stage 3, alone on the machine: the hard families on 2, 4, 8 and every
-# core, the net engine's cubes, and the LLTP problems that are not decided
-# at once on every core, with and without the portfolio (every core is the
-# command's default). About four and a half hours.
+# Stage 3, alone on the machine: the hard families on 1 (the speedups'
+# baseline, taken alone like the rest), 2, 4, 8 and every core, the net
+# engine's cubes, and the LLTP problems that are not decided at once on
+# every core, with and without the portfolio (every core is the command's
+# default). About five hours.
 run - parallel --family 3-partition-yes --family 3-partition-no --family partition-yes=5,6,7 \
   --family partition-no=4,5 --family qbf=16,20,24 --family mix=8,9,10,11 --family counter \
   --family counter-over --family wide-m3=24,30,36 --family wide-m4=28,32,36 \
-  --jobs 2,4,8,all --timeout 120 "${repeat[@]}"
+  --jobs 1,2,4,8,all --timeout 120 "${repeat[@]}"
 run - parallel-net --family 3-partition-mll-no=4,5,6 --problems bench/problems/slow-tests.txt \
   --only partition-table --engines net --jobs 2,4,8,all --timeout 60 "${repeat[@]}"
 slow=$(ended slow)
@@ -232,6 +308,7 @@ run - lltp-portfolio --lltp "$lltp/ILL" --only "$slow" --jobs all --portfolio --
 
 fired=$(timers "$now" "$(date +%s)" LastTriggerUSec)
 fired=${fired%, }
+read -r throttled_after throttled_ms_after < <(throttling)
 {
   cat <<EOF
 # Benchmark results
@@ -241,7 +318,9 @@ The baseline of $(date +%Y-%m-%d) on an $(lscpu | sed -n 's/^Model name: *//p')
 \`bench/baseline.sh\`, which regenerates this file and the CSV files beside
 it (\`bench/results/\`, one row per run); it took $((SECONDS / 3600)) h $((SECONDS % 3600 / 60)) min,
 started at a load average of $load, and the scheduled jobs that ran
-meanwhile were: ${fired:-none}.
+meanwhile were: ${fired:-none}. The package throttled
+$((throttled_after - throttled_before)) times for $(((throttled_ms_after - throttled_ms_before) / 1000)) s in all
+($(settings)).
 The journal of \`linlog-baseline\` says every ten minutes what else used
 a CPU. The sequential runs went in four
 streams at once, each pinned to a performance core of its own; the
