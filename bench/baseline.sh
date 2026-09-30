@@ -6,10 +6,12 @@
 # bench/RESULTS.md, their tables. Every family sequentially with its
 # default engine and with every engine that applies, the net engine's test
 # period, the intuitionistic mode of the families that have one, the whole
-# LLTP library in both modes, then the thread counts 2, 4 and every core on
-# the hard families, a portfolio on the slow LLTP problems, and the
-# intuitionistic LLTP problems again with a copy bound of 10. About five
-# and a half hours on sixteen cores, on an otherwise idle machine.
+# LLTP library in both modes; the largest sizes with 20 minutes each, the
+# LLTP problems that ended at the copy bound or the recursion limit with
+# those raised; then the thread counts 2, 4, 8 and every core on the hard
+# families, and every core with and without the portfolio on the LLTP
+# problems not decided at once. About eight hours on sixteen cores, on an
+# otherwise idle machine.
 #
 #   nix build .#lltp -o bench/lltp          # once: the LLTP library
 #   bench/baseline.sh --detach --fresh       # from the devshell
@@ -26,7 +28,7 @@
 # skips what the file already has (`--append --resume'), so running the
 # script again after an interruption finishes the baseline. The script
 # refuses to start on a busy machine (a load average above 1) or with a
-# scheduled job due within six hours (`systemctl list-timers': nix-gc at
+# scheduled job due within nine hours (`systemctl list-timers': nix-gc at
 # midnight, nix-optimise before four, backups) unless given --force: the
 # timings are only worth what the machine's idleness is, and RESULTS.md
 # records the load it started with and the jobs that ran meanwhile. Stop
@@ -91,13 +93,13 @@ if ! $force && awk -v l="$load" 'BEGIN { exit !(l > 1) }'; then
   echo "the machine is busy (load average $load; $(others)); start when it is idle, or pass --force" >&2
   exit 1
 fi
-# The whole baseline takes about five and a half hours; a scheduled job in
-# that window (nix-gc at midnight, nix-optimise before four, a backup)
-# competes with it for a minute or so of CPU and disk.
+# The whole baseline takes about eight hours; a scheduled job in that
+# window (nix-gc at midnight, nix-optimise before four, a backup) competes
+# with it for a minute or so of CPU and disk.
 now=$(date +%s)
-due=$(timers "$now" $((now + 6 * 3600)) NextElapseUSecRealtime)
+due=$(timers "$now" $((now + 9 * 3600)) NextElapseUSecRealtime)
 if ! $force && [ -n "$due" ]; then
-  echo "timers fire during the next six hours: ${due%, }; start after them, stop them for the night, or pass --force" >&2
+  echo "timers fire during the next nine hours: ${due%, }; start after them, stop them for the night, or pass --force" >&2
   exit 1
 fi
 if $fresh; then
@@ -157,6 +159,9 @@ mll=(--family "partition-yes=4,5,6" --family "partition-no=3,4" --family 3-parti
   --family 3-partition-mll-no --family wide-m1 --family wide-m2 --family "wide-m3=12,24,30"
   --family "wide-m4=12,24,28")
 
+# Stage 1, sequential, four streams: every family, the engines against each
+# other, the net engine's test period, the intuitionistic mode, the whole
+# LLTP library in both modes. About an hour and forty minutes.
 streams=()
 run "${cores[0]}" families --all-families --timeout 300 "${repeat[@]}" &
 streams+=($!)
@@ -182,25 +187,48 @@ run "${cores[3]}" lltp-classical --lltp "$lltp/CLL" --lltp "$lltp/ILL" --modes c
 streams+=($!)
 wait "${streams[@]}"
 
-# The parallel runs, alone on the machine.
+# The intuitionistic LLTP problems whose first pass ended with the reason
+# given (or, for `slow', timed out, was killed or took 50 ms or more), as a
+# list for --only: the problems a knob can change.
+ended() {
+  awk -F, -v reason="$1" 'NR > 1 && ($16 == reason || (reason == "slow" &&
+    ($16 ~ /^(timeout|killed)$/ || ($15 ~ /proved|unprovable/ && $22 >= 50)))) { print $5 }' \
+    "$out/lltp-intuitionistic.csv" | sort -u | paste -sd,
+}
+
+# Stage 2, sequential, four streams: the largest instances that time out at
+# 300 s, once each with 20 minutes, for the times the performance pass has
+# to beat; and the LLTP problems that ended at the copy bound or at the
+# recursion limit, again with a bound of 10 and a limit of 16384. About an
+# hour and a half.
+streams=()
+run "${cores[0]}" long-1 --family 3-partition-no=5 --family partition-no=5 --family partition-yes=7 \
+  --family counter=16 --timeout 1200 &
+streams+=($!)
+run "${cores[1]}" long-2 --family mix=11 --family wide-m3=36 --family wide-m4=36 \
+  --family qbf=24 --only "qbf/24#0,mix,wide" --timeout 1200 &
+streams+=($!)
+run "${cores[2]}" lltp-copies-10 --lltp "$lltp/ILL" --only "$(ended copy_bound)" --copies 10 \
+  --timeout 5 &
+streams+=($!)
+run "${cores[3]}" lltp-recursion --lltp "$lltp/ILL" --only "$(ended recursion_limit)" \
+  --recursion-limit 16384 --timeout 5 &
+streams+=($!)
+wait "${streams[@]}"
+
+# Stage 3, alone on the machine: the hard families on 2, 4, 8 and every
+# core, the net engine's cubes, and the LLTP problems that are not decided
+# at once on every core, with and without the portfolio (every core is the
+# command's default). About four and a half hours.
 run - parallel --family 3-partition-yes --family 3-partition-no --family partition-yes=5,6,7 \
   --family partition-no=4,5 --family qbf=16,20,24 --family mix=8,9,10,11 --family counter \
   --family counter-over --family wide-m3=24,30,36 --family wide-m4=28,32,36 \
-  --jobs 2,4,all --timeout 120 "${repeat[@]}"
+  --jobs 2,4,8,all --timeout 120 "${repeat[@]}"
 run - parallel-net --family 3-partition-mll-no=4,5,6 --problems bench/problems/slow-tests.txt \
-  --only partition-table --engines net --jobs 2,4,all --timeout 60 "${repeat[@]}"
-# The LLTP problems decided in a twentieth of a second or more on one
-# thread, on every core with and without the portfolio.
-slow=$(awk -F, 'NR > 1 && $15 ~ /proved|unprovable/ && $22 >= 50 { print $5 }' \
-  "$out/lltp-intuitionistic.csv" | sort -u | paste -sd,)
-if [ -n "$slow" ]; then
-  run - portfolio --lltp "$lltp/ILL" --only "$slow" --jobs all --timeout 5
-  run - portfolio-on --lltp "$lltp/ILL" --only "$slow" --jobs all --portfolio --timeout 5
-fi
-
-# The copy bound of 3 ends most of the library's searches: the
-# intuitionistic problems again with a bound of 10.
-run "${cores[2]}" lltp-copies-10 --lltp "$lltp/ILL" --copies 10 --timeout 5
+  --only partition-table --engines net --jobs 2,4,8,all --timeout 60 "${repeat[@]}"
+slow=$(ended slow)
+run - lltp-all-cores --lltp "$lltp/ILL" --only "$slow" --jobs all --timeout 5
+run - lltp-portfolio --lltp "$lltp/ILL" --only "$slow" --jobs all --portfolio --timeout 5
 
 fired=$(timers "$now" "$(date +%s)" LastTriggerUSec)
 fired=${fired%, }

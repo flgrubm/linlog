@@ -33,9 +33,13 @@ beyond clap and anyhow, which the CLI already has.
   writes the row itself (`reason` `killed`, or `crash (status): <last
   stderr line>`).
 - `src/summary.rs`: Markdown from CSV. A problem counts once per
-  configuration (family, mode, requested engine, jobs, portfolio, test
+  configuration (CSV file, family, mode, requested engine, jobs, portfolio, test
   period): the first run's verdict, the median of the runs' times.
-  `refused` rows (a forced engine that does not apply) are dropped.
+  `refused` rows (a forced engine that does not apply) are dropped. The
+  CSV file's name is part of the configuration's label, since each file
+  of the baseline is one `run` with options of its own (a copy bound, a
+  recursion limit, a longer time limit) that the columns alone do not
+  tell apart.
 - `problems/slow-tests.txt`: problems of the engine reports' timing tables
   that no family generates (the Partition instances of the net engine's
   first table, the chain with a token over, the parallel cancellation
@@ -79,7 +83,7 @@ beyond clap and anyhow, which the CLI already has.
   its terminal's processes with it (a reviewer's scratch program once ran
   the machine out of memory and systemd failed the whole terminal scope,
   the baseline with it). It refuses to start when the load average is
-  above 1 or a scheduled job other than the trivial ones is due within six
+  above 1 or a scheduled job other than the trivial ones is due within nine
   hours (`nix-gc` at midnight, `nix-optimise` before four, backups), unless
   given `--force`; RESULTS.md records the starting load and the jobs that
   fired, and the journal gets every stream's last progress line (with the

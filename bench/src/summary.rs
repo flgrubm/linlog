@@ -1,10 +1,12 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-//! Markdown tables from the rows `run` wrote. A problem counts once per
-//! configuration: its first run gives the verdict, the median over its
-//! runs the time. Rows of a forced engine that does not apply (`refused`)
-//! are left out.
+//! Markdown tables from the rows `run` wrote. A configuration is a CSV
+//! file's name with the mode, engine, threads, portfolio and test period
+//! of its rows, since every file of a baseline is one run of `run` with
+//! its own options. A problem counts once per configuration: its first run
+//! gives the verdict, the median over its runs the time. Rows of a forced
+//! engine that does not apply (`refused`) are left out.
 
 use anyhow::{Context, Result, bail};
 use std::collections::HashMap;
@@ -87,6 +89,7 @@ pub fn summary(files: &[PathBuf]) -> Result<()> {
         let mut lines = text.lines();
         let Some(header) = lines.next() else { continue };
         let columns: Vec<&str> = header.split(',').collect();
+        let stem = file.file_stem().unwrap_or_default().to_string_lossy();
         for line in lines.filter(|l| !l.is_empty() && !l.starts_with("source,")) {
             let values: Vec<&str> = line.split(',').collect();
             if values.len() != columns.len() {
@@ -100,7 +103,9 @@ pub fn summary(files: &[PathBuf]) -> Result<()> {
                 .iter()
                 .zip(values)
                 .map(|(c, v)| ((*c).to_owned(), v.to_owned()));
-            rows.push(Row(row.collect()));
+            let mut row: HashMap<String, String> = row.collect();
+            row.insert("file".to_owned(), stem.to_string());
+            rows.push(Row(row));
         }
     }
     rows.retain(|row| row.get("verdict") != "refused");
@@ -108,7 +113,8 @@ pub fn summary(files: &[PathBuf]) -> Result<()> {
     // Runs grouped by configuration and problem, in the order first seen.
     let config = |row: &Row| {
         let mut label = format!(
-            "{} {} j{}",
+            "{}: {} {} j{}",
+            row.get("file"),
             row.get("mode"),
             row.get("engine_requested"),
             row.get("jobs")

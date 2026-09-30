@@ -99,6 +99,10 @@ pub struct RunArgs {
     /// (default: every link up to 200 occurrences, every fourth above)
     #[arg(long)]
     test_period: Option<u32>,
+    /// The recursion limit of the search (default 2048), which the LLTP
+    /// library's Petri nets with long markings reach
+    #[arg(long)]
+    recursion_limit: Option<u32>,
     /// The time limit per run, in seconds
     #[arg(long, default_value_t = 60.0)]
     timeout: f64,
@@ -146,6 +150,9 @@ pub struct OneArgs {
     /// The net engine's test period
     #[arg(long)]
     test_period: Option<u32>,
+    /// The recursion limit
+    #[arg(long)]
+    recursion_limit: Option<u32>,
     /// The time limit, in seconds
     #[arg(long)]
     timeout: f64,

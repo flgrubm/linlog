@@ -25,10 +25,10 @@ use std::time::{Duration, Instant};
 pub const HEADER: &str = "source,family,size,index,problem,mode,engine_requested,jobs,portfolio,\
                           test_period,timeout_s,run,copies,expected,verdict,reason,checked,engine,\
                           fragment,occurrences,multiplicity,time_ms,nodes,memo_hits,memo_entries,\
-                          splits,links,tests";
+                          splits,links,tests,recursion_limit";
 
 /// The columns the child prints.
-const TAIL: usize = 16;
+const TAIL: usize = 17;
 
 /// Which mode to run a problem in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -278,6 +278,9 @@ fn child(
     if let Some(copies) = args.copies {
         command.args(["--copies", &copies.to_string()]);
     }
+    if let Some(limit) = args.recursion_limit {
+        command.args(["--recursion-limit", &limit.to_string()]);
+    }
     if let Some(period) = args.test_period {
         command.args(["--test-period", &period.to_string()]);
     }
@@ -362,6 +365,9 @@ fn tail(args: &OneArgs) -> String {
         .copies
         .or(problem.copies)
         .unwrap_or(Options::DEFAULT_COPIES);
+    let recursion = args
+        .recursion_limit
+        .unwrap_or(Options::DEFAULT_RECURSION_LIMIT);
     // A known verdict holds in the problem's own mode only: classical
     // linear logic proves more than intuitionistic, affine more than linear.
     let expected = match problem.expected.filter(|_| mode == problem.mode) {
@@ -378,7 +384,8 @@ fn tail(args: &OneArgs) -> String {
         .jobs(args.jobs)
         .portfolio(args.portfolio)
         .copies(copies)
-        .test_period(args.test_period);
+        .test_period(args.test_period)
+        .recursion_limit(recursion);
 
     // The clock is read every 64 polls on one thread, where the engine
     // polls millions of times a second, and every poll on a pool, whose
@@ -411,6 +418,7 @@ fn tail(args: &OneArgs) -> String {
                 (3, &clean(&error.to_string())),
                 (7, &occurrences.to_string()),
                 (8, &multiplicity.to_string()),
+                (16, &recursion.to_string()),
             ]);
         }
     };
@@ -452,6 +460,7 @@ fn tail(args: &OneArgs) -> String {
         s.splits.to_string(),
         s.links.to_string(),
         s.tests.to_string(),
+        recursion.to_string(),
     ]
     .join(",")
 }
