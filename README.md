@@ -469,11 +469,17 @@ $ linlog-bench summary runs.csv
 | partition-no/4 | 128.7 ms ✗ | 47.4 ms ✗ | > 10 s | > 10 s |
 ```
 
-`bench/baseline.sh --detach --fresh` takes the whole baseline, every
-family, engine and thread count and the whole LLTP library, as a systemd
-user unit on an otherwise idle machine (it refuses a busy one) in about
-eight and a half hours, and writes the tables to `bench/RESULTS.md` and
-the rows to `bench/results/`; `journalctl --user -fu linlog-baseline`
+`bench/baseline.sh --arm --fresh` takes the whole baseline, every
+family, engine and thread count and the whole LLTP library, unattended
+in the night: a user timer starts it as a systemd user unit at 20:00 (or
+at once if that has passed), where it waits for an otherwise idle
+machine, runs about eight and a half hours, and is stopped at 07:00
+whatever its state (`--slot=HH:MM-HH:MM` for other times; the script run
+again without `--fresh` finishes a stopped baseline on another night).
+Every baseline keeps a directory of its own named by the day it started,
+`bench/results/DAY/`: the CSV files of its runs, `starts.txt` with the
+commit measured, and its tables in `RESULTS.md`, which `bench/RESULTS.md`
+copies for the latest baseline; `journalctl --user -fu linlog-baseline`
 follows it.
 
 ## What exists and what is planned

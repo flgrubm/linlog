@@ -24,4 +24,4 @@ CLAUDE.local.md
 # The baseline's rows, which `result*` above would hide, but not its
 # progress logs
 !/bench/results/
-/bench/results/*.log
+/bench/results/*/*.log

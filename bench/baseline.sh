@@ -2,78 +2,125 @@
 # linlog © Fabian Lukas Grubmüller 2026
 # Licensed under the EUPL
 
-# Regenerates the baseline: the CSV files in bench/results/ and
-# bench/RESULTS.md, their tables. Every family sequentially with its
-# default engine and with every engine that applies, the net engine's test
-# period, the intuitionistic mode of the families that have one, the whole
-# LLTP library in both modes; the largest sizes with 20 minutes each, the
-# LLTP problems that ended at the copy bound or the recursion limit with
-# those raised; then the thread counts 2, 4, 8 and every core on the hard
+# Takes the benchmark baseline: CSV files in bench/results/DAY/, DAY being
+# the day the baseline started, so that every baseline keeps a directory
+# of its own; their tables in RESULTS.md beside them, whose header names
+# the commit measured; and a copy of those tables in bench/RESULTS.md, the
+# latest baseline's. Every family sequentially with its default engine and
+# with every engine that applies, the net engine's test period, the
+# intuitionistic mode of the families that have one, the whole LLTP
+# library in both modes; the largest sizes with 20 minutes each, the LLTP
+# problems that ended at the copy bound or the recursion limit with those
+# raised; then the thread counts 2, 4, 8 and every core on the hard
 # families, and every core with and without the portfolio on the LLTP
 # problems not decided at once. About eight and a half hours on sixteen
 # cores, on an otherwise idle machine.
 #
 #   nix build .#lltp -o bench/lltp          # once: the LLTP library
-#   bench/baseline.sh --detach --fresh       # from the devshell
+#   bench/baseline.sh --arm --fresh          # from the devshell
+#   systemctl --user list-timers             # linlog-baseline and its stop
 #   journalctl --user -fu linlog-baseline    # progress every ten minutes
 #
-# --detach runs the script as the systemd user unit `linlog-baseline',
-# which survives the terminal: 24 GiB of memory and no swap for all of it,
-# the kernel's OOM killer taking the runaway process alone
-# (`OOMPolicy=continue', its run a crash row) rather than systemd stopping
-# the unit, no core dumps, and its own target directory (target/baseline)
-# so that builds in the checkout do not touch the binary it runs.
-# `systemctl --user stop linlog-baseline' stops it. --fresh deletes
-# bench/results first; without it every run appends to its CSV file and
-# skips what the file already has (`--append --resume'), so running the
-# script again after an interruption finishes the baseline. The script
-# refuses to start on a busy machine (a load average above 1) or with a
-# scheduled job due within nine hours (`systemctl list-timers': nix-gc at
-# midnight, nix-optimise before four, backups) unless given --force: the
-# timings are only worth what the machine's idleness is, and RESULTS.md
-# records the load it started with and the jobs that ran meanwhile. Stop
-# such timers for the night (`sudo systemctl stop nix-gc.timer', start them
-# again afterwards) or start after them.
+# --arm takes the baseline unattended in the night the machine is the
+# benchmark's (`slot', 20:00 to 07:00; --slot=HH:MM-HH:MM gives another):
+# a transient user timer starts the unit below at the slot's start, or at
+# once when the slot has begun, and another stops it at the slot's end
+# whatever its state. The unit waits until the machine is idle (on mains
+# and a load average of at most 1) and, from the last moment at which the
+# estimated duration still ends within the slot, starts whatever the load,
+# recording that it did. --detach starts the unit at once and never stops
+# it.
+#
+# The unit, `linlog-baseline', survives the terminal: 24 GiB of memory and
+# no swap for all of it, the kernel's OOM killer taking the runaway
+# process alone (`OOMPolicy=continue', its run a crash row) rather than
+# systemd stopping the unit, no core dumps, and its own target directory
+# (target/baseline) so that builds in the checkout do not touch the binary
+# it runs. It keeps the user's other slices off the performance cores and
+# stops the user timers due during the run, and its ExecStopPost undoes
+# both however the run ends. `systemctl --user stop linlog-baseline' stops
+# it.
+#
+# Without --fresh the script resumes the latest baseline directory that
+# has no RESULTS.md yet: every run appends to its CSV file and skips what
+# the file already has (`--append --resume'), so running the script again
+# after an interruption (the stop at the slot's end) finishes the baseline
+# on another night. --fresh deletes the directory of the day and starts it
+# anew; other baselines are never touched. The script refuses to start on
+# battery, on a busy machine (a load average above 1) or with a scheduled
+# job due within the estimate (`systemctl list-timers': nix-gc at
+# midnight, nix-optimise before four, backups) unless given --force, and
+# --arm names those due in the slot: the timings are only worth what the
+# machine's idleness is, and RESULTS.md records the load the run started
+# with and the jobs that ran meanwhile. Stop such timers for the night
+# (`sudo systemctl stop nix-gc.timer', start them again afterwards).
 #
 # The sequential runs go in four streams at once, each pinned to a core of
 # its own with taskset; `cores' names four performance cores of the machine
 # the baseline was taken on (an Intel Core Ultra X9 388H: CPUs 0 to 3 are
 # its performance cores), so adjust it for another. The parallel runs come
-# after them, with the machine to themselves.
+# after them, with the machine to themselves, so that a run stopped at the
+# slot's end has the sequential stages, which a performance pass compares
+# with first, complete.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+self=$(realpath "$0")
+cd "$(dirname "$self")/.."
 lltp=bench/lltp
-out=bench/results
+results=bench/results
 cores=(1 0 2 3)
+slot=20:00-07:00
+estimate=$((8 * 3600 + 30 * 60))
 
-# The user slices a detached run keeps off the performance cores.
+# The user slices a detached run keeps off the performance cores, and the
+# file listing the user timers it stopped for its duration.
 slices=(app.slice session.slice background.slice)
+paused=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/linlog-baseline-timers
 unshield() {
   local slice
   for slice in "${slices[@]}"; do
     systemctl --user set-property --runtime "$slice" AllowedCPUs= || true
   done
+  if [ -e "$paused" ]; then
+    xargs -r systemctl --user start <"$paused" || true
+    rm -f "$paused"
+  fi
 }
-# The unit's ExecStopPost: the slices get every core back however the run
-# ended, since a stopped unit's processes may be killed before a trap of
-# theirs has run.
+# The unit's ExecStopPost: the slices get every core back and the user
+# timers start again however the run ended, since a stopped unit's
+# processes may be killed before a trap of theirs has run.
 if [ "${1:-}" = --unshield ]; then
   unshield
   exit
 fi
 
-detach=false fresh=false force=false
+detach=false arm=false fresh=false force=false start_by=
 for arg; do
   case $arg in
   --detach) detach=true ;;
+  --arm) arm=true ;;
+  --slot=*) slot=${arg#--slot=} ;;
   --fresh) fresh=true ;;
   --force) force=true ;;
+  # The unit's: wait for an idle machine until then (seconds since the
+  # epoch).
+  --start-by=*) start_by=${arg#--start-by=} ;;
   *)
-    echo "usage: bench/baseline.sh [--detach] [--fresh] [--force]" >&2
+    echo "usage: bench/baseline.sh [--arm [--slot=HH:MM-HH:MM] | --detach] [--fresh] [--force]" >&2
     exit 2
     ;;
   esac
 done
+
+# The baseline's directory: the latest one without RESULTS.md, a baseline
+# that has not finished, or else today's.
+out=$results/$(date +%F)
+if ! $fresh; then
+  for dir in "$results"/*/; do
+    if [ -d "$dir" ] && [ ! -e "$dir/RESULTS.md" ]; then
+      out=${dir%/}
+    fi
+  done
+fi
 
 # The processes other than the benchmark's that use a CPU now, by the
 # second of two samples of top.
@@ -81,7 +128,8 @@ others() {
   top -b -n 2 -d 2 -o %CPU -w 200 | awk '
     /^top -/ { frame++ }
     frame == 2 && $1 ~ /^[0-9]+$/ && $9 + 0 >= 1 && $12 !~ /^(linlog-bench|top)$/ {
-      printf "%s %s%%, ", $12, $9
+      printf "%s%s %s%%", sep, $12, $9
+      sep = ", "
     }' | head -c 300
 }
 
@@ -94,7 +142,7 @@ timers() {
   for scope in --system --user; do
     systemctl "$scope" list-timers --all --no-legend | awk '{ print $(NF - 1) }' |
       while read -r unit; do
-        case $unit in logrotate.timer | fwupd-refresh.timer | systemd-tmpfiles-clean.timer) continue ;; esac
+        case $unit in logrotate.timer | fwupd-refresh.timer | systemd-tmpfiles-clean.timer | linlog-baseline*) continue ;; esac
         t=$(systemctl "$scope" show "$unit" -p "$3" --value --timestamp=unix)
         t=${t#@}
         if [ -n "$t" ] && [ "$t" -ge "$1" ] && [ "$t" -le "$2" ]; then
@@ -137,44 +185,133 @@ settings() {
   echo "platform profile $(cat /sys/firmware/acpi/platform_profile 2>/dev/null), governor $(cat $cpu/scaling_governor 2>/dev/null), energy preference $(cat $cpu/energy_performance_preference 2>/dev/null), turbo $turbo"
 }
 
+# Whether the load average of the last minute is above 1.
+busy() {
+  awk -v l="$(cut -d' ' -f1 /proc/loadavg)" 'BEGIN { exit !(l > 1) }'
+}
+
+# The current or next slot as "START END", in seconds since the epoch;
+# START is now once the slot has begun.
+slot_times() {
+  local from=${slot%-*} to=${slot#*-} now day start length
+  now=$(date +%s)
+  length=$((($(date -d "$to" +%s) - $(date -d "$from" +%s) + 86400) % 86400))
+  for day in yesterday today tomorrow; do
+    start=$(date -d "$day $from" +%s)
+    if [ $((start + length)) -gt "$now" ]; then
+      echo $((start > now ? start : now)) $((start + length))
+      return
+    fi
+  done
+}
+
+# The commit the binary is built from, and the files the working copy
+# changes beyond the baseline's own; read without a snapshot, which would
+# sign a commit from inside the unit.
+commit() {
+  local changes
+  changes=$(jj --ignore-working-copy diff --name-only -r @ |
+    grep -v -E '^bench/(results/|RESULTS\.md)' | paste -sd ' ' || true)
+  jj --ignore-working-copy log --no-graph -r @- \
+    -T 'commit_id.short(12) ++ " (" ++ description.first_line() ++ ")"'
+  if [ -n "$changes" ]; then
+    printf ', with uncommitted changes to %s' "${changes:0:300}"
+  fi
+}
+
+if $arm || $detach; then
+  if systemctl --user is-active --quiet linlog-baseline.service; then
+    echo "linlog-baseline runs already; stop it with: systemctl --user stop linlog-baseline" >&2
+    exit 1
+  fi
+  systemctl --user stop linlog-baseline.timer linlog-baseline-stop.timer 2>/dev/null || true
+  systemctl --user reset-failed linlog-baseline.service linlog-baseline.timer \
+    linlog-baseline-stop.service linlog-baseline-stop.timer 2>/dev/null || true
+  if $fresh; then
+    rm -rf "$out"
+  fi
+  # The directory exists, so that the unit's run resumes it; the snapshot
+  # is the working copy the unit reads its commit from.
+  mkdir -p "$out"
+  jj st >/dev/null
+  # A slice of its own, so that the other user slices can be kept off the
+  # performance cores; an inhibitor, so that neither the idle manager nor a
+  # closed lid suspends the machine.
+  unit=(systemd-run --user --unit=linlog-baseline --slice=linlog.slice --same-dir -p MemoryMax=24G
+    -p MemorySwapMax=0 -p OOMPolicy=continue -p LimitCORE=0 --setenv=PATH="$PATH"
+    -p ExecStopPost="$self --unshield"
+    --setenv=CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target/baseline}")
+  script=(systemd-inhibit --what=sleep:idle:handle-lid-switch --who=linlog-baseline
+    --why="the benchmark baseline" "$self" --force)
+  if $detach; then
+    "${unit[@]}" "${script[@]}"
+    echo "into $out; follow it with: journalctl --user -fu linlog-baseline"
+    exit
+  fi
+  read -r start end < <(slot_times)
+  latest=$((end - estimate > start ? end - estimate : start))
+  when=(--on-calendar="$(date -d "@$start" '+%F %T')")
+  if [ "$start" -le $(($(date +%s) + 5)) ]; then
+    when=(--on-active=5)
+  fi
+  due=$(timers "$start" "$end" NextElapseUSecRealtime)
+  "${unit[@]}" "${when[@]}" --timer-property=AccuracySec=1s "${script[@]}" --start-by="$latest"
+  systemd-run --user --unit=linlog-baseline-stop --on-calendar="$(date -d "@$end" '+%F %T')" \
+    --timer-property=AccuracySec=1s "$(command -v systemctl)" --user stop \
+    linlog-baseline.timer linlog-baseline.service
+  echo "armed, into $out: it starts at $(date -d "@$start" '+%a %H:%M') once the machine is idle, at $(date -d "@$latest" +%H:%M) whatever the load, takes about $((estimate / 3600)) h $((estimate % 3600 / 60)) min and is stopped at $(date -d "@$end" '+%a %H:%M')"
+  if [ -n "$due" ]; then
+    echo "timers due in the slot: ${due%, }; stop them for the night"
+  fi
+  on_mains || echo "the machine runs on battery: plug it in before the slot"
+  exit
+fi
+
+# Armed, the run waits for an idle machine on mains until the latest
+# start, and then starts regardless.
+forced=
+if [ -n "$start_by" ]; then
+  waited=false
+  while ! on_mains || busy; do
+    if [ "$(date +%s)" -ge "$start_by" ]; then
+      forced=", not idle at the latest start ($(on_mains && echo mains || echo BATTERY); $(others))"
+      break
+    fi
+    $waited || echo "$(date +%H:%M) waiting for an idle machine on mains until $(date -d "@$start_by" +%H:%M): load $(cut -d' ' -f1-3 /proc/loadavg); $(others)"
+    waited=true
+    sleep 60
+  done
+  SECONDS=0
+fi
+
 read -r load _ </proc/loadavg
 if ! $force && ! on_mains; then
   echo "the machine runs on battery: plug it in, or pass --force" >&2
   exit 1
 fi
-if ! $force && awk -v l="$load" 'BEGIN { exit !(l > 1) }'; then
+if ! $force && busy; then
   echo "the machine is busy (load average $load; $(others)); start when it is idle, or pass --force" >&2
   exit 1
 fi
-# The whole baseline takes about eight and a half hours; a scheduled job in that
-# window (nix-gc at midnight, nix-optimise before four, a backup) competes
-# with it for a minute or so of CPU and disk.
+# A scheduled job during the run (nix-gc at midnight, nix-optimise before
+# four, a backup) competes with it for a minute or so of CPU and disk.
 now=$(date +%s)
-due=$(timers "$now" $((now + 9 * 3600)) NextElapseUSecRealtime)
+due=$(timers "$now" $((now + estimate)) NextElapseUSecRealtime)
+due=${due%, }
 if ! $force && [ -n "$due" ]; then
-  echo "timers fire during the next nine hours: ${due%, }; start after them, stop them for the night, or pass --force" >&2
+  echo "timers fire during the run: $due; start after them, stop them for the night, or pass --force" >&2
   exit 1
 fi
 if $fresh; then
   rm -rf "$out"
 fi
-if $detach; then
-  systemctl --user reset-failed linlog-baseline 2>/dev/null || true
-  # A slice of its own, so that the other user slices can be kept off the
-  # performance cores; an inhibitor, so that neither the idle manager nor a
-  # closed lid suspends the machine.
-  systemd-run --user --unit=linlog-baseline --slice=linlog.slice --same-dir -p MemoryMax=24G \
-    -p MemorySwapMax=0 -p OOMPolicy=continue -p LimitCORE=0 --setenv=PATH="$PATH" \
-    -p ExecStopPost="$PWD/bench/baseline.sh --unshield" \
-    --setenv=CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target/baseline}" \
-    systemd-inhibit --what=sleep:idle:handle-lid-switch --who=linlog-baseline \
-    --why="the benchmark baseline" \
-    "$PWD/bench/baseline.sh" --force
-  echo "follow it with: journalctl --user -fu linlog-baseline"
-  exit
-fi
+mkdir -p "$out"
 
-echo "started $(date '+%Y-%m-%d %H:%M'), load average $load, timers due: ${due:-none}, $(settings)"
+# Every start of the run, a line in starts.txt: a resumed baseline has
+# several, which RESULTS.md lists.
+record="$(date '+%Y-%m-%d %H:%M'), commit $(commit), load average $load${forced}"
+echo "$record" >>"$out/starts.txt"
+echo "started into $out: $record; timers due: ${due:-none}; $(settings)"
 read -r throttled_before throttled_ms_before < <(throttling)
 
 # In its own slice, the run keeps the user's other slices (the desktop,
@@ -187,11 +324,22 @@ if grep -q linlog.slice /proc/self/cgroup; then
     systemctl --user set-property --runtime "$slice" AllowedCPUs=4-15
   done
   echo "kept ${slices[*]} off CPUs ${cores[*]}"
+  # The user's own timers due during the run wait for its end.
+  systemctl --user list-timers --no-legend | awk '{ print $(NF - 1) }' |
+    while read -r unit; do
+      case $unit in linlog-baseline* | systemd-tmpfiles-clean.timer) continue ;; esac
+      t=$(systemctl --user show "$unit" -p NextElapseUSecRealtime --value --timestamp=unix)
+      t=${t#@}
+      if [ -n "$t" ] && [ "$t" -le $((now + estimate)) ]; then
+        systemctl --user stop "$unit"
+        echo "$unit" >>"$paused"
+        echo "stopped $unit until the run ends"
+      fi
+    done
 fi
 
 cargo build --release --locked --package linlog-bench
 bench=${CARGO_TARGET_DIR:-target}/release/linlog-bench
-mkdir -p "$out"
 
 # Every ten minutes: the last progress line of every run (with its estimate
 # of the time left), the load and whatever else uses a CPU.
@@ -311,16 +459,21 @@ fired=$(timers "$now" "$(date +%s)" LastTriggerUSec)
 fired=${fired%, }
 read -r throttled_after throttled_ms_after < <(throttling)
 {
-  cat <<EOF
+  cat <<EOF2
 # Benchmark results
 
-The baseline of $(date +%Y-%m-%d) on an $(lscpu | sed -n 's/^Model name: *//p')
+The baseline of ${out##*/} on an $(lscpu | sed -n 's/^Model name: *//p')
 ($(nproc) cores, $(free -g | awk '/^Mem:/ { print $2 }') GB), release build, from
-\`bench/baseline.sh\`, which regenerates this file and the CSV files beside
-it (\`bench/results/\`, one row per run); it took $((SECONDS / 3600)) h $((SECONDS % 3600 / 60)) min,
-started at a load average of $load, and the scheduled jobs that ran
+\`bench/baseline.sh\`, which writes this file, the CSV files beside it
+(\`$out/\`, one row per run) and a copy of this file as
+\`bench/RESULTS.md\`, the latest baseline's. It started (once more for
+every resumption), with the commit it measured:
+
+$(sed 's/^/- /' "$out/starts.txt")
+
+Its last part took $((SECONDS / 3600)) h $((SECONDS % 3600 / 60)) min, and the scheduled jobs that ran
 meanwhile were: ${fired:-none}. The package throttled
-$((throttled_after - throttled_before)) times for $(((throttled_ms_after - throttled_ms_before) / 1000)) s in all
+$((throttled_after - throttled_before)) times for $(((throttled_ms_after - throttled_ms_before) / 1000)) s in that part
 ($(settings)).
 The journal of \`linlog-baseline\` says every ten minutes what else used
 a CPU. The sequential runs went in four
@@ -330,9 +483,10 @@ three runs; \`✓\` is proved, \`✗\` refuted, \`?\` unknown (\`bound\`: the co
 bound, \`wide\`: a context too wide to split, \`depth\`: the recursion
 limit), \`>\` a time limit reached, \`MISMATCH\` a verdict against the
 problem's known one (for LLTP, the one its header claims). \`linlog-bench
-summary bench/results/*.csv\` prints the tables again.
+summary $out/*.csv\` prints the tables again.
 
-EOF
+EOF2
   "$bench" summary "$out"/*.csv
-} >bench/RESULTS.md
-echo "finished $(date '+%Y-%m-%d %H:%M'): bench/RESULTS.md"
+} >"$out/RESULTS.md"
+cp "$out/RESULTS.md" bench/RESULTS.md
+echo "finished $(date '+%Y-%m-%d %H:%M'): $out/RESULTS.md and bench/RESULTS.md"

@@ -43,13 +43,14 @@ beyond clap and anyhow, which the CLI already has.
 - `problems/slow-tests.txt`: problems of the engine reports' timing tables
   that no family generates (the Partition instances of the net engine's
   first table, the chain with a token over, the parallel cancellation
-  case). `baseline.sh`: the command that regenerates `results/*.csv` and
-  `RESULTS.md`.
+  case). `baseline.sh`: the command that takes a baseline into
+  `results/DAY/` (`*.csv`, `starts.txt`, `RESULTS.md`) and copies its
+  tables to `bench/RESULTS.md`.
 
 ## Invariants
 
 - **The CSV columns are the interface** (`run::HEADER`): `summary` reads
-  them by name, and the committed `results/*.csv` are what a later change
+  them by name, and the committed `results/*/*.csv` are what a later change
   is compared with, so add columns at the end of the tail and never
   rename one. Fields never contain commas (`clean` turns them into `;`),
   so the files are split on commas without quoting.
@@ -89,27 +90,55 @@ beyond clap and anyhow, which the CLI already has.
   writes to `bench/results/`.
 - **The LLTP library is not in the repository** (GPL-3.0): `nix build
   .#lltp -o bench/lltp` fetches it, `bench/lltp` is ignored.
-- **`baseline.sh`** is meant to run as `bench/baseline.sh --detach
-  --fresh`: `--detach` starts it as the systemd user unit
-  `linlog-baseline` (24 GiB and no swap for the unit, `OOMPolicy=continue`
-  so the kernel kills a runaway child alone, no core dumps, its own
-  target directory `target/baseline`), because a session that dies takes
-  its terminal's processes with it (a reviewer's scratch program once ran
-  the machine out of memory and systemd failed the whole terminal scope,
-  the baseline with it). It refuses to start when the load average is
-  above 1 or a scheduled job other than the trivial ones is due within nine
-  hours (`nix-gc` at midnight, `nix-optimise` before four, backups), unless
-  given `--force`; RESULTS.md records the starting load and the jobs that
-  fired, and the journal gets every stream's last progress line (with the
-  harness's estimate of the time left), the load and the other processes
-  using a CPU every ten minutes. Every `run` appends with `--resume`, so
-  rerunning finishes an interrupted baseline; `--fresh` deletes
-  `bench/results` first. Each process is capped at 12 GiB of address
-  space (`prlimit`): the additive path's memo is unbounded (depth 18 of
-  the `additive` family needs about 130 GB) and parsing the library's
-  largest files takes over 15 GB, and two such processes at once stay
-  within the unit's limit; the classical LLTP pass runs `--reverse` so
-  that the two LLTP passes do not parse those files at the same time.
+- **`baseline.sh`** is meant to run as `bench/baseline.sh --arm
+  --fresh` in the slot the machine is the benchmark's (`slot`, 20:00 to
+  07:00, `--slot=HH:MM-HH:MM` for another). `--arm` sets two transient
+  user timers: `linlog-baseline.timer` starts the unit at the slot's
+  start, or at once inside it, and `linlog-baseline-stop.timer` stops
+  it at the slot's end whatever its state (`ExecStopPost` then gives the
+  cores back and starts again the user timers the unit stopped for the
+  run, such as `obsidian-snapshot`, listed in
+  `$XDG_RUNTIME_DIR/linlog-baseline-timers`; the inhibitor dies with the
+  unit). System timers and services need root: the author stops them. The unit waits for an
+  idle machine (on mains, a load average of at most 1) until the slot's
+  end minus `estimate` (8.5 h), then starts regardless and says so in
+  `starts.txt`: a night not used is worse than rows marked as disturbed.
+  `--detach` starts the unit at once and never stops it. The unit,
+  `linlog-baseline`, runs the script with `--force` (24 GiB and no swap,
+  `OOMPolicy=continue` so the kernel kills a runaway child alone, no core
+  dumps, its own target directory `target/baseline`), because a session
+  that dies takes its terminal's processes with it (a reviewer's scratch
+  program once ran the machine out of memory and systemd failed the
+  whole terminal scope, the baseline with it). Run by hand, the script
+  refuses to start on battery, when the load average is above 1 or when
+  a scheduled job other than the trivial ones is due within the estimate
+  (`nix-gc` at midnight, `nix-optimise` before four, `obsidian-snapshot`
+  at 23:00, backups), unless given `--force`; `--arm` names the jobs due
+  in the slot instead. The journal gets every stream's last progress
+  line (with the harness's estimate of the time left), the load and the
+  other processes using a CPU every ten minutes. Each process is capped
+  at 12 GiB of address space (`prlimit`): the additive path's memo is
+  unbounded (depth 18 of the `additive` family needs about 130 GB) and
+  parsing the library's largest files takes over 15 GB, and two such
+  processes at once stay within the unit's limit; the classical LLTP
+  pass runs `--reverse` so that the two LLTP passes do not parse those
+  files at the same time.
+- **Every baseline keeps a directory of its own**, `results/DAY/`, DAY
+  the day it started, so that two baselines (before and after a
+  performance pass) sit side by side. A run without `--fresh` resumes
+  the latest directory that has no `RESULTS.md` (a baseline not
+  finished): every `run` appends with `--resume` and skips the
+  configurations its CSV file has, so the script run again on another
+  night finishes a baseline the slot's end stopped. `--fresh` deletes
+  the day's directory only. Every start appends a line to `starts.txt`:
+  the time, the commit the binary is built from (`@-`, and the files `@`
+  changes outside the results, read with `--ignore-working-copy` since a
+  snapshot from the unit would sign a commit), the load and whether the
+  start was forced. The finished run writes `RESULTS.md` into the
+  directory, its header listing those lines, and copies it to
+  `bench/RESULTS.md`, which is always the latest baseline's. Two
+  baselines compare only under the same script, slot and settings, and a
+  resumed one only if every start names the same commit.
 - **The machine** (an Intel Core Ultra X9 388H laptop, host `wired`, its
   configuration in the author's system flake): 16 physical cores and no
   SMT, of three kinds: CPUs 0–3 performance cores (5.1 GHz, own L2),

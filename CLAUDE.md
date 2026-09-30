@@ -48,9 +48,11 @@ Workspace crates:
   in every mode, engine and thread count asked for, one child process per
   run (the hidden `one` command) with a time limit and a kill after it,
   one CSV row per run; `summary` prints Markdown tables of CSV files.
-  `bench/baseline.sh` generates `bench/results/*.csv` and
-  `bench/RESULTS.md`, the baseline, which has not been taken yet (it
-  needs the machine to itself for a night). Its invariants live in
+  `bench/baseline.sh` takes a baseline into `bench/results/DAY/` (DAY
+  the day it started: CSV files, `starts.txt` with the commit measured,
+  `RESULTS.md`) and copies its tables to `bench/RESULTS.md`, the latest
+  baseline's; it needs the machine to itself for a night, 20:00 to
+  07:00, and has not been taken yet. Its invariants live in
   `.claude/rules/bench.md`, which loads when a file under `bench/` is
   read.
 
@@ -149,7 +151,7 @@ cargo deny check                                           # licenses, bans, sou
 cargo run -p linlog-cli -- <args>
 cargo run --release -p linlog-bench -- run --family partition-no=3,4 --engines focus,net
 nix build .#lltp -o bench/lltp   # the LLTP library (1.1 GB, GPL-3.0, fetched at a pinned commit)
-bench/baseline.sh --detach --fresh   # the whole baseline as a systemd unit, about 8.5 h on an idle machine: bench/RESULTS.md
+bench/baseline.sh --arm --fresh   # the whole baseline, unattended from 20:00 to 07:00 (about 8.5 h): bench/results/DAY/, bench/RESULTS.md
 
 nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), export (the LaTeX and Typst output compiles, the SVG renders), rocq (NanoYalla checks the certificates), bench (the harness on the smallest problems), deadnix, actionlint, treefmt, claude-hooks
 nix build .#checks.x86_64-linux.rocq   # the certificates alone: Rocq is a 1.2 GB closure from the binary cache
