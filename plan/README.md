@@ -30,7 +30,8 @@ amended (see "Review protocol"). `notes/` holds research the prompts rely on.
 | 12 | Rocq certificates | `12-certificates.md` | Fable 5.1 | high | 10 |
 | 13 | Parallel search | `13-parallel.md` | Fable 5.1 | xhigh | 9 |
 | 14 | Benchmarks, LLTP input, hard families | `14-benchmarks.md` | Opus 5.5 | xhigh | 13 |
-| 14b | Performance pass on the focused engine, driven by 14's numbers | written after 14's review | Fable 5.1 | xhigh | 14 |
+| 14b | Performance pass on the focused engine, driven by 14's numbers, measured by counters on a shared machine | `14b-performance.md` | Fable 5.1 | xhigh | 14 |
+| 14c | The baseline itself (`bench/baseline.sh`), when the machine is free for a night | step 14's session, resumed | Opus 5.5 | xhigh | 14b |
 | 15 | Later: MELL nets with boxes, essential nets, inverse method, Petri nets, Lambek, MALL nets, the web front end | `15-later.md` | – | – | 14b |
 
 Steps 5–6 and 7 are independent of each other; 10, 11 and 13 are
@@ -102,6 +103,43 @@ also asks for tests only where a behaviour needs pinning, and for sub-agents
 (the repository's `crate-source-explorer`, a fresh-context reviewer for
 soundness-critical code), which the guidance says Fable 5.1 uses well.
 
+Re-evaluated on 2026-09-30 after steps 9 to 14, against the same docs
+(lineup, prices and default efforts unchanged: Fable 5.1 $10/$50 default
+`high`, Opus 5.5 $4/$20 default `medium`, Sonnet 5.5 $2/$10 default
+`high`, Haiku 4.5; the docs still say to start with Opus 5.5 and move to
+Fable 5.1 when `xhigh` or `max` falls short on demanding reasoning). What
+the six steps showed: Fable 5.1 delivered 9 and 13 at `xhigh` and 12 at
+`high`, and in each the defects that mattered were found by its
+fresh-context reviewer's differential fuzzing, not missed by reasoning
+that more effort would have supplied, so `max` stays unused; Opus 5.5 at
+`xhigh` delivered 10, 11 and 14 with clean first passes on emitters,
+layout and the harness, and in 14 found the engine's missing split poll
+and fourteen wrong LLTP headers on its own. The one failure, the machine
+running out of memory under a reviewer's scratch program, was a matter of
+process, now in `conduct.md`, not of model. The choices from here:
+
+- **14b stays Fable 5.1 at `xhigh`**: four soundness-critical changes to
+  the focused engine (the split search, two canonical choices, the atom
+  bias), each needing an argument and a differential review.
+- **14c is step 14's own session resumed** (Opus 5.5): it holds the
+  harness's context, and the work is a night's run and its tables. A
+  fresh session for it would be Opus 5.5 at `high`.
+- **15a, 15b, 15b', 15c and 15e stay Fable 5.1 at `xhigh`** (new engines,
+  criteria and prunes), and **15i stays Fable 5.1 at `high`** (a second
+  kernel is research-heavy, as step 12 was).
+- **15h moves from Fable 5.1 at `high` to Opus 5.5 at `xhigh`**: the
+  options types of D15 are the kind of breadth Opus showed in 10 and 11,
+  on the code it wrote, at well under half the price.
+- **15d moves from Opus 5.5 at `high` to `xhigh`**, as every Opus step did
+  after step 8, and waits for 14b, which changes what the Petri nets
+  need.
+- **The web front end (15g)** gets a plan of its own from this session;
+  its bindings and interface are Opus 5.5 at `xhigh`.
+- **The small follow-ups** (15g', 15g'', 15j, 15k, 15a'') are not
+  sessions of their own: each is folded into the step that touches its
+  code. Run alone, the purely mechanical ones (a flag, a label table, ids
+  per formula) are Sonnet 5.5 at `high`.
+
 ### The commands (nushell)
 
 Run from the repository root, one at a time, in order. `open --raw` reads a
@@ -123,6 +161,8 @@ claude --model claude-opus-5-5 --effort xhigh --name step-11 ((open --raw plan/1
 claude --model claude-fable-5-1 --effort high --name step-12 ((open --raw plan/12-certificates.md) + "\n" + (open --raw plan/conduct.md))
 claude --model claude-fable-5-1 --effort xhigh --name step-13 ((open --raw plan/13-parallel.md) + "\n" + (open --raw plan/conduct.md))
 claude --model claude-opus-5-5 --effort xhigh --name step-14 ((open --raw plan/14-benchmarks.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-14b ((open --raw plan/14b-performance.md) + "\n" + (open --raw plan/conduct.md))
+claude --resume 980cfbe1-61d9-4105-ace1-ef0bbf26ba8c  # 14c: step 14's own session, to take the baseline on a free night
 ```
 
 The aliases `fable` and `opus` also work for `--model`. The flags are
@@ -637,3 +677,44 @@ into an option or names it as a follow-up.
   Prompts 14 and 15 amended: 14 gets the baseline-row rule, the pool's
   per-call cost, the generators to reuse from the ignored `speedups`
   tests and the portfolio's status; 15j collects the parallel follow-ups.
+- 2026-09-30: step 14 reviewed on its intermediate state and accepted as
+  far as it goes. Ten commits, "Read LLTP problems" to "Report the
+  machine's noise and how the baseline guards against it"; all checks
+  pass including `nix flake check` with the new `bench` check. Delivered
+  and sound: the LLTP reader (`linlog::lltp`), seventeen families with
+  verdicts by construction (`linlog::families`, the engines' tests now
+  use them and the ignored timing tests are retired), the harness
+  (`linlog-bench`: a child process per run, CSV with counters, CPU time
+  and run-queue wait, Markdown summaries), a resumable, detached,
+  memory-capped baseline script, and one engine fix outside the brief
+  that was right to make (the focused engine polled its stop condition
+  only at stable sequents, so a 2 s limit ran past five minutes on a
+  Petri net; it polls every 4 096 splits now). Not delivered: the
+  baseline. A first run died at 02:03 when a reviewer's scratch checker
+  took 62 GB and the kernel's OOM killer took the terminal with it; a
+  second shared the machine and was stopped; the overnight run was
+  cancelled because the machine cannot be used exclusively any more. The
+  report's numbers are therefore preliminary upper bounds. What they
+  show, machine-independently: the focused engine enumerates splits (the
+  unsolvable 3-Partition at bins of four 52.6 s, Mix over ten pairs
+  217 s, QBF over twenty variables about 100 s, sixteen counter tokens
+  undecided, 651 Petri nets beyond the 63-member limit, 895 at the
+  recursion limit); the net engine loses by orders of magnitude on equal
+  literals within one tree and wins by as much on wide sequents, and no
+  multiplicity threshold separates the two (the step's reviewer produced
+  the counterexample that kept `NET_MULTIPLICITY` at two); intuitionistic
+  mode beats the classical search 2× to 27× on Horn-like families; 18 %
+  of the ILLTP problems reached are decided in 5 s; fourteen LLTP headers
+  contradict their problems. The planning session fixed four references
+  to a results file that does not exist yet and one plan reference in a
+  script comment (one commit). Decisions: the baseline becomes 14c, taken
+  once after 14b by resuming step 14's session when a night is free, so
+  the machine is needed once and not twice; 14b is written
+  (`14b-performance.md`) to measure by the engines' deterministic
+  counters and pinned CPU time on a shared machine, with its own
+  before-and-after target set; `conduct.md` gains the rules for a shared
+  machine (capped scopes for scratch programs, nothing on every core
+  unasked); the models and efforts were re-evaluated ("Why these models
+  and efforts": 15h to Opus 5.5 at `xhigh`, 15d to `xhigh`, the rest
+  unchanged); 15 gains 15k for the benchmark follow-ups and the routing
+  feature for the net engine in 15b'.

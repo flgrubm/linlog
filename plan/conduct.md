@@ -43,6 +43,16 @@ report work you can point to evidence for, say explicitly what is not yet
 verified, and if a check fails say so with its output. Prefer targeted edits
 to whole-file rewrites where the result is the same.
 
+The machine is shared with its owner's other work. Every scratch program,
+yours or a sub-agent's, runs in a memory-capped scope of its own
+(`systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 …`) with
+its enumerations bounded by size, because an unbounded checker once took
+62 GB and the kernel killed the whole terminal with the session in it;
+say so in every sub-agent's brief. Anything that runs for more than a few
+minutes runs detached from the terminal (a systemd user unit) so that it
+survives the session. Do not use every core or run `bench/baseline.sh`
+unless the step says the machine is free.
+
 Delegate independent work to sub-agents and keep working while they run:
 the `crate-source-explorer` agent for any question about a dependency's API
 at the pinned version, and a fresh-context reviewer for a soundness-critical

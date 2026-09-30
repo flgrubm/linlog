@@ -29,7 +29,8 @@ sketches the engine as the dominator condition added to the net engine's
 
 ## 15a'. Focused-engine follow-ups from the exponentials
 
-For the performance pass (14b), with step 14's numbers: a canonical choice
+Taken up by step 14b (`plan/14b-performance.md`); what its report leaves
+open stays here. For the performance pass (14b), with step 14's numbers: a canonical choice
 among identical members of a stable sequent (hypotheses that are the same
 formula are distinct occurrences today, so the memo sees `C(n, k)` sequents
 where there is one up to renaming), a nested forced rule for a `⊗` factor
@@ -61,7 +62,18 @@ balance over the `⊗`-skeleton components of a partial structure (the net
 engine's analogue of the focused engine's split counts), and the sound
 variant of symmetry breaking for equal compound conclusions (keys under
 roots no symmetry moves; the spec's first-literal key is unsound across
-groups, as step 6's report shows). Fable 5.1, xhigh.
+groups, as step 6's report shows). Step 14's numbers
+(`plan/reports/14-benchmarks.md`, "Focus against net") give the targets:
+the Partition table (4.5 s and 3.7 s against 6 ms on the focused engine)
+and the MLL 3-Partition at bins of five (57 s against 17 µs). They also
+show that literal multiplicity is the wrong routing feature: the net
+engine wins by four orders of magnitude on literals repeated three or
+four times across conclusions (`wide-m3`, `wide-m4`) and loses as badly
+on equal literals inside one pure `⊗` or `⅋` tree, and the reviewer's
+counterexample at multiplicity four kept `NET_MULTIPLICITY` at two. So
+the dispatch should route on "no two equal literals under one pure tree",
+or the leaf symmetry break should remove that weakness and the threshold
+rise; decide by the harness. Fable 5.1, xhigh.
 
 ## 15c. The focused inverse method
 
@@ -77,7 +89,10 @@ xhigh.
 Detect the fragment, build the net, and either call an external reachability
 tool (KReach) through the CLI or implement coverability for the affine case.
 Only worth it with the ILLTP Petri-net problems from step 14 as the
-benchmark. Opus 5.5, high.
+benchmark: of the 2 664 Petri nets its partial pass reached, 184 were
+decided in 5 s, 895 stopped at the recursion limit and 651 at the
+63-member split limit, both of which step 14b addresses, so assess after
+14b what is left for a reachability route. Opus 5.5, xhigh.
 
 ## 15e. Cyclic MLL and the Lambek calculus
 
@@ -193,7 +208,7 @@ JSON in its settings and sends it back with each request; an editor
 plugin or a notebook reuses the same JSON. The step that does this
 records in `.claude/rules/core.md` that a new export option is a field,
 never a constant, and its report says how each front end sets each
-option. Fable 5.1, high.
+option. Opus 5.5, xhigh (it wrote these exports in steps 10 and 11).
 
 ## 15i. Second certificate kernels
 
@@ -227,6 +242,24 @@ nightly and a rebuilt standard library; the code has no `unsafe` and
 every shared value is behind a lock or an atomic, so it stays a wish.
 The parallel tests take about a minute in debug builds; trim the samples
 if the suite's time matters more than the coverage.
+
+## 15k. Benchmark follow-ups
+
+Left open by step 14 (`plan/reports/14-benchmarks.md`). The baseline is
+step 14c in the plan's table: `bench/baseline.sh --detach --fresh` on a
+free night, after 14b, by resuming step 14's session, which then commits
+`bench/results/*.csv` and `bench/RESULTS.md` and replaces the report's
+preliminary numbers; the script's own header and
+`.claude/rules/bench.md` say what the administrator does that night.
+Fourteen LLTP headers contradict their problems (KLE065, SYJ212+1.001,
+SYN001, KLE013, SYN041, SYN915 in the translations the report lists) and
+SYJ206+1.018 is malformed: worth reporting upstream with linlog's checked
+proofs attached. The CLI does not read LLTP files, a one-flag addition
+over `linlog::lltp::read`. The net engine's exact test could run less
+often on large structures (a period of 8 or 16 was 1.3× faster at 14 000
+occurrences). Matsuoka's 3D-Matching encoding is not among the families.
+The largest SYJ files (up to 103 MB) take longer to parse than a run
+gets.
 
 ## 15g'. Interactive follow-ups
 
