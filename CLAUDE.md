@@ -48,8 +48,9 @@ Workspace crates:
   in every mode, engine and thread count asked for, one child process per
   run (the hidden `one` command) with a time limit and a kill after it,
   one CSV row per run; `summary` prints Markdown tables of CSV files.
-  `bench/baseline.sh` regenerates `bench/results/*.csv` and
-  `bench/RESULTS.md`, the tracked baseline. Its invariants live in
+  `bench/baseline.sh` generates `bench/results/*.csv` and
+  `bench/RESULTS.md`, the baseline, which has not been taken yet (it
+  needs the machine to itself for a night). Its invariants live in
   `.claude/rules/bench.md`, which loads when a file under `bench/` is
   read.
 

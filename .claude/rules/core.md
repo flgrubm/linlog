@@ -420,8 +420,9 @@ the net engine's, and the others stay zero.
   interchangeable partners, and the linking search pays a permutation's
   worth of nodes for every wrong choice among them, which the focused
   engine's counts refute at once), else to `focus`. Multiplicity is a
-  proxy, measured by the benchmarks (`bench/RESULTS.md`, the `engines`
-  rows): the net engine loses on Horn encodings (literals six times and
+  proxy, measured by the benchmarks (the `engines` runs of
+  `bench/baseline.sh`; until a baseline is committed, the numbers are in
+  `plan/reports/14-benchmarks.md`): the net engine loses on Horn encodings (literals six times and
   more, by one to four orders of magnitude) and on equal literals inside
   one pure `⊗` or `⅋` tree (a sequent of five blocks `x ⊗ x ⊗ x ⊗ x`
   against `~x ⅋ ~x ⅋ ~x ⅋ ~x` with one defect: over 10 s against 20 ms at
@@ -670,8 +671,8 @@ relies on:
   positive, so clause bodies whose atoms also appear as hypotheses are
   usually negative and their `⊗` splits are enumerated instead of forced;
   refuting `families::three_partition` with bins of four takes 51 s in
-  release mode for that reason (`3-partition-no/4` in
-  `bench/RESULTS.md`). A bias override is performance-pass material.
+  release mode for that reason (the `3-partition-no` family at size 4).
+  A bias override is performance-pass material.
 - **The memo can change decisiveness within the bound, never a verdict.**
   An `Exhausted` entry is a fact about the sequent alone, the loop check
   about the branch, so a run with the memo may answer `Unknown` where a

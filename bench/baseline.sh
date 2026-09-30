@@ -180,7 +180,8 @@ read -r throttled_before throttled_ms_before < <(throttling)
 # In its own slice, the run keeps the user's other slices (the desktop,
 # the editor, the sync clients) off the performance cores its sequential
 # streams are pinned to, and lets them back when it ends; the system's
-# services and kernel threads it cannot move (see the step 14 report).
+# services and kernel threads it cannot move (.claude/rules/bench.md says
+# how an administrator can).
 if grep -q linlog.slice /proc/self/cgroup; then
   for slice in "${slices[@]}"; do
     systemctl --user set-property --runtime "$slice" AllowedCPUs=4-15

@@ -543,8 +543,8 @@ Built:
 - Benchmarks: a reader for the problems of the LLTP library, generated
   families with known verdicts (the hard families of the literature and
   the cases where one engine is known to be slow), and `linlog-bench`,
-  which runs them with a time limit per run, writes CSV and summarises it;
-  `bench/RESULTS.md` is the current baseline.
+  which runs them with a time limit per run, writes CSV and summarises it,
+  with a script that takes a whole baseline on an idle machine.
 
 Planned, in roughly this order:
 
