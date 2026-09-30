@@ -2,16 +2,157 @@
 
 You are working in the linlog repository. CLAUDE.md applies throughout: jj
 only (never git), thematic commits as soon as a unit is done, doc comments on
-every item, the verification table, no pushing. Read before you start:
+every item, the verification table, no pushing.
 
-- `plan/README.md` and every report in `plan/reports/`.
-- `proof-search-specifications.md` § "Cross-cutting engineering notes":
-  "Testing strategy" (known-hard families) and "Benchmark harness", and the
-  References for LLTP/ILLTP (github.com/meta-logic/lltp) and the hard-family
-  papers.
-- `.claude/rules/ci.md` if CI changes.
+This step is being run a second time, to be completed. Its first session
+built and committed everything the step asked for except the one thing
+the step is for: the baseline was never taken. You finish it. Read before
+you start:
 
-## Goal
+- `plan/reports/14-benchmarks.md`, the first session's report, which is
+  yours to finish: "Tonight: what the administrator does", "The machine
+  and its noise", "How it runs", "Preliminary numbers", "The runs, and why
+  the baseline is pending", "Open questions and follow-ups".
+- `.claude/rules/bench.md` (the harness's invariants and the machine),
+  `bench/baseline.sh` from its first line to its last, `bench/src/**`,
+  `modules/bench.nix`.
+- `plan/README.md`: the step table, D15, and the Status entries of
+  2026-09-30.
+- "What the step first asked for" at the end of this prompt, for what the
+  numbers are meant to answer.
+
+## Where the step stands
+
+Built, reviewed and committed, all checks passing; do not rebuild any of
+it: the LLTP reader (`linlog::lltp`), seventeen problem families with
+verdicts known by construction (`linlog::families`), the harness
+(`linlog-bench`: a child process per run, one CSV row per run with the
+verdict, the engine's counters, wall time, CPU time and run-queue wait;
+Markdown summaries), the flake's `bench` check and `lltp` package, the
+documentation, and one engine fix (the focused engine polls its stop
+condition every 4 096 splits).
+
+Not done: the baseline. A first run died after twenty minutes when a
+reviewer's scratch program took 62 GB and the kernel's OOM killer took
+the terminal with it. A second shared the machine with other work and was
+stopped; its rows are in `bench/preliminary/` and are what the report
+calls preliminary. A third, planned for a night, was cancelled. The first
+session answered those failures in the harness: the baseline runs as a
+detached systemd user unit with a memory limit and no swap, every child
+is capped, the unit keeps the author's other slices off the performance
+cores and gives them back however it ends, holds a sleep and lid
+inhibitor, refuses to start on battery, on a busy machine or with a
+scheduled job due, records CPU time, run-queue wait, throttling and the
+power settings, and resumes an interrupted run. Those guards were tested
+for a minute each, never through a night.
+
+## The slot
+
+The machine is the benchmark's from 20:00 to 07:00, as the author has
+said, tonight for this step and on a later night for step 16, which takes
+the baseline again after the performance pass (step 15). Outside that
+slot the machine is shared and the rules in "How to work on this step"
+below apply: capped scopes for scratch programs, nothing on every core,
+no baseline.
+
+## What remains
+
+1. **Check the harness by day**, on the shared machine, in small runs
+   only. Read the script against the report and the rules file, and run
+   the detached path for a minute as the first session did (the shield,
+   the inhibitor, the restore on stop). Inspect the machine again, as the
+   author asked the first session to: the CPU topology, the governor,
+   turbo and the thermal state, the services running, the sync clients,
+   the suspend settings, and every timer, system and user, that is due
+   between 20:00 and 07:00 (`systemctl list-timers --all`, with and
+   without `--user`). Compare with "The machine and its noise" and correct
+   the script or the report where the machine differs from what they say.
+   Fix what you find; do not redesign what works.
+2. **Two baselines must be able to sit side by side.** Step 16 takes the
+   baseline again, so a baseline goes into a directory of its own named by
+   the day it started (`bench/results/2026-09-30/*.csv` and its
+   `RESULTS.md`), `--fresh` deletes only the directory it is about to
+   write, a resumed run finds its own directory, and `bench/RESULTS.md` is
+   the latest baseline's tables. The header of a baseline's `RESULTS.md`
+   also names the commit the binary was built from, since comparing two
+   baselines means comparing two commits. Make the smallest change to the
+   script that gives this, and bring `.claude/rules/bench.md`, README and
+   CLAUDE.md in line.
+3. **The run starts and stops by itself.** Nobody is at the machine at
+   20:00. The run starts unattended at 20:00 (a transient systemd user
+   timer, or an option of the script that arms one), or as soon after as
+   the machine is idle by the script's own test, and no later than the
+   last moment from which its estimated duration still ends before 07:00;
+   at that moment it starts whatever the load, and records that it did,
+   since a night not used is worse than rows marked as disturbed. The
+   unit stops by 07:00 whatever its state, gives the cores back, releases
+   the inhibitor and leaves a state that the script, run again without
+   `--fresh`, finishes on another night. What needs no root the unit does
+   and undoes itself (the user timers in the slot, the user slices). If
+   the estimate does not fit the slot with a margin, say which stage
+   would be cut and order the stages so that the sequential ones, which
+   step 15 needs, come first.
+4. **What only the author can do**, in one block to paste before leaving
+   and one to paste in the morning: the system timers to stop and start
+   again (`nix-gc`, `nix-optimise` and whatever item 1 finds), the
+   optional restriction of the system's own services to the efficiency
+   cores, the sync clients, and mains power with the lid open. Give the
+   blocks in your last message before the night, exactly as they are to
+   be typed.
+5. **Do not wait through the night.** Once the start is armed, confirm it
+   (`systemctl --user list-timers`), give the author the blocks of item 4
+   and the time the run should end, tell them to come back after 07:00
+   and say "continue", and end your turn. Do not poll overnight: the unit
+   writes its progress to the journal, and every wake-up of this session
+   costs tokens and adds nothing.
+6. **In the morning.** Read the journal of the run: how long it took,
+   the load it started with, the jobs that fired, the throttling, how many
+   rows waited for a CPU. If the run did not finish, say what is missing
+   and leave the rest for a night; do not run it by day. Commit the
+   results directory and `bench/RESULTS.md` as "Record the baseline".
+   Remove `bench/preliminary/`, which the baseline supersedes. In the
+   report, replace the preliminary numbers by the night's, turn "Tonight"
+   and "why the baseline is pending" into what happened, and bring "What
+   the numbers say about each engine" and "what step 15 must beat" up to
+   the measured rows: the parallel columns against step 13's speedups,
+   the portfolio, the raised copy bound and recursion limit on LLTP,
+   classical against intuitionistic. Then correct every place that says
+   no baseline exists (`CLAUDE.md`, `README.md`, `.claude/rules/core.md`,
+   `.claude/rules/bench.md`; search for "not been taken" and
+   "preliminary").
+
+## Constraints
+
+- The engines are not touched: the baseline measures the commit that is
+  checked out at 20:00, and step 15 changes the engines afterwards.
+- No dependency is added; the script stays a script.
+- Report the numbers faithfully, including the rows marked as disturbed
+  and the families where every engine times out.
+
+## Verification
+
+By day: `cargo clippy --workspace --all-targets -- --deny warnings`,
+`cargo test --workspace` and `nix flake check` (`jj st` first) after the
+script and documentation changes, and the one-minute detached run. In the
+morning: `nix flake check` again after the results and the report are in.
+
+## Deliverables
+
+- Thematic jj commits ("Keep every baseline in a directory of its own",
+  "Start and stop the baseline unattended", "Record the baseline",
+  "Report the baseline", …).
+- `plan/reports/14-benchmarks.md`, finished: the baseline's tables and
+  what they say, how long the run took and on what hardware and settings,
+  what disturbed it, what step 15 must beat, and what step 16 must
+  repeat exactly for its numbers to be comparable.
+
+## What the step first asked for
+
+Kept for what the measurements are meant to answer. Everything below is
+built except the baseline run; "the machine is yours" in its verification
+paragraph is now "The slot" above.
+
+### Goal
 
 A benchmark harness that reads the LLTP/ILLTP problem format and linlog's
 own, runs each problem with a timeout on a fresh engine, records the
@@ -20,7 +161,7 @@ solved-within-timeout counts per family; the hard families from the spec
 generated on demand; and a place where the numbers are tracked so a later
 change shows its effect.
 
-## What step 13 left you
+### What step 13 left you
 
 `plan/reports/13-parallel.md`. The search runs on a pool when
 `Options::jobs` is above one (`--jobs N`, `-j`, default every core in the
@@ -52,12 +193,12 @@ here should reproduce, and the ignored `speedups` tests in
 the generators for those families (`three_partition`, `counter`,
 `partition`, test-private today): move them into the family generators
 of item 2 rather than writing them again, and retire the ignored tests
-once the harness covers them. For the performance pass (14b), the
+once the harness covers them. For the performance pass (step 15), the
 report names the duplicated exploration of and-parallel `&` premises and
 of copies run as alternatives as the thing to measure first on
 memo-bound families.
 
-## What to build
+### What to build
 
 1. **LLTP reader**: the `fof(...)` syntax used by LLTP/ILLTP (read the
    repository's format description and a few files; WebFetch is allowed),
@@ -131,14 +272,15 @@ memo-bound families.
    (commands, the bench crate), `.claude/rules/core.md` if formats were
    added.
 
-## Constraints
+### Constraints
 
 - No `unsafe`; dependencies scoped to the bench crate where only it needs
   them.
 - Deterministic problem generation (seeded).
 - Report numbers faithfully, including families where the engines time out.
 
-## Verification
+
+### Verification, as first written
 
 `cargo clippy --workspace --all-targets -- --deny warnings`,
 `cargo test --workspace`, `cargo deny check` if a dependency changed,
@@ -158,11 +300,3 @@ in the report how long the run took and on what hardware. A run that
 would exceed that budget is trimmed by dropping the largest size, never
 by shortening the timeouts below what the families need to show their
 scaling.
-
-## Deliverables
-
-- Thematic jj commits ("Read LLTP problems", "Generate the hard families",
-  "Add the benchmark harness", "Record baseline results", …).
-- `plan/reports/14-benchmarks.md`: how to run, the baseline table, what the
-  numbers say about each engine, decisions, deviations, open questions, and
-  what step 15's candidates would have to beat.

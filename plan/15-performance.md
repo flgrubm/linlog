@@ -1,4 +1,4 @@
-# Step 14b: performance pass on the focused engine
+# Step 15: performance pass on the focused engine
 
 You are working in the linlog repository. CLAUDE.md applies throughout: jj
 only (never git), thematic commits as soon as a unit is done, doc comments on
@@ -6,7 +6,7 @@ every item, the verification table, no pushing. Read before you start:
 
 - `plan/README.md` (D7, D8, D9, D10) and every report in `plan/reports/`,
   above all `14-benchmarks.md` ("Preliminary numbers", "What the numbers
-  say about each engine", "Open questions and follow-ups; what step 14b
+  say about each engine", "Open questions and follow-ups; what step 15
   must beat"), `03-focused-engine.md` ("Performance observations", "Open
   questions and follow-ups"), `07-exponentials.md` ("Timings", "Open
   questions and follow-ups"), `08-intuitionistic.md` and `13-parallel.md`
@@ -14,7 +14,8 @@ every item, the verification table, no pushing. Read before you start:
 - `proof-search-specifications.md`: the MLL, MALL and MELL sections on
   splitting, the count invariants, focusing and the atom bias, and
   "Cross-cutting engineering notes".
-- `plan/15-later.md` § 15a' (the candidates this step takes up).
+- `plan/later.md` § "Follow-ups: the focused engine" (the candidates this
+  step takes up).
 - `.claude/rules/core.md` (the focused engine's invariants: every prune
   there has an argument you must not break) and `.claude/rules/bench.md`.
 - `core/src/search/focus/**`, `core/src/search/additive.rs`,
@@ -29,18 +30,15 @@ files, one child process per run, one CSV row per run with the verdict,
 wall time, CPU time, run-queue wait and the engine's counters;
 `linlog-bench summary` turns CSV files into tables, one column per
 configuration, the CSV file's name being part of the configuration. The
-full baseline (`bench/baseline.sh`) was never taken: it needs the machine
-to itself for a night, and the machine is shared now, so step 14 is
-incomplete in that one respect and this step must not lean on a baseline.
-The numbers in the report are from a morning run on a shared machine and
-are upper bounds; their rows are kept in `bench/preliminary/*.csv`
-(summary in its README): every family on one thread, focus against net,
-the intuitionistic mode, and the LLTP library up to 4 022 of 4 495
-problems intuitionistically and 3 792 of 4 512 classically. Their times
-are noisy, but their verdicts and counters are exact, which makes them
-the record of the engine before your changes.
+baseline was taken in step 14, on a night the machine was the
+benchmark's: its rows are in `bench/results/<day>/` and its tables in
+`bench/RESULTS.md`, whose header names the commit it measured. That is
+the record of the engines before your changes, and step 16 takes the
+baseline again after them, on another such night. By day the machine is
+shared, and you work by day.
 
-So this step measures differently, and the rule binds everything below:
+So this step measures differently from a baseline, and the rule binds
+everything below:
 
 - **The engine's counters are the primary evidence.** On one thread the
   search is deterministic, so `nodes` (stable sequents visited), `splits`,
@@ -55,18 +53,19 @@ So this step measures differently, and the rule binds everything below:
   from.
 - **The machine is shared.** At most two cores busy with measurements at
   a time, no run over five minutes (`--timeout 300`), nothing on every
-  core, no `bench/baseline.sh`. Every measurement and every scratch
+  core, no `bench/baseline.sh`: the whole-library and all-core numbers
+  are step 16's. Every measurement and every scratch
   program, yours or a sub-agent's, runs in a memory-capped scope of its
   own (`systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0
   taskset -c 2-3 …`): an unbounded scratch checker took 62 GB during step
   14 and the kernel killed the whole terminal with the session in it.
   Tell every sub-agent this in its brief, with the reason.
 - **Before and after are measured by you, in this session**, on the same
-  set with the same command: do not compare against the preliminary
-  times. The preliminary counters are another matter: a sequential row of
-  yours at the commit you start from must reproduce the `nodes` and
-  `splits` of the same row in `bench/preliminary/`, which is a check on
-  your set-up worth making once.
+  set with the same command, not read off the baseline: its times were
+  taken under other conditions. Its counters are another matter: a
+  sequential row of yours at the commit you start from must reproduce the
+  `nodes` and `splits` of the same row in the baseline, which is a check
+  on your set-up worth making once.
 
 ## Goal
 
@@ -97,23 +96,10 @@ sound in `.claude/rules/core.md`.
    and at the 63-member limit (pick them by name from a first pass and
    list the names in the script, so the sample is the same before and
    after). Sizes that time out before stay in the set: deciding them is
-   the point. Take the LLTP names from
-   `bench/preliminary/lltp-intuitionistic.csv`, whose `reason` column says
-   how each problem ended. Commit the script, the before file and, at the
-   end, the after file and a short table (`bench/TARGETS.md`).
-1a. **The whole ILL library, before and after**, since no baseline will
-   say what the pass did to it: one sequential pass over `bench/lltp/ILL`
-   in intuitionistic mode at 5 s per problem, on one pinned performance
-   core, as a detached, memory-capped systemd user unit (the harness
-   resumes an interrupted pass with `--append --resume`), about two hours;
-   once at the commit you start from and once at the end, into the same
-   directory as the target files. The first pass also finishes what the
-   preliminary one never reached (its last 473 problems). Report, per
-   collection, the problems decided before and after and the reasons the
-   rest ended with; the solved count within a time limit depends on the
-   machine a little, which the `wait_ms` column and the counters of the
-   problems that moved let you qualify. Start the first pass at once and
-   work on item 2 while it runs.
+   the point. Take the LLTP names from the baseline's
+   `lltp-intuitionistic.csv`, whose `reason` column says how each problem
+   ended. Commit the script, the before file and, at the end, the after
+   file and a short table (`bench/TARGETS.md`).
 2. **Splits without enumeration.** Today `split` moves members one at a
    time through all `2^n` submasks in Gray-code order
    (`enumerate_split`, `submasks`) and tests the counts after every flip;
@@ -229,9 +215,9 @@ helped and the candidates that did not pay.
   members canonically", "Key memo failures up to renaming", "Pick the
   atom bias from the sequent's shape", "Cap the additive memo", …), each
   building and passing its tests alone.
-- `plan/reports/14b-performance.md`: the before and after table
+- `plan/reports/15-performance.md`: the before and after table
   (counters first, CPU time second), what each change contributed, the
   soundness argument of each in a paragraph with a pointer to the rules
-  file, what did not pay, which targets remain undecided and why, what a
-  full baseline should look at once the machine is free, and what is left
-  for the net engine (15b') and the inverse method (15c).
+  file, what did not pay, which targets remain undecided and why, which rows
+  of the baseline step 16 should look at first, and what is left for the
+  net engine (step 18) and the inverse method (step 21).

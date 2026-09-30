@@ -25,7 +25,7 @@ sequent alone, with no bar. `Rule::classical()` maps a two-sided name to
 the one-sided rule and `Rule: FromStr` reads a name back, in case the
 label table wants either. The `interact` command's `show` prints the text
 tree; giving `show` and `proof` a format argument is welcome if it is one
-arm each, not a second output layer, since the web client (step 15g) is
+arm each, not a second output layer, since the web client (step 26) is
 the front end for partial derivations.
 
 ## Goal

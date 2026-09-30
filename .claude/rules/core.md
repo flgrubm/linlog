@@ -650,7 +650,7 @@ relies on:
   per flip, and both sides must pass the counts before either premise is
   searched. More than 63 members (copies counted) is
   `Reason::ContextTooWide` for the whole search, never a silent failure;
-  the spec's lazy contexts (step 15) or a branch-and-bound over the
+  the spec's lazy contexts or a branch-and-bound over the
   members are the ways past it.
 - **Mix** is tried last on a stable sequent, after the copies, with the
   first member fixed on the left so each partition comes up once, the

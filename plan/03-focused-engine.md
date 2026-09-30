@@ -42,7 +42,7 @@ failed branches. `Top(o)` carries no context. `proof.check(mode)` in a
 like. Step 1 did not build the interval
 counts or the count equations: they are this step's. `submasks` takes at
 most 63 members: a `⊗` split over a larger context must not panic; decide
-what happens (the spec's lazy contexts are step 15 material, so an
+what happens (the spec's lazy contexts are later work (`plan/later.md`), so an
 `Unknown` outcome with a reason is acceptable, as is a count-pruned
 enumeration that does not need a `u64` mask). Atom-only sequents
 (`Fragment::EMPTY`) and every fragment up to MALL dispatch here.
