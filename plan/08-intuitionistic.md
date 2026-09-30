@@ -8,7 +8,7 @@ every item, the verification table, no pushing. Read before you start:
   `plan/reports/`.
 - `proof-search-specifications.md`: "Intuitionistic fragments" in full
   (verdict, complexity, the two-sided focused engine specification,
-  pitfalls, data layout; the IMLL-Net essential-net engine is later work (step 20), but
+  pitfalls, data layout; the IMLL-Net essential-net engine is later work (`plan/later.md`), but
   read it so nothing you build precludes it), "MLL variants" § "IMLL by
   embedding", "Other fragments" § "Additive-only LL", "Common
   infrastructure" (counts on the translation `⊢ Γ⊥, A`).
@@ -46,7 +46,7 @@ fast path of D8.
    output-shaped; decide and document how the symmetric reading is handled).
    It returns the polarity of every occurrence (input or output), which is
    Lamarche's polarization and what the two-sided engine, the two-sided
-   printing and step 20's essential nets use. Extend `Fragment` naming with
+   printing and the essential nets of `plan/later.md` use. Extend `Fragment` naming with
    the intuitionistic fragment names (IMLL, IMALL, IMELL, ILL): step 1's
    report leaves the classical `Display` as is and asks for a mode-aware
    name (a method taking `Mode`, or a small wrapper type) that the CLI's

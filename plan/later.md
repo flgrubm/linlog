@@ -1,12 +1,49 @@
-# Later work: steps 17 and beyond
+# Later work: candidates
 
-Sketches, not prompts. Each numbered item becomes a prompt in the style of
-the others when its turn comes (`NN-name.md`, one session, one report),
-after the reviews of steps 1 to 16 have settled the APIs. The numbers give
-a suggested order, not a commitment. The lists of follow-ups at the end
-are not steps: each entry is folded into whichever step touches its code.
+Sketches, not steps: unnumbered and in no order. Step 17
+(`17-assessment.md`) assesses them against the state of the repository and
+the two baselines, says which are worth doing, how they depend on each
+other and in which order, puts the decisions that are the author's to the
+author, and then plans the steps from 18 accordingly, with their prompts.
+Until then nothing here is planned. The lists of follow-ups
+at the end are smaller still: each entry is folded into whichever step
+touches its code.
 
-## 17. Configurable output, and no font in the LaTeX and Typst output
+## Code audit and refactoring
+
+Requested by the author on 2026-09-30. Sixteen steps by separate sessions
+built the code, each reviewed for its own correctness and none for the
+whole: read the workspace as one maintainer would and put it in order,
+changing no behaviour. The audit first, as a ranked list of findings, then
+the refactorings the list justifies, each a commit of its own.
+
+What to look for: modules grown past what a reader holds (the focused
+engine's `mod.rs` is over 2 000 lines, the interactive state 1 500, the
+checker and the derivation view over 1 100 each); things done twice (lock
+helpers, the split and Mix enumerations, the derivation functions of the
+CLI, the symbol and label tables of the exports); the public surface
+(what is `pub` and need not be, names and argument orders that differ
+between neighbours, `#[non_exhaustive]` and error types applied unevenly,
+options types against D15); the crate-wide `#![allow(dead_code)]` and
+`#![allow(unused_variables)]` in `core/src/lib.rs`, kept "while things
+are scaffolded", and what they hide once removed; invariants that live
+only in `.claude/rules/*.md` and could be a type, a debug assertion or a
+test; tests in excess of what they pin or missing for a stated behaviour,
+and the suite's running time; feature gates and what each combination
+really compiles; dependencies against their use; documentation that has
+drifted from the code (doc comments, the rules files, CLAUDE.md, README).
+
+What must hold: every test and every flake check passes after every
+commit; the JSON formats and the pinned snapshots do not change; on one
+thread the engines' counters on the benchmark target set are identical
+before and after, which is the regression oracle a refactoring of a
+search engine needs, since the search is deterministic; the two baselines
+stay comparable. A change of behaviour that the audit finds necessary is
+reported, not slipped in. Where it belongs in the order, and what it
+should settle before new engines are written on top, is for step 17 to
+say.
+
+## Configurable output, and no font in the LaTeX and Typst output
 
 The author's requests of 2026-09-29, which D15 records as a decision for
 every later step; this item applies it to what steps 10 and 11 built.
@@ -58,7 +95,7 @@ records in `.claude/rules/core.md` that a new export option is a field,
 never a constant, and its report says how each front end sets each
 option. Opus 5.5, xhigh (it wrote these exports in steps 10 and 11).
 
-## 18. Net-engine pruning and routing for repeated literals
+## Net-engine pruning and routing for repeated literals
 
 After the performance pass on the focused engine (step 15), the net
 engine's turn: leaf symmetry breaking for pure `⊗` and `⅋` trees of equal literals, a per-atom
@@ -79,7 +116,7 @@ the dispatch should route on "no two equal literals under one pure tree",
 or the leaf symmetry break should remove that weakness and the threshold
 rise; decide by the harness. Fable 5.1, xhigh.
 
-## 19. MELL proof nets with exponential boxes
+## MELL proof nets with exponential boxes
 
 Extend `nets` (step 5) with `!`-boxes and the `?` nodes (dereliction,
 contraction, weakening as net nodes; or the "generalized ?" node with
@@ -89,7 +126,7 @@ for the parsing view), sequentialization through boxes, and the SVG drawing
 with boxes as rectangles. Search stays with the focused engine; the value
 is the representation (display, conversion, correctness). Fable 5.1, xhigh.
 
-## 20. Essential nets for IMLL
+## Essential nets for IMLL
 
 The spec's IMLL-Net: Lamarche's polarized structures using the D1
 polarization from step 8, correctness by directed acyclicity plus the
@@ -102,7 +139,7 @@ is intuitionistic), so this is a performance alternative, and its report
 sketches the engine as the dominator condition added to the net engine's
 `complete` branch. Fable 5.1, xhigh.
 
-## 21. The focused inverse method
+## The focused inverse method
 
 The spec's second engine for MALL and the semi-decision alternative for
 MELL/ILL when Θ is large: forward saturation from initial sequents in the
@@ -111,7 +148,7 @@ subformula closure with subsumption indexing (feature vectors as in Schulz
 heuristic (many hypotheses, small goal) or `--engine inverse`. Fable 5.1,
 xhigh.
 
-## 22. The !-Horn fragment through Petri-net reachability
+## The !-Horn fragment through Petri-net reachability
 
 Detect the fragment, build the net, and either call an external reachability
 tool (KReach) through the CLI or implement coverability for the affine case.
@@ -121,14 +158,14 @@ decided in 5 s, 895 stopped at the recursion limit and 651 at the
 63-member split limit, both of which step 15 addresses, so assess after
 step 15 what is left for a reachability route. Opus 5.5, xhigh.
 
-## 23. Cyclic MLL and the Lambek calculus
+## Cyclic MLL and the Lambek calculus
 
 A non-commutative mode: planar axiom linkings in the net engine (links may
 not cross in the cyclic order of literals), no exchange in the derivation
 view and exports, and the Lambek restrictions (no empty antecedent, the two
 divisions). Fable 5.1, xhigh.
 
-## 24. Second certificate kernels
+## Second certificate kernels
 
 Left open by step 12 (`plan/reports/12-certificates.md`, "Open questions").
 Yalla's `ill` for intuitionistic certificates: a `kernel` field of
@@ -144,13 +181,13 @@ with the sequent's width; a chain of `ex_t_r` swaps if a wide sequent
 turns out slow. Identifier escaping writes non-ASCII as code points where
 Rocq would accept many Unicode letters. Fable 5.1, high.
 
-## 25. MALL proof nets
+## MALL proof nets
 
 Only if a use case appears: Hughes–van Glabbeek nets or conflict nets are
 non-canonical or exponentially large, so they are a display feature, not a
 search vehicle. Assess first.
 
-## 26. The web front end
+## The web front end
 
 `linlog-web`: the `core` crate compiled to wasm without the `parallel`
 feature (and without whichever optional features of D14 the client does not

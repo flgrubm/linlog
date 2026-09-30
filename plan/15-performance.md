@@ -220,4 +220,5 @@ helped and the candidates that did not pay.
   soundness argument of each in a paragraph with a pointer to the rules
   file, what did not pay, which targets remain undecided and why, which rows
   of the baseline step 16 should look at first, and what is left for the
-  net engine (step 18) and the inverse method (step 21).
+  net engine's pruning and the inverse method, both candidates in
+  `plan/later.md`.

@@ -34,7 +34,7 @@ per format, `note` writes the verdict as the target's comment (`<!-- …
 is always a whole document, so decide whether `--standalone` is accepted
 as a no-op or refused, and say why. `interact show` takes a format name
 (`show latex|typst`): add `svg`. The SVG of a partial
-derivation is what the web front end (step 26) will draw after every
+derivation is what the web front end (`plan/later.md`) will draw after every
 `apply`, so the derivation function must be cheap to call repeatedly and
 pure (data in, string out); the report's list of what the front end will
 call is the client's side of it.

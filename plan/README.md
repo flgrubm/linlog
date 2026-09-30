@@ -32,20 +32,24 @@ amended (see "Review protocol"). `notes/` holds research the prompts rely on.
 | 14 | Benchmarks, LLTP input, hard families, and the baseline (the harness is built; run again to take the baseline on a night) | `14-benchmarks.md` | Opus 5.5 | xhigh | 13 |
 | 15 | Performance pass on the focused engine, driven by 14's baseline, measured by day through the engines' counters | `15-performance.md` | Fable 5.1 | xhigh | 14 |
 | 16 | The baseline again, after the pass, and the comparison of the two | `16-baseline.md` | Opus 5.5 | xhigh | 15 |
-| 17–26 | Later, as sketches: configurable output (17), net-engine pruning and routing (18), MELL nets with boxes (19), essential nets (20), the inverse method (21), Petri nets (22), Lambek (23), second certificate kernels (24), MALL nets (25), the web front end (26) | `later.md` | per item | per item | 16 |
+| 17 | Assessment and planning: the state of the repository, the two baselines, every candidate in `later.md`; the author's decisions; then the prompts for the steps from 18 | `17-assessment.md` | Fable 5.1 | xhigh | 16 |
+| 18– | Planned by step 17 from the candidates in `later.md` (configurable output, a code audit and refactoring, net-engine pruning and routing, MELL nets with boxes, essential nets, the inverse method, Petri nets, Lambek, second certificate kernels, MALL nets, the web front end) | written by step 17 | – | – | 17 |
 
 A step has a whole number, one prompt file named after it, one report
 under `reports/` with the same name, and as many sessions as it takes to
-finish (step 14 took two). Work that is not yet a prompt is a numbered
-sketch in `later.md`; small follow-ups are lists there, by area, and are
-folded into the step that touches their code. Until 2026-09-30 some
+finish (step 14 took two). Work that is not yet planned is an unnumbered
+candidate in `later.md`, which step 17 assesses and turns into steps;
+small follow-ups are lists there, by area, and are folded into the step
+that touches their code. Until 2026-09-30 some
 labels carried letters and primes; the Status log and the reports keep
-the labels they were written with, which map as follows: 14b is step 15,
-14c step 16, 15h step 17, 15b' step 18, 15a step 19, 15b step 20, 15c
-step 21, 15d step 22, 15e step 23, 15i step 24, 15f step 25, 15g step 26,
-and 15a', 15a'', 15g', 15g'', 15j and 15k are the follow-up lists of
-`later.md` (the focused engine, intuitionistic mode, interactive proving,
-the exports, parallel search, the benchmarks).
+the labels they were written with, which map as follows: 14b is step 15
+and 14c step 16; 15a to 15i are the candidates of `later.md` by name
+(15a MELL nets with boxes, 15b essential nets, 15b' net-engine pruning,
+15c the inverse method, 15d Petri nets, 15e Lambek, 15f MALL nets, 15g
+the web front end, 15h configurable output, 15i second certificate
+kernels); and 15a', 15a'', 15g', 15g'', 15j and 15k are its follow-up
+lists (the focused engine, intuitionistic mode, interactive proving, the
+exports, parallel search, the benchmarks).
 
 Steps 5–6 and 7 are independent of each other; 10, 11 and 13 are
 independent of each other. Everything else is in order.
@@ -141,18 +145,20 @@ process, now in `conduct.md`, not of model. The choices from here:
   differential review.
 - **Step 16 (the second baseline and the comparison) is Opus 5.5 at
   `xhigh`**, as step 14 is.
-- **Steps 18 to 21 and 23 stay Fable 5.1 at `xhigh`** (new engines,
-  criteria and prunes), and **step 24 stays Fable 5.1 at `high`** (a
-  second kernel is research-heavy, as step 12 was).
-- **Step 17 (configurable output) moves from Fable 5.1 at `high` to Opus
-  5.5 at `xhigh`**: the options types of D15 are the kind of breadth Opus
-  showed in 10 and 11, on the code it wrote, at well under half the
-  price.
-- **Step 22 (Petri nets) moves from Opus 5.5 at `high` to `xhigh`**, as
-  every Opus step did after step 8, and waits for step 15, which changes
-  what the Petri nets need.
-- **The web front end (step 26)** gets a plan of its own from this
-  session; its bindings and interface are Opus 5.5 at `xhigh`.
+- **Step 17 (the assessment and the planning) is Fable 5.1 at `xhigh`**:
+  reading the whole repository and two baselines, checking the outside
+  world's state for every candidate and carrying the analysis through to
+  prompts is the deep research and long horizon the docs name Fable for.
+- **The candidates of `later.md`** get their models from step 17, which
+  checks the docs on its day. The planning session's view, for it to
+  weigh: new engines, criteria and prunes (net-engine pruning, MELL nets
+  with boxes, essential nets, the inverse method, Lambek) are Fable 5.1
+  at `xhigh`; a second certificate kernel is Fable 5.1 at `high`, as step
+  12 was; configurable output, the Petri-net route, the web front end's
+  bindings and interface, and the code audit with its refactoring are
+  Opus 5.5 at `xhigh` (breadth over the code Opus wrote or the large
+  refactoring the docs name it for), the audit's engine parts under the
+  counter oracle.
 - **The follow-up lists of `later.md`** are not sessions of their own:
   each entry is folded into the step that touches its code. Run alone,
   the purely mechanical ones (a flag, a label table, ids per formula) are
@@ -181,6 +187,7 @@ claude --model claude-fable-5-1 --effort xhigh --name step-13 ((open --raw plan/
 claude --model claude-opus-5-5 --effort xhigh --name step-14 ((open --raw plan/14-benchmarks.md) + "\n" + (open --raw plan/conduct.md))
 claude --model claude-fable-5-1 --effort xhigh --name step-15 ((open --raw plan/15-performance.md) + "\n" + (open --raw plan/conduct.md))
 claude --model claude-opus-5-5 --effort xhigh --name step-16 ((open --raw plan/16-baseline.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-17 ((open --raw plan/17-assessment.md) + "\n" + (open --raw plan/conduct.md))
 ```
 
 The aliases `fable` and `opus` also work for `--model`. The flags are
@@ -337,7 +344,7 @@ document system sets the text (LaTeX, Typst), linlog's output never
 chooses a font, not even in a standalone document: the user pastes the
 output into a document and wants it to look like the rest of that
 document (the author, 2026-09-29; step 11 had set `eulervm` and Euler
-Math there, which step 17 removes). No graphviz, no browser-side layout. The same layouts feed the LaTeX and Typst exports where
+Math there, which the configurable-output candidate removes). No graphviz, no browser-side layout. The same layouts feed the LaTeX and Typst exports where
 a package needs coordinates (it does not for ebproof and curryst trees).
 
 **D13. Interactive proving is a partial derivation.** The state a client
@@ -769,3 +776,14 @@ into an option or names it as a follow-up.
   reports keep the labels they were written with. Step 15 waits for step
   14's baseline, since the baseline measures whatever is checked out at
   20:00.
+- 2026-09-30, the later work is not planned yet: on the author's wish the
+  sketches in `later.md` lose their numbers and their order and become
+  candidates, and a new step 17 (`17-assessment.md`, Fable 5.1 at
+  `xhigh`) assesses the state of the repository, the two baselines and
+  every candidate (worth, feasibility, cost, interactions, order), puts
+  the decisions that are the author's to the author, and then plans the
+  steps from 18 as the author decided, prompts included. It is the one
+  step that stops to ask. A candidate is added at the author's request: a
+  general code audit with the refactoring it justifies, behaviour
+  unchanged, with the engines' deterministic counters as the regression
+  oracle.

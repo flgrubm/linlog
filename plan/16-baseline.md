@@ -64,9 +64,9 @@ work on this step" below apply.
    looked at: a decided verdict that changed is a bug in step 15 and is
    reported as such, at the top.
 5. **Documentation.** README and the rules files where they quote
-   numbers; `plan/later.md` where a later step's premise changed (the
-   net engine's targets in step 18, what is left for the inverse method
-   in step 21 and for the Petri-net route in step 22).
+   numbers; `plan/later.md` where a candidate's premise changed (the
+   net engine's targets, what is left for the inverse method and for the
+   Petri-net route), since step 17 assesses the candidates from there.
 
 ## Constraints
 
