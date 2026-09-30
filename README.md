@@ -469,9 +469,12 @@ $ linlog-bench summary runs.csv
 | partition-no/4 | 128.7 ms ✗ | 47.4 ms ✗ | > 10 s | > 10 s |
 ```
 
-`bench/RESULTS.md` holds the current numbers of every family, engine and
-thread count and of the whole LLTP library, and `bench/baseline.sh`
-regenerates them (about five hours).
+`bench/baseline.sh --detach --fresh` takes the whole baseline, every
+family, engine and thread count and the whole LLTP library, as a systemd
+user unit on an otherwise idle machine (it refuses a busy one) in about
+five and a half hours, and writes the tables to `bench/RESULTS.md` and
+the rows to `bench/results/`; `journalctl --user -fu linlog-baseline`
+follows it.
 
 ## What exists and what is planned
 

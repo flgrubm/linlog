@@ -65,18 +65,38 @@ beyond clap and anyhow, which the CLI already has.
   harness for its verdicts only (a `MISMATCH` fails it), never for times.
 - **A mismatch is a verdict against the known one.** For a generated
   family it is a bug in an engine or in the family's construction; for an
-  LLTP problem it may be the header (two KLE headers contradict their
-  problems; see the step 14 report). Keep the families' claims derived
+  LLTP problem it may be the header (the intuitionistic headers of
+  KLE013 and KLE065 of `KLE-cbn` and of SYN001 contradict their problems;
+  see the step 14 report). Keep the families' claims derived
   from the combinatorial problem, never from an engine.
 - **The LLTP library is not in the repository** (GPL-3.0): `nix build
   .#lltp -o bench/lltp` fetches it, `bench/lltp` is ignored.
-- **`baseline.sh` resumes**: every `run` appends with `--resume`, which
-  skips a problem and configuration the CSV already has, so rerunning the
-  script finishes an interrupted baseline and reruns only rows deleted
-  from the files; `rm -rf bench/results` starts over. It caps every
-  process at 16 GiB of address space (`prlimit`), since the additive
-  path's memo is unbounded (depth 18 of the `additive` family needs about
-  130 GB) and a child that swaps slows every other stream.
+- **`baseline.sh`** is meant to run as `bench/baseline.sh --detach
+  --fresh`: `--detach` starts it as the systemd user unit
+  `linlog-baseline` (24 GiB and no swap for the unit, `OOMPolicy=continue`
+  so the kernel kills a runaway child alone, no core dumps, its own
+  target directory `target/baseline`), because a session that dies takes
+  its terminal's processes with it (a reviewer's scratch program once ran
+  the machine out of memory and systemd failed the whole terminal scope,
+  the baseline with it). It refuses to start when the load average is
+  above 1 or a scheduled job other than the trivial ones is due within six
+  hours (`nix-gc` at midnight, `nix-optimise` before four, backups), unless
+  given `--force`; RESULTS.md records the starting load and the jobs that
+  fired, and the journal gets every stream's last progress line (with the
+  harness's estimate of the time left), the load and the other processes
+  using a CPU every ten minutes. Every `run` appends with `--resume`, so
+  rerunning finishes an interrupted baseline; `--fresh` deletes
+  `bench/results` first. Each process is capped at 12 GiB of address
+  space (`prlimit`): the additive path's memo is unbounded (depth 18 of
+  the `additive` family needs about 130 GB) and parsing the library's
+  largest files takes over 15 GB, and two such processes at once stay
+  within the unit's limit; the classical LLTP pass runs `--reverse` so
+  that the two LLTP passes do not parse those files at the same time.
+- **Scratch programs next to a running baseline** (a reviewer's checker, an
+  exploratory run) go in a scope of their own, `systemd-run --user
+  --scope -p MemoryMax=8G -p MemorySwapMax=0 taskset -c 4-15 …`, off the
+  performance cores the sequential streams are pinned to, and nothing
+  heavy runs during the parallel stage.
 
 ## Extension points
 

@@ -138,8 +138,14 @@ pub fn run(args: &RunArgs) -> Result<()> {
     };
 
     let exe = std::env::current_exe()?;
+    if args.reverse {
+        references.reverse();
+    }
     let total = references.len() * args.modes.len() * args.engines.len() * jobs.len();
     let mut done = 0;
+    // The configurations run by this invocation, for the estimate of the
+    // time left: those a resumed run skips cost nothing.
+    let (start, mut ran) = (Instant::now(), 0);
     for reference in &references {
         let mut modes: Vec<(ModeChoice, Mode)> = Vec::new();
         for &choice in &args.modes {
@@ -166,6 +172,7 @@ pub fn run(args: &RunArgs) -> Result<()> {
                     if done_before.contains(&key) {
                         continue;
                     }
+                    ran += 1;
                     for run in 0..args.repeat {
                         let tail = child(&exe, reference, choice, engine, threads, args)?;
                         let fields: Vec<&str> = tail.split(',').collect();
@@ -186,8 +193,13 @@ pub fn run(args: &RunArgs) -> Result<()> {
                         )?;
                         out.flush()?;
                         if run == 0 {
+                            // The configurations left at this run's mean.
+                            let left = start.elapsed().as_secs_f64() / f64::from(ran)
+                                * (total - done) as f64
+                                / 60.0;
                             eprintln!(
-                                "[{done}/{total}] {} {} {} j{threads}: {verdict} {} {time:.3} ms",
+                                "[{done}/{total}] {} {} {} j{threads}: {verdict} {} {time:.3} ms, \
+                                 about {left:.0} min left",
                                 reference.name,
                                 mode_name(mode),
                                 name(&engine),

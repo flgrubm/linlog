@@ -21,5 +21,7 @@ scratchpad*.md
 # Claude Code: personal, per-machine overrides
 .claude/settings.local.json
 CLAUDE.local.md
-# Progress logs of bench/baseline.sh
+# The baseline's rows, which `result*` above would hide, but not its
+# progress logs
+!/bench/results/
 /bench/results/*.log

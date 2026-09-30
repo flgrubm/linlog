@@ -187,7 +187,7 @@ pub static FAMILIES: &[Family] = &[
     Family {
         name: "wide-m4",
         summary: "the wide sequent with every atom shared by four pairs: every literal four times",
-        sizes: &[12, 24, 28, 32],
+        sizes: &[12, 24, 28, 32, 36],
         instances: 1,
         generate: |k, _| instance(wide(k, 4), Mode::CLASSICAL, true),
     },

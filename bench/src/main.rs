@@ -71,6 +71,11 @@ pub struct RunArgs {
     /// Run only the problems whose name contains one of these
     #[arg(long, value_delimiter = ',', value_name = "TEXT")]
     only: Vec<String>,
+    /// Run the problems in the reverse of their order: two runs over one
+    /// library, one of them reversed, then meet its largest problems at
+    /// different times
+    #[arg(long)]
+    reverse: bool,
     /// The modes to run every problem in: `given` (the problem's own),
     /// `classical` or `intuitionistic`
     #[arg(long, value_delimiter = ',', default_value = "given")]
