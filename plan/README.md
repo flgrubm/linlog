@@ -200,7 +200,8 @@ documented at code.claude.com/docs/en/cli-reference.
    spec or this plan, open questions, what later steps must know). It does
    not push and does not edit the other prompt files.
 2. The planning session (the one that wrote this file; `claude --resume` and
-   pick it, or start any session with "review step NN of plan/README.md")
+   pick it, or start a fresh one from `plan/handoff.md`, which says what
+   that session does and what it must know)
    reads the report and the changes (`jj log`, `jj diff -r`), runs the checks,
    judges whether the result fits the plan, and amends the later prompts and
    the decisions below. It records the outcome in "Status" and commits the plan
