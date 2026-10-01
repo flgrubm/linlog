@@ -195,7 +195,8 @@ to print nothing; `bench.nix` is the `linlog-bench` package, the `bench`
 check (the harness on the smallest instance of every family and on the
 problem file, failing on a verdict against a known one) and the `lltp`
 package, the LLTP library fetched at a pinned commit with its Petri-net
-archives unpacked, which no check uses.
+archives unpacked and its one malformed file repaired, which no check
+uses.
 
 ## CI
 

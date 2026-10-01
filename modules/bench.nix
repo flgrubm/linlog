@@ -39,10 +39,17 @@
           owner = "meta-logic";
           repo = "lltp";
           rev = "e0394fb8e9f6ad5127c92460c3f0936ccf64b693";
-          hash = "sha256-nr7vv3kQgGmHkNwVpTZVf2r5398ySEFP0jXrTSN0R4o=";
+          hash = "sha256-9S6YdIlakpJkYOcUg1IkzbaOW2LLSk7GmmJJYSpomFs=";
+          # The library's one malformed file has a tab where a closing
+          # parenthesis belongs, the only tab in the library; repaired, the
+          # problem has the size its neighbours in the family predict (each
+          # twice the previous and 34 occurrences).
           postFetch = ''
             cat $out/ILL/petri-nets/MCC.tar.gz.* | tar -xz -C $out/ILL/petri-nets
             rm $out/ILL/petri-nets/MCC.tar.gz.*
+            syj=$out/ILL/ILLTP-SYJ-01/SYJ206+1.018.p
+            tr '\t' ')' <"$syj" >"$syj.repaired"
+            mv "$syj.repaired" "$syj"
           '';
         };
       };
