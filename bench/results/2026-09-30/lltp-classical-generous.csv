@@ -1,0 +1,35 @@
+source,family,size,index,problem,mode,engine_requested,jobs,portfolio,test_period,timeout_s,run,copies,expected,verdict,reason,checked,engine,fragment,occurrences,multiplicity,time_ms,nodes,memo_hits,memo_entries,splits,links,tests,recursion_limit,cpu_ms,wait_ms
+lltp,ILL/ILLTP-SYJ-01,,,SYJ206+1.018.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,LL,6029278,262144,5081.299,4544,1962,2250,36,0,0,2048,5050.000,11.052
+lltp,ILL/ILLTP-SYJ-01,,,SYJ206+1.020.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,LL,24117214,1048576,5258.967,512,51,419,0,0,0,2048,5190.000,18.505
+lltp,ILL/ILLTP-SYJ-01,,,SYJ212+1.019.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,LL,15204318,524288,5142.757,1088,279,705,4,0,0,2048,5090.000,11.084
+lltp,ILL/ILLTP-SYJ-01,,,SYJ212+1.020.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,LL,30408670,1048576,5125.708,320,22,256,0,0,0,2048,5100.000,17.664
+lltp,ILL/ILLTP-SYJ-cbn,,,SYJ206+1.020.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,LL,16777193,1048576,5177.294,1216,207,1000,129,0,0,2048,5160.000,12.029
+lltp,ILL/ILLTP-SYJ-cbn,,,SYJ212+1.020.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,LL,21495785,1048576,5281.132,832,25,801,116,0,0,2048,5240.000,19.724
+lltp,ILL/ILLTP-SYJ-cbv,,,SYJ206+1.020.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,23068641,1048576,5089.287,640,197,378,364,0,0,2048,5060.000,10.320
+lltp,ILL/ILLTP-SYJ-cbv,,,SYJ212+1.019.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,LL,13893601,524288,5060.921,1408,561,800,779,0,0,2048,5020.000,11.589
+lltp,ILL/ILLTP-SYJ-cbv,,,SYJ212+1.020.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,LL,27787233,1048576,5760.417,576,194,319,353,0,0,2048,5740.000,11.733
+lltp,ILL/petri-nets/MCC,,,AutoFlight_afcs_05_a_1_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,906,8,152917.183,3,0,1,1796091904,0,0,2048,152610.000,131.894
+lltp,ILL/petri-nets/MCC,,,AutoFlight_afcs_05_a_20_1.p,classical,auto,1,false,,5,0,,,unknown,crash (signal: 6 (SIGABRT) (core dumped)): note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace,,,,,,258996.386,,,,,,,,,
+lltp,ILL/petri-nets/MCC,,,AutoFlight_afcs_05_a_50_1.p,classical,auto,1,false,,5,0,,,unknown,crash (signal: 6 (SIGABRT) (core dumped)): note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace,,,,,,158404.492,,,,,,,,,
+lltp,ILL/petri-nets/MCC,,,ClientsAndServers-0002-0_1_1.p,classical,auto,1,false,,5,0,,,unknown,crash (signal: 6 (SIGABRT) (core dumped)): note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace,,,,,,52574.116,,,,,,,,,
+lltp,ILL/petri-nets/MCC,,,DES_des_00_a_20_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,832,7,75826.869,192,95,93,1073742664,0,0,2048,75530.000,60.723
+lltp,ILL/petri-nets/MCC,,,DES_des_00_a_50_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,830,6,73860.869,192,90,98,1073742676,0,0,2048,73710.000,67.216
+lltp,ILL/petri-nets/MCC,,,DES_des_01_a_20_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,846,7,73883.785,192,95,93,1073742694,0,0,2048,73740.000,58.783
+lltp,ILL/petri-nets/MCC,,,Dekker_dekker-20_1_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,6638,40,505876.560,1,0,0,1923280896,0,0,2048,504540.000,425.647
+lltp,ILL/petri-nets/MCC,,,Diffusion2D_2D8_gradient_10x10_50_5_1.p,classical,auto,1,false,,5,0,,,unknown,crash (signal: 6 (SIGABRT) (core dumped)): note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace,,,,,,68274.922,,,,,,,,,
+lltp,ILL/petri-nets/MCC,,,IOTPpurchase_IOTP_c5m4p3d2_1_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,554,6,14220.204,6,0,5,241156096,0,0,2048,14180.000,17.446
+lltp,ILL/petri-nets/MCC,,,JoinFreeModules_joinFree-4_5_1.p,classical,auto,1,false,,5,0,,,unknown,crash (signal: 6 (SIGABRT) (core dumped)): note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace,,,,,,117087.707,,,,,,,,,
+lltp,ILL/petri-nets/MCC,,,ParamProductionCell_open_system_0_10_1.p,classical,auto,1,false,,5,0,,,unknown,killed,,,,,,605000.505,,,,,,,,,
+lltp,ILL/petri-nets/MCC,,,Parking_parking_2_8_5_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,1250,11,263351.856,467,40,423,2147667968,0,0,2048,262840.000,278.634
+lltp,ILL/petri-nets/MCC,,,PermAdmissibility_unf-8x8-4stageSEN-05_100_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,7144,64,26285.072,2,0,1,67870720,0,0,2048,26240.000,20.614
+lltp,ILL/petri-nets/MCC,,,PhaseVariation_5-10_phaseVariation_50_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,9658,687,32231.984,2,0,1,67866624,0,0,2048,32170.000,33.075
+lltp,ILL/petri-nets/MCC,,,Railroad_railroad-020-pt_10_1.p,classical,auto,1,false,,5,0,,,unknown,killed,,,,,,605000.820,,,,,,,,,
+lltp,ILL/petri-nets/MCC,,,RobotManipulation_robot-manipulation-5_1_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,192,12,304143.815,33,21,8,8629552920,0,0,2048,303540.000,320.002
+lltp,ILL/petri-nets/MCC,,,RwMutex_rwmutex-r10w100_1_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,5378,102,20394.317,1,0,0,134991872,0,0,2048,20350.000,15.726
+lltp,ILL/petri-nets/MCC,,,RwMutex_rwmutex-r10w100_5_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,5378,102,20358.032,1,0,0,134991872,0,0,2048,20310.000,25.302
+lltp,ILL/petri-nets/MCC,,,SafeBus-10-unfolded_1_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,22868,1191,151540.222,2,0,1,134754304,0,0,2048,151250.000,160.974
+lltp,ILL/petri-nets/MCC,,,SafeBus-10-unfolded_5_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,22876,1191,151605.009,2,0,1,134754304,0,0,2048,151310.000,161.948
+lltp,ILL/petri-nets/MCC,,,SimpleLoadBal_simple_lbs-15_100_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,18084,1142,107554.268,64,38,24,125829240,0,0,2048,107070.000,117.497
+lltp,ILL/petri-nets/MCC,,,SimpleLoadBal_simple_lbs-15_20_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,18062,1142,107897.505,64,38,24,125829240,0,0,2048,107700.000,109.319
+lltp,ILL/petri-nets/MCC,,,SimpleLoadBal_simple_lbs-15_50_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,18082,1142,108036.812,64,38,24,125829240,0,0,2048,107830.000,119.014
+lltp,ILL/petri-nets/MCC,,,TCPcondis_tcp30_50_1.p,classical,auto,1,false,,5,0,3,,unknown,timeout,,focus,MELL,512,32,102789.381,1,0,0,2148249600,0,0,2048,102590.000,103.587

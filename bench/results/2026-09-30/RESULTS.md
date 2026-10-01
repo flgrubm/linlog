@@ -8,10 +8,11 @@ The baseline of 2026-09-30 on an Intel(R) Core(TM) Ultra X9 388H
 every resumption), with the commit it measured:
 
 - 2026-09-30 21:23, commit b53cb17c6831 (Keep every baseline in a directory of its own and run it unattended in the night slot), load average 0.57
+- 2026-10-01 20:00, commit 5b2d49de6880 (Plan: review step 14's baseline), load average 0.00
 
-Its last part took 9 h 21 min, and the scheduled jobs that ran
+Its last part took 1 h 27 min, and the scheduled jobs that ran
 meanwhile were: none. The package throttled
-473691 times for 11283 s in that part
+86872 times for 962 s in that part
 (platform profile performance, governor powersave, energy preference balance_performance, turbo on).
 The journal of `linlog-baseline` says every ten minutes what else used
 a CPU. The sequential runs went in four
@@ -75,6 +76,9 @@ Sequential problems that waited for a CPU for over 1 % of their time (another pr
 | ILL/ILLTP-SYJ-cbn | lltp-all-cores: intuitionistic auto j16 | two-sided | 31 | 0 | 0 | 0 | 1 | 15 | 15 | 0 | – | – |
 | ILL/ILLTP-SYJ-cbv | lltp-all-cores: intuitionistic auto j16 | two-sided | 31 | 1 | 1 | 0 | 30 | 0 | 0 | 0 | 333.3 ms | 333.3 ms |
 | ILL/petri-nets/MCC | lltp-all-cores: intuitionistic auto j16 | two-sided | 1009 | 31 | 31 | 0 | 956 | 20 | 2 | 0 | 1.59 s | 62.08 s |
+| ILL/ILLTP-SYJ-01 | lltp-all-cores-generous: intuitionistic auto j16 | two-sided | 5 | 0 | 0 | 0 | 5 | 0 | 0 | 0 | – | – |
+| ILL/ILLTP-SYJ-cbn | lltp-all-cores-generous: intuitionistic auto j16 | two-sided | 4 | 0 | 0 | 0 | 2 | 2 | 0 | 0 | – | – |
+| ILL/ILLTP-SYJ-cbv | lltp-all-cores-generous: intuitionistic auto j16 | two-sided | 3 | 0 | 0 | 0 | 3 | 0 | 0 | 0 | – | – |
 | ILL/petri-nets/MCC | lltp-classical: classical auto j1 | focus | 3137 | 204 | 204 | 0 | 1091 | 68 | 1774 | 0 | 603 µs | 26.76 s |
 | ILL/misc | lltp-classical: classical auto j1 | focus | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 17 µs | 77 µs |
 | ILL/Non-theorems | lltp-classical: classical auto j1 | focus | 1 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | – | – |
@@ -95,6 +99,10 @@ Sequential problems that waited for a CPU for over 1 % of their time (another pr
 | ILL/ILLTP-LCL-01 | lltp-classical: classical auto j1 | focus | 2 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | – | – |
 | CLL/misc | lltp-classical: classical auto j1 | focus, net | 14 | 8 | 8 | 0 | 1 | 5 | 0 | 0 | 14 µs | 115 µs |
 | CLL/Non-theorems | lltp-classical: classical auto j1 | focus | 3 | 3 | 0 | 3 | 0 | 0 | 0 | 0 | 14 µs | 86 µs |
+| ILL/ILLTP-SYJ-01 | lltp-classical-generous: classical auto j1 | focus | 4 | 0 | 0 | 0 | 4 | 0 | 0 | 0 | – | – |
+| ILL/ILLTP-SYJ-cbn | lltp-classical-generous: classical auto j1 | focus | 2 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | – | – |
+| ILL/ILLTP-SYJ-cbv | lltp-classical-generous: classical auto j1 | focus | 3 | 0 | 0 | 0 | 3 | 0 | 0 | 0 | – | – |
+| ILL/petri-nets/MCC | lltp-classical-generous: classical auto j1 | focus | 25 | 0 | 0 | 0 | 20 | 0 | 5 | 0 | – | – |
 | ILL/ILLTP-LCL-01 | lltp-copies-10: intuitionistic auto j1 | two-sided | 2 | 1 | 0 | 1 | 0 | 1 | 0 | 0 | 44 µs | 44 µs |
 | ILL/ILLTP-LCL-cbn | lltp-copies-10: intuitionistic auto j1 | two-sided | 2 | 2 | 0 | 2 | 0 | 0 | 0 | 0 | 30 µs | 58 µs |
 | ILL/ILLTP-LCL-cbv | lltp-copies-10: intuitionistic auto j1 | two-sided | 2 | 1 | 0 | 1 | 0 | 1 | 0 | 0 | 44 µs | 44 µs |
@@ -128,14 +136,22 @@ Sequential problems that waited for a CPU for over 1 % of their time (another pr
 | ILL/Non-theorems | lltp-intuitionistic: intuitionistic auto j1 | two-sided | 1 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | – | – |
 | ILL/misc | lltp-intuitionistic: intuitionistic auto j1 | two-sided | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 18 µs | 70 µs |
 | ILL/petri-nets/MCC | lltp-intuitionistic: intuitionistic auto j1 | two-sided | 3137 | 210 | 210 | 0 | 982 | 171 | 1774 | 0 | 543 µs | 26.40 s |
+| ILL/ILLTP-SYJ-01 | lltp-intuitionistic-generous: intuitionistic auto j1 | two-sided | 4 | 0 | 0 | 0 | 4 | 0 | 0 | 0 | – | – |
+| ILL/ILLTP-SYJ-cbn | lltp-intuitionistic-generous: intuitionistic auto j1 | two-sided | 2 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | – | – |
+| ILL/ILLTP-SYJ-cbv | lltp-intuitionistic-generous: intuitionistic auto j1 | two-sided | 3 | 0 | 0 | 0 | 3 | 0 | 0 | 0 | – | – |
+| ILL/petri-nets/MCC | lltp-intuitionistic-generous: intuitionistic auto j1 | two-sided | 19 | 0 | 0 | 0 | 19 | 0 | 0 | 0 | – | – |
 | ILL/ILLTP-SYJ-01 | lltp-portfolio: intuitionistic auto j16 portfolio | two-sided | 31 | 0 | 0 | 0 | 3 | 13 | 15 | 0 | – | – |
 | ILL/ILLTP-SYJ-cbn | lltp-portfolio: intuitionistic auto j16 portfolio | two-sided | 31 | 0 | 0 | 0 | 1 | 15 | 15 | 0 | – | – |
 | ILL/ILLTP-SYJ-cbv | lltp-portfolio: intuitionistic auto j16 portfolio | two-sided | 31 | 1 | 1 | 0 | 30 | 0 | 0 | 0 | 341.8 ms | 341.8 ms |
 | ILL/petri-nets/MCC | lltp-portfolio: intuitionistic auto j16 portfolio | two-sided | 1009 | 33 | 33 | 0 | 954 | 20 | 2 | 0 | 1.64 s | 71.04 s |
+| ILL/ILLTP-SYJ-01 | lltp-portfolio-generous: intuitionistic auto j16 portfolio | two-sided | 5 | 0 | 0 | 0 | 5 | 0 | 0 | 0 | – | – |
+| ILL/ILLTP-SYJ-cbn | lltp-portfolio-generous: intuitionistic auto j16 portfolio | two-sided | 4 | 0 | 0 | 0 | 2 | 2 | 0 | 0 | – | – |
+| ILL/ILLTP-SYJ-cbv | lltp-portfolio-generous: intuitionistic auto j16 portfolio | two-sided | 3 | 0 | 0 | 0 | 3 | 0 | 0 | 0 | – | – |
 | ILL/ILLTP-SYJ-01 | lltp-recursion: intuitionistic auto j1 | two-sided | 22 | 0 | 0 | 0 | 22 | 0 | 0 | 0 | – | – |
 | ILL/ILLTP-SYJ-cbn | lltp-recursion: intuitionistic auto j1 | two-sided | 22 | 0 | 0 | 0 | 20 | 0 | 2 | 0 | – | – |
 | ILL/ILLTP-SYJ-cbv | lltp-recursion: intuitionistic auto j1 | two-sided | 22 | 0 | 0 | 0 | 22 | 0 | 0 | 0 | – | – |
 | ILL/petri-nets/MCC | lltp-recursion: intuitionistic auto j1 | two-sided | 929 | 56 | 56 | 0 | 320 | 0 | 553 | 0 | 8.9 ms | 9.14 s |
+| ILL/petri-nets/MCC | lltp-recursion-generous: intuitionistic auto j1 | two-sided | 9 | 2 | 2 | 0 | 5 | 0 | 2 | 0 | 552.15 s | 573.72 s |
 | 3-partition-no | long-1: classical auto j1 | focus | 1 | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 302.42 s | 302.42 s |
 | partition-no | long-1: classical auto j1 | focus | 1 | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 811.48 s | 811.48 s |
 | partition-yes | long-1: classical auto j1 | focus | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | – | – |
@@ -198,6 +214,12 @@ Sequential problems that waited for a CPU for over 1 % of their time (another pr
 | partition-table | parallel-net: classical net j4 | net | 13 | 10 | 6 | 4 | 3 | 0 | 0 | 0 | 17.3 ms | 4.54 s |
 | partition-table | parallel-net: classical net j8 | net | 13 | 10 | 6 | 4 | 3 | 0 | 0 | 0 | 149.5 ms | 3.38 s |
 | partition-table | parallel-net: classical net j16 | net | 13 | 10 | 6 | 4 | 3 | 0 | 0 | 0 | 76.5 ms | 2.31 s |
+| 3-partition-mll-no | parallel-net: classical net j1 | net | 3 | 2 | 0 | 2 | 1 | 0 | 0 | 0 | 59.71 s | 61.29 s |
+| 3-partition-mll-no | parallel-net: classical net j2 | net | 3 | 2 | 0 | 2 | 1 | 0 | 0 | 0 | 26.06 s | 26.88 s |
+| 3-partition-mll-no | parallel-net: classical net j4 | net | 3 | 2 | 0 | 2 | 1 | 0 | 0 | 0 | 13.98 s | 14.42 s |
+| 3-partition-mll-no | parallel-net: classical net j8 | net | 3 | 2 | 0 | 2 | 1 | 0 | 0 | 0 | 8.01 s | 8.26 s |
+| 3-partition-mll-no | parallel-net: classical net j16 | net | 3 | 2 | 0 | 2 | 1 | 0 | 0 | 0 | 4.60 s | 4.74 s |
+| partition-table | parallel-net: classical net j1 | net | 13 | 9 | 5 | 4 | 4 | 0 | 0 | 0 | 61.9 ms | 17.01 s |
 | wide-m1 | period-16: classical net j1 period 16 | net | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 459.5 ms | 466.1 ms |
 | wide-m2 | period-16: classical net j1 period 16 | net | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 442.5 ms | 449.1 ms |
 | 3-partition-mll-no | period-16: classical net j1 period 16 | net | 2 | 1 | 0 | 1 | 1 | 0 | 0 | 0 | 22.04 s | 22.04 s |
@@ -247,12 +269,12 @@ Sequential problems that waited for a CPU for over 1 % of their time (another pr
 
 ## 3-partition-mll-no
 
-| problem | engines: classical focus j1 | engines: classical net j1 | families: classical auto j1 | period-16: classical net j1 period 16 | period-1: classical net j1 period 1 | period-2: classical net j1 period 2 | period-8: classical net j1 period 8 |
-|---|--:|--:|--:|--:|--:|--:|--:|
-| 3-partition-mll-no/4 | 15 µs ✗ | 1.80 s ✗ | 14 µs ✗ | 22.04 s ✗ | 1.80 s ✗ | 1.43 s ✗ | 5.01 s ✗ |
-| 3-partition-mll-no/5 | 18 µs ✗ | 56.31 s ✗ | 15 µs ✗ | > 60 s | 56.27 s ✗ | 51.40 s ✗ | > 60 s |
-| 3-partition-mll-no/6 | 17 µs ✗ | > 60 s | 17 µs ✗ |  |  |  |  |
-| 3-partition-mll-no/8 | 16 µs ✗ | > 60 s | 16 µs ✗ |  |  |  |  |
+| problem | engines: classical focus j1 | engines: classical net j1 | families: classical auto j1 | parallel-net: classical net j1 | parallel-net: classical net j2 | parallel-net: classical net j4 | parallel-net: classical net j8 | parallel-net: classical net j16 | period-16: classical net j1 period 16 | period-1: classical net j1 period 1 | period-2: classical net j1 period 2 | period-8: classical net j1 period 8 |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| 3-partition-mll-no/4 | 15 µs ✗ | 1.80 s ✗ | 14 µs ✗ | 1.59 s ✗ | 820.1 ms ✗ | 437.4 ms ✗ | 249.9 ms ✗ | 142.0 ms ✗ | 22.04 s ✗ | 1.80 s ✗ | 1.43 s ✗ | 5.01 s ✗ |
+| 3-partition-mll-no/5 | 18 µs ✗ | 56.31 s ✗ | 15 µs ✗ | 59.71 s ✗ | 26.06 s ✗ | 13.98 s ✗ | 8.01 s ✗ | 4.60 s ✗ | > 60 s | 56.27 s ✗ | 51.40 s ✗ | > 60 s |
+| 3-partition-mll-no/6 | 17 µs ✗ | > 60 s | 17 µs ✗ | > 60 s | > 60 s | > 60 s | > 60 s | > 60 s |  |  |  |  |
+| 3-partition-mll-no/8 | 16 µs ✗ | > 60 s | 16 µs ✗ |  |  |  |  |  |  |  |  |  |
 
 ## wide-m1
 
@@ -306,21 +328,21 @@ Sequential problems that waited for a CPU for over 1 % of their time (another pr
 
 ## partition-table
 
-| problem | engines: classical focus j1 | engines: classical net j1 | parallel-net: classical net j2 | parallel-net: classical net j4 | parallel-net: classical net j8 | parallel-net: classical net j16 |
-|---|--:|--:|--:|--:|--:|--:|
-| partition-table/1-1 | 38 µs ✓ | 36 µs ✓ | 203 µs ✓ | 239 µs ✓ | 384 µs ✓ | 482 µs ✓ |
-| partition-table/1-3 | 131 µs ✗ | 394 µs ✗ | 557 µs ✗ | 1.3 ms ✗ | 1.4 ms ✗ | 1.6 ms ✗ |
-| partition-table/2-1-1 | 165 µs ✓ | 657 µs ✓ | 930 µs ✓ | 4.1 ms ✓ | 4.3 ms ✓ | 4.4 ms ✓ |
-| partition-table/1-1-4 | 2.3 ms ✗ | 39.9 ms ✗ | 25.8 ms ✗ | 13.5 ms ✗ | 8.4 ms ✗ | 5.2 ms ✗ |
-| partition-table/2-2-1-1 | 2.2 ms ✓ | 51.5 ms ✓ | 31.6 ms ✓ | 17.3 ms ✓ | 9.3 ms ✓ | 7.7 ms ✓ |
-| partition-table/1-2-5 | 5.8 ms ✗ | 3.66 s ✗ | 2.04 s ✗ | 1.02 s ✗ | 582.3 ms ✗ | 309.5 ms ✗ |
-| partition-table/1-1-2-4 | 526 µs ✓ | 1.03 s ✓ | 554.8 ms ✓ | 281.9 ms ✓ | 149.5 ms ✓ | 76.5 ms ✓ |
-| partition-table/1-1-1-5 | 61.2 ms ✗ | 7.50 s ✗ | 3.91 s ✗ | 2.02 s ✗ | 1.11 s ✗ | 611.3 ms ✗ |
-| partition-table/2-3-2-1 | 6.1 ms ✓ | 4.58 s ✓ | 2.27 s ✓ | 1.19 s ✓ | 654.3 ms ✓ | 337.5 ms ✓ |
-| partition-table/3-3-3-1 | 112.2 ms ✗ | > 60 s | > 60 s | > 60 s | > 60 s | > 60 s |
-| partition-table/1-2-3-4-5-5 | 23.15 s ✓ | > 60 s | > 60 s | 3.5 ms ✓ | > 60 s | > 60 s |
-| partition-table/1-1-1-1-1-7 | 58.37 s ✗ | > 60 s | > 60 s | > 60 s | > 60 s | > 60 s |
-| partition-table/2-2-2-2-2-2-9-1 | > 60 s | > 60 s | > 60 s | > 60 s | 861.2 ms ✓ | 955.4 ms ✓ |
+| problem | engines: classical focus j1 | engines: classical net j1 | parallel-net: classical net j2 | parallel-net: classical net j4 | parallel-net: classical net j8 | parallel-net: classical net j16 | parallel-net: classical net j1 |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| partition-table/1-1 | 38 µs ✓ | 36 µs ✓ | 203 µs ✓ | 239 µs ✓ | 384 µs ✓ | 482 µs ✓ | 39 µs ✓ |
+| partition-table/1-3 | 131 µs ✗ | 394 µs ✗ | 557 µs ✗ | 1.3 ms ✗ | 1.4 ms ✗ | 1.6 ms ✗ | 478 µs ✗ |
+| partition-table/2-1-1 | 165 µs ✓ | 657 µs ✓ | 930 µs ✓ | 4.1 ms ✓ | 4.3 ms ✓ | 4.4 ms ✓ | 782 µs ✓ |
+| partition-table/1-1-4 | 2.3 ms ✗ | 39.9 ms ✗ | 25.8 ms ✗ | 13.5 ms ✗ | 8.4 ms ✗ | 5.2 ms ✗ | 51.5 ms ✗ |
+| partition-table/2-2-1-1 | 2.2 ms ✓ | 51.5 ms ✓ | 31.6 ms ✓ | 17.3 ms ✓ | 9.3 ms ✓ | 7.7 ms ✓ | 61.9 ms ✓ |
+| partition-table/1-2-5 | 5.8 ms ✗ | 3.66 s ✗ | 2.04 s ✗ | 1.02 s ✗ | 582.3 ms ✗ | 309.5 ms ✗ | 4.09 s ✗ |
+| partition-table/1-1-2-4 | 526 µs ✓ | 1.03 s ✓ | 554.8 ms ✓ | 281.9 ms ✓ | 149.5 ms ✓ | 76.5 ms ✓ | 1.07 s ✓ |
+| partition-table/1-1-1-5 | 61.2 ms ✗ | 7.50 s ✗ | 3.91 s ✗ | 2.02 s ✗ | 1.11 s ✗ | 611.3 ms ✗ | 7.40 s ✗ |
+| partition-table/2-3-2-1 | 6.1 ms ✓ | 4.58 s ✓ | 2.27 s ✓ | 1.19 s ✓ | 654.3 ms ✓ | 337.5 ms ✓ | 4.34 s ✓ |
+| partition-table/3-3-3-1 | 112.2 ms ✗ | > 60 s | > 60 s | > 60 s | > 60 s | > 60 s | > 60 s |
+| partition-table/1-2-3-4-5-5 | 23.15 s ✓ | > 60 s | > 60 s | 3.5 ms ✓ | > 60 s | > 60 s | > 60 s |
+| partition-table/1-1-1-1-1-7 | 58.37 s ✗ | > 60 s | > 60 s | > 60 s | > 60 s | > 60 s | > 60 s |
+| partition-table/2-2-2-2-2-2-9-1 | > 60 s | > 60 s | > 60 s | > 60 s | 861.2 ms ✓ | 955.4 ms ✓ | > 60 s |
 
 ## cancellation
 

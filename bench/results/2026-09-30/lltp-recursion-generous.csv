@@ -1,0 +1,10 @@
+source,family,size,index,problem,mode,engine_requested,jobs,portfolio,test_period,timeout_s,run,copies,expected,verdict,reason,checked,engine,fragment,occurrences,multiplicity,time_ms,nodes,memo_hits,memo_entries,splits,links,tests,recursion_limit,cpu_ms,wait_ms
+lltp,ILL/petri-nets/MCC,,,DatabaseWithMutex_database20UNFOLD_5_1.p,intuitionistic,auto,1,false,,5,0,,,unknown,killed,,,,,,605002.703,,,,,,,,,
+lltp,ILL/petri-nets/MCC,,,Diffusion2D_2D8_gradient_20x20_50_1_1.p,intuitionistic,auto,1,false,,5,0,,,unknown,crash (signal: 6 (SIGABRT) (core dumped)): note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace,,,,,,228272.864,,,,,,,,,
+lltp,ILL/petri-nets/MCC,,,Diffusion2D_2D8_gradient_30x30_50_1_1.p,intuitionistic,auto,1,false,,5,0,,,unknown,crash (signal: 6 (SIGABRT) (core dumped)): note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace,,,,,,468516.687,,,,,,,,,
+lltp,ILL/petri-nets/MCC,,,Diffusion2D_2D8_gradient_40x40_50_1_1.p,intuitionistic,auto,1,false,,5,0,,,unknown,killed,,,,,,605116.757,,,,,,,,,
+lltp,ILL/petri-nets/MCC,,,SimpleLoadBal_simple_lbs-20_100_1.p,intuitionistic,auto,1,false,,5,0,,,unknown,killed,,,,,,605001.291,,,,,,,,,
+lltp,ILL/petri-nets/MCC,,,SimpleLoadBal_simple_lbs-20_20_1.p,intuitionistic,auto,1,false,,5,0,,,unknown,killed,,,,,,605001.740,,,,,,,,,
+lltp,ILL/petri-nets/MCC,,,SimpleLoadBal_simple_lbs-20_50_1.p,intuitionistic,auto,1,false,,5,0,,,unknown,killed,,,,,,605002.960,,,,,,,,,
+lltp,ILL/petri-nets/MCC,,,TokenRing-15-unfolded_1_1.p,intuitionistic,auto,1,false,,5,0,3,provable,proved,,ok,two-sided,IMELL,28990,31,21567.845,6,0,4,12999686,0,0,16384,21530.000,8.965
+lltp,ILL/petri-nets/MCC,,,TokenRing-20-unfolded_1_1.p,intuitionistic,auto,1,false,,5,0,3,provable,proved,,ok,two-sided,IMELL,67450,41,552148.522,6,0,4,146842705,0,0,16384,551410.000,230.037
