@@ -152,7 +152,7 @@ cargo deny check                                           # licenses, bans, sou
 cargo run -p linlog-cli -- <args>
 cargo run --release -p linlog-bench -- run --family partition-no=3,4 --engines focus,net
 nix build .#lltp -o bench/lltp   # the LLTP library (1.1 GB, GPL-3.0, fetched at a pinned commit)
-bench/baseline.sh --arm --fresh   # the whole baseline, unattended from 20:00 to 07:00 (about 9.5 h): bench/results/DAY/, bench/RESULTS.md
+bench/baseline.sh --arm --fresh   # the whole baseline, unattended from 20:00 to 07:00 (about 10.5 h): bench/results/DAY/, bench/RESULTS.md
 
 nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), export (the LaTeX and Typst output compiles, the SVG renders), rocq (NanoYalla checks the certificates), bench (the harness on the smallest problems), deadnix, actionlint, treefmt, claude-hooks
 nix build .#checks.x86_64-linux.rocq   # the certificates alone: Rocq is a 1.2 GB closure from the binary cache

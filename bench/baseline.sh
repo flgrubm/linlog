@@ -13,8 +13,9 @@
 # problems that ended at the copy bound or the recursion limit with those
 # raised; then the thread counts 2, 4, 8 and every core on the hard
 # families, and every core with and without the portfolio on the LLTP
-# problems not decided at once. About nine and a half hours on sixteen
-# cores, on an otherwise idle machine (9 h 21 min on 2026-09-30).
+# problems not decided at once; last, the runs of those that more room lets
+# finish. About ten and a half hours on sixteen cores, on an otherwise idle
+# machine (stages 1 to 3 took 9 h 21 min on 2026-09-30).
 #
 #   nix build .#lltp -o bench/lltp          # once: the LLTP library
 #   bench/baseline.sh --arm --fresh          # from the devshell
@@ -31,7 +32,7 @@
 # recording that it did. --detach starts the unit at once and never stops
 # it.
 #
-# The unit, `linlog-baseline', survives the terminal: 24 GiB of memory and
+# The unit, `linlog-baseline', survives the terminal: 40 GiB of memory and
 # no swap for all of it, the kernel's OOM killer taking the runaway
 # process alone (`OOMPolicy=continue', its run a crash row) rather than
 # systemd stopping the unit, no core dumps, and its own target directory
@@ -45,8 +46,10 @@
 # has no RESULTS.md yet: every run appends to its CSV file and skips what
 # the file already has (`--append --resume'), so running the script again
 # after an interruption (the stop at the slot's end) finishes the baseline
-# on another night. --fresh deletes the directory of the day and starts it
-# anew; other baselines are never touched. The script refuses to start on
+# on another night. --into=DIR resumes DIR, finished or not, which adds a
+# later version's new runs to an earlier baseline. --fresh deletes the
+# directory of the day (or DIR) and starts it anew; other baselines are
+# never touched. The script refuses to start on
 # battery, on a busy machine (a load average above 1) or with a scheduled
 # job due within the estimate (`systemctl list-timers': nix-gc at
 # midnight, nix-optimise before four, backups) unless given --force, and
@@ -69,7 +72,7 @@ lltp=bench/lltp
 results=bench/results
 cores=(1 0 2 3)
 slot=20:00-07:00
-estimate=$((9 * 3600 + 45 * 60))
+estimate=$((10 * 3600 + 30 * 60))
 
 # The user slices a detached run keeps off the performance cores, and the
 # file listing the user timers it stopped for its duration.
@@ -93,7 +96,7 @@ if [ "${1:-}" = --unshield ]; then
   exit
 fi
 
-detach=false arm=false fresh=false force=false start_by=
+detach=false arm=false fresh=false force=false start_by='' into=''
 for arg; do
   case $arg in
   --detach) detach=true ;;
@@ -104,17 +107,19 @@ for arg; do
   # The unit's: wait for an idle machine until then (seconds since the
   # epoch).
   --start-by=*) start_by=${arg#--start-by=} ;;
+  --into=*) into=${arg#--into=} ;;
   *)
-    echo "usage: bench/baseline.sh [--arm [--slot=HH:MM-HH:MM] | --detach] [--fresh] [--force]" >&2
+    echo "usage: bench/baseline.sh [--arm [--slot=HH:MM-HH:MM] | --detach] [--fresh] [--into=DIR] [--force]" >&2
     exit 2
     ;;
   esac
 done
 
-# The baseline's directory: the latest one without RESULTS.md, a baseline
-# that has not finished, or else today's.
-out=$results/$(date +%F)
-if ! $fresh; then
+# The baseline's directory: the one --into names (a finished baseline is
+# resumed too, its new runs added), else the latest one without
+# RESULTS.md, a baseline that has not finished, or else today's.
+out=${into:-$results/$(date +%F)}
+if [ -z "$into" ] && ! $fresh; then
   for dir in "$results"/*/; do
     if [ -d "$dir" ] && [ ! -e "$dir/RESULTS.md" ]; then
       out=${dir%/}
@@ -237,12 +242,12 @@ if $arm || $detach; then
   # A slice of its own, so that the other user slices can be kept off the
   # performance cores; an inhibitor, so that neither the idle manager nor a
   # closed lid suspends the machine.
-  unit=(systemd-run --user --unit=linlog-baseline --slice=linlog.slice --same-dir -p MemoryMax=24G
+  unit=(systemd-run --user --unit=linlog-baseline --slice=linlog.slice --same-dir -p MemoryMax=40G
     -p MemorySwapMax=0 -p OOMPolicy=continue -p LimitCORE=0 --setenv=PATH="$PATH"
     -p ExecStopPost="$self --unshield"
     --setenv=CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target/baseline}")
   script=(systemd-inhibit --what=sleep:idle:handle-lid-switch --who=linlog-baseline
-    --why="the benchmark baseline" "$self" --force)
+    --why="the benchmark baseline" "$self" --force --into="$out")
   if $detach; then
     "${unit[@]}" "${script[@]}"
     echo "into $out; follow it with: journalctl --user -fu linlog-baseline"
@@ -363,14 +368,15 @@ watcher=$!
 trap 'kill $watcher 2>/dev/null || true' EXIT
 
 # run CPU NAME ARGS...: one `run` into NAME.csv, pinned to CPU unless it is
-# `-`. Every process gets 12 GiB of address space, so that a search whose
-# memory grows without bound (the additive path's memo has no cap) or the
-# parse of one of the library's largest files fails its own run; two such
-# processes at once stay within the unit's 24 GiB.
+# `-`. Every process gets `cap' GiB of address space, 12 until stage 4, so
+# that a search whose memory grows without bound (the additive path's memo
+# has no cap) fails its own run; three such processes at once stay within
+# the unit's 40 GiB.
+cap=12
 run() {
   local cpu=$1 name=$2
   shift 2
-  local pin=(prlimit --as=$((12 << 30)))
+  local pin=(prlimit --as=$((cap << 30)))
   if [ "$cpu" != - ]; then
     pin+=(taskset -c "$cpu")
   fi
@@ -404,8 +410,8 @@ streams+=($!)
 streams+=($!)
 run "${cores[2]}" lltp-intuitionistic --lltp "$lltp/ILL" --timeout 5 &
 streams+=($!)
-# In reverse, so that the two passes parse the library's largest files
-# (hundreds of megabytes each) at different times.
+# In reverse, so that the two passes load the library's largest files (up
+# to 103 MB each) at different times.
 run "${cores[3]}" lltp-classical --lltp "$lltp/CLL" --lltp "$lltp/ILL" --modes classical \
   --reverse --timeout 5 &
 streams+=($!)
@@ -457,6 +463,40 @@ run - parallel-net --problems bench/problems/slow-tests.txt --only partition-tab
 slow=$(ended slow)
 run - lltp-all-cores --lltp "$lltp/ILL" --only "$slow" --jobs all --timeout 5
 run - lltp-portfolio --lltp "$lltp/ILL" --only "$slow" --jobs all --portfolio --timeout 5
+
+# Stage 4: the runs above that were killed or crashed and that more room
+# lets finish, as bench/reruns.txt lists them (lines `FILE FAMILY/NAME`:
+# the CSV file of the run, the problem), again into FILE-generous.csv. On
+# one thread, in three streams, ten minutes' grace after the time limit and
+# 16 GiB a process: the library's largest files take up to 16 s to load,
+# and a search that misses its stop inside a long split enumeration stops
+# when the enumeration ends. On every core, alone, a minute's grace and 32
+# GiB: loading again, and a pool's memory. About an hour, at most three.
+reruns() {
+  awk -v file="$1" '$1 == file { print $2 }' bench/reruns.txt | paste -sd,
+}
+# again CPU FILE GRACE ARGS...: the reruns of FILE, if it has any.
+again() {
+  local cpu=$1 file=$2 grace=$3 only
+  shift 3
+  only=$(reruns "$file")
+  if [ -n "$only" ]; then
+    run "$cpu" "$file-generous" --only "$only" --grace "$grace" "$@"
+  fi
+}
+cap=16
+streams=()
+again "${cores[0]}" lltp-intuitionistic 600 --lltp "$lltp/ILL" --timeout 5 &
+streams+=($!)
+again "${cores[1]}" lltp-classical 600 --lltp "$lltp/CLL" --lltp "$lltp/ILL" --modes classical \
+  --timeout 5 &
+streams+=($!)
+again "${cores[2]}" lltp-recursion 600 --lltp "$lltp/ILL" --recursion-limit 16384 --timeout 5 &
+streams+=($!)
+wait "${streams[@]}"
+cap=32
+again - lltp-all-cores 60 --lltp "$lltp/ILL" --jobs all --timeout 5
+again - lltp-portfolio 60 --lltp "$lltp/ILL" --jobs all --portfolio --timeout 5
 
 fired=$(timers "$now" "$(date +%s)" LastTriggerUSec)
 fired=${fired%, }

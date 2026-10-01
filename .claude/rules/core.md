@@ -912,12 +912,15 @@ has no or-choices worth sharing out). What the code relies on:
   `Stop::Flags`; the sequential engines poll the closure through
   `Stop::Closure`. rayon tasks cannot be killed, so a place that stops
   polling is a place cancellation does not reach.
-- **Such a place exists, not yet found.** In the baseline's
-  `lltp-all-cores` and `lltp-portfolio` runs (16 threads, a 5 s limit),
-  166 small LLTP Petri nets (files under 0.2 MB) ran on past the
-  harness's kill at 10.5 s, where one thread stops every one of them at
-  5 s (`bench/results/2026-09-30/`, rows with `reason` `killed`). No test
-  catches it.
+- **Such places exist, in the split enumeration.** On one thread, 90 of
+  the baseline's LLTP runs on files under 2 MB ran past the harness's
+  kill at 10.5 s under a 5 s limit; one of them, the Petri net
+  `AutoFlight_afcs_05_a_1_1`, examines 1.8 billion splits at a single
+  stable sequent and stops only after 242 s, so the poll every
+  `SPLITS_PER_POLL` splits does not stop that enumeration. At 16
+  threads, 166 other small Petri nets, which one thread stops at 5 s,
+  ran past the kill as well (`bench/results/2026-09-30/`, rows with
+  `reason` `killed`). No test catches it.
 - **Cube-and-conquer is nested fork-join at the first `LEVELS` (2)
   choices of a branch**, not a static enumeration: at a choice among
   alternatives (`decide_with`'s candidates and copies together, the two

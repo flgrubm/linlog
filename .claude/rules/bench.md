@@ -29,8 +29,8 @@ beyond clap and anyhow, which the CLI already has.
   deadline in its stop closure (the clock read every 64 polls on one
   thread, every poll on a pool, as the CLI does), checks the proof outside
   the timed part, and prints the 16-field tail of the CSV row. The parent
-  kills a child that outlives its limit by a tenth plus five seconds and
-  writes the row itself (`reason` `killed`, or `crash (status): <last
+  kills a child that outlives its limit by `--grace` seconds (by default a
+  tenth of the limit and five) and writes the row itself (`reason` `killed`, or `crash (status): <last
   stderr line>`).
 - `src/summary.rs`: Markdown from CSV. A problem counts once per
   configuration (CSV file, family, mode, requested engine, jobs, portfolio, test
@@ -77,7 +77,7 @@ beyond clap and anyhow, which the CLI already has.
   `taskset`, the parallel runs run alone. Four streams at once cost a
   stream 3–11 % against the same run alone (shared L3, heat), the same
   for every sequential row, which is why stage 3 takes its own one-thread
-  rows. The kill at the limit plus a tenth plus five seconds counts from
+  rows. The kill at the limit plus the grace counts from
   the child's start, parse included, so a `killed` row on a file of
   megabytes may be its parse; on a small file it is a search that did
   not stop. The `bench` flake check runs the
@@ -101,10 +101,10 @@ beyond clap and anyhow, which the CLI already has.
   `$XDG_RUNTIME_DIR/linlog-baseline-timers`; the inhibitor dies with the
   unit). System timers and services need root: the author stops them. The unit waits for an
   idle machine (on mains, a load average of at most 1) until the slot's
-  end minus `estimate` (9 h 45 min), then starts regardless and says so in
+  end minus `estimate` (10 h 30 min), then starts regardless and says so in
   `starts.txt`: a night not used is worse than rows marked as disturbed.
   `--detach` starts the unit at once and never stops it. The unit,
-  `linlog-baseline`, runs the script with `--force` (24 GiB and no swap,
+  `linlog-baseline`, runs the script with `--force` (40 GiB and no swap,
   `OOMPolicy=continue` so the kernel kills a runaway child alone, no core
   dumps, its own target directory `target/baseline`), because a session
   that dies takes its terminal's processes with it (a reviewer's scratch
@@ -117,12 +117,28 @@ beyond clap and anyhow, which the CLI already has.
   in the slot instead. The journal gets every stream's last progress
   line (with the harness's estimate of the time left), the load and the
   other processes using a CPU every ten minutes. Each process is capped
-  at 12 GiB of address space (`prlimit`): the additive path's memo is
-  unbounded (depth 18 of the `additive` family needs about 130 GB) and
-  parsing the library's largest files takes over 15 GB, and two such
-  processes at once stay within the unit's limit; the classical LLTP
-  pass runs `--reverse` so that the two LLTP passes do not parse those
-  files at the same time.
+  at 12 GiB of address space (`prlimit`; 16 and 32 GiB in stage 4): the
+  additive path's memo is unbounded (depth 18 of the `additive` family
+  needs about 130 GB), and three such processes at once stay within the
+  unit's limit. Loading is cheap by comparison: the library's largest
+  file (103 MB, 30 million occurrences) loads in 16 s with 2 GB. The
+  classical LLTP pass runs `--reverse` so that the two LLTP passes do not
+  load those files at the same time.
+- **Stage 4 reruns what more room lets finish**, from `bench/reruns.txt`
+  (lines `FILE FAMILY/NAME`: the CSV file of the run that was killed or
+  crashed, and the problem), into `FILE-generous.csv`, with `--grace`
+  600 and 16 GiB on one thread and `--grace` 60 and 32 GiB on every
+  core. The list is chosen from measurements, not from the rows: its
+  header says how, and a later baseline reruns the same list so that the
+  two compare. `--only` matches `FAMILY/NAME`, which names one
+  translation of an LLTP problem exactly (the three translations share
+  file names).
+- **The library is repaired in one byte**: the flake's `lltp` package
+  turns the only tab in the library, in `ILL/ILLTP-SYJ-01/SYJ206+1.018.p`,
+  into the closing parenthesis it replaced, so that every file of the
+  library loads. Every header reads: 111 ILLTP-SYJ problems say
+  `Unsolved` and have no expected verdict, 23 contradict their problems
+  (see the step 14 report).
 - **Every baseline keeps a directory of its own**, `results/DAY/`, DAY
   the day it started, so that two baselines (before and after a
   performance pass) sit side by side. A run without `--fresh` resumes

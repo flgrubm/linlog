@@ -1,0 +1,113 @@
+# The runs of bench/baseline.sh that were killed or crashed and that more
+# room lets finish; its stage 4 runs them again into FILE-generous.csv.
+# Lines are `FILE FAMILY/NAME`: the CSV file of the run, and the problem.
+#
+# Chosen on 2026-10-01 from the baseline of 2026-09-30, by measurement:
+# - On one thread, every file over 20 MB (the library's largest loads in
+#   16 s, where the kill came at 10.5 s), the one file that did not parse
+#   (repaired since), every run that, without the kill and with the same
+#   12 GiB, ended within 600 s on an efficiency core, and the 21 runs the
+#   probe did not reach, whose cost the grace bounds.
+# - On every core, every crash and every kill on a file over 20 MB: loading
+#   again, and a pool's memory.
+# Left out: on one thread, the runs whose proof arena outgrew 12 GiB inside
+# a long split enumeration (one of them outgrew 24 GiB as well, after
+# 152 s) or that ran over 600 s; on every core, the kills on small files,
+# whose search misses its stop inside a split enumeration (two of three
+# sampled ran over 300 s); and the focused engine forced onto the additive
+# family at depth 16, whose memory grows by about 1 GB a second.
+lltp-intuitionistic ILL/ILLTP-SYJ-01/SYJ206+1.018.p  # repaired in the flake, loads
+lltp-intuitionistic ILL/ILLTP-SYJ-01/SYJ206+1.020.p  # 83 MB, loads in under 20 s
+lltp-intuitionistic ILL/ILLTP-SYJ-01/SYJ212+1.019.p  # 52 MB, loads in under 20 s
+lltp-intuitionistic ILL/ILLTP-SYJ-01/SYJ212+1.020.p  # 103 MB, loads in under 20 s
+lltp-intuitionistic ILL/ILLTP-SYJ-cbn/SYJ206+1.020.p  # 61 MB, loads in under 20 s
+lltp-intuitionistic ILL/ILLTP-SYJ-cbn/SYJ212+1.020.p  # 77 MB, loads in under 20 s
+lltp-intuitionistic ILL/ILLTP-SYJ-cbv/SYJ206+1.020.p  # 80 MB, loads in under 20 s
+lltp-intuitionistic ILL/ILLTP-SYJ-cbv/SYJ212+1.019.p  # 48 MB, loads in under 20 s
+lltp-intuitionistic ILL/ILLTP-SYJ-cbv/SYJ212+1.020.p  # 95 MB, loads in under 20 s
+lltp-intuitionistic ILL/petri-nets/MCC/AutoFlight_afcs_05_a_1_1.p  # ended after 249 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/ClientsAndServers-0005-0_1_1.p  # ended after 5 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/DES_des_00_a_20_1.p  # ended after 112 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/DES_des_00_a_50_1.p  # ended after 112 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/DES_des_01_a_20_1.p  # ended after 114 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/IOTPpurchase_IOTP_c5m4p3d2_1_1.p  # ended after 20 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/Parking_parking_2_8_5_1.p  # ended after 443 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/PermAdmissibility_unf-8x8-4stageSEN-05_100_1.p  # ended after 39 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/PhaseVariation_5-10_phaseVariation_50_1.p  # ended after 60 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/ResAllocation_RAS-R-15_10_1.p  # ended after 569 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/RobotManipulation_robot-manipulation-5_1_1.p  # ended after 211 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/RwMutex_rwmutex-r10w100_1_1.p  # ended after 36 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/RwMutex_rwmutex-r10w100_5_1.p  # ended after 36 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/SafeBus-10-unfolded_1_1.p  # ended after 115 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/SafeBus-10-unfolded_5_1.p  # ended after 113 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/SimpleLoadBal_simple_lbs-15_100_1.p  # ended after 84 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/SimpleLoadBal_simple_lbs-15_20_1.p  # ended after 84 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/SimpleLoadBal_simple_lbs-15_50_1.p  # ended after 84 s on an efficiency core
+lltp-intuitionistic ILL/petri-nets/MCC/TCPcondis_tcp30_50_1.p  # ended after 148 s on an efficiency core
+lltp-classical ILL/petri-nets/MCC/TCPcondis_tcp30_50_1.p  # ended after 147 s on an efficiency core
+lltp-classical ILL/petri-nets/MCC/SimpleLoadBal_simple_lbs-15_50_1.p  # ended after 169 s on an efficiency core
+lltp-classical ILL/petri-nets/MCC/SimpleLoadBal_simple_lbs-15_20_1.p  # ended after 169 s on an efficiency core
+lltp-classical ILL/petri-nets/MCC/SimpleLoadBal_simple_lbs-15_100_1.p  # ended after 170 s on an efficiency core
+lltp-classical ILL/petri-nets/MCC/SafeBus-10-unfolded_5_1.p  # ended after 226 s on an efficiency core
+lltp-classical ILL/petri-nets/MCC/SafeBus-10-unfolded_1_1.p  # ended after 228 s on an efficiency core
+lltp-classical ILL/petri-nets/MCC/RwMutex_rwmutex-r10w100_5_1.p  # ended after 38 s on an efficiency core
+lltp-classical ILL/petri-nets/MCC/RwMutex_rwmutex-r10w100_1_1.p  # ended after 37 s on an efficiency core
+lltp-classical ILL/petri-nets/MCC/RobotManipulation_robot-manipulation-5_1_1.p  # ended after 424 s on an efficiency core
+lltp-classical ILL/petri-nets/MCC/Railroad_railroad-020-pt_10_1.p  # not probed; the grace bounds it
+lltp-classical ILL/petri-nets/MCC/PhaseVariation_5-10_phaseVariation_50_1.p  # ended after 47 s on an efficiency core
+lltp-classical ILL/petri-nets/MCC/PermAdmissibility_unf-8x8-4stageSEN-05_100_1.p  # not probed; the grace bounds it
+lltp-classical ILL/petri-nets/MCC/Parking_parking_2_8_5_1.p  # ended after 442 s on an efficiency core
+lltp-classical ILL/petri-nets/MCC/ParamProductionCell_open_system_0_10_1.p  # not probed; the grace bounds it
+lltp-classical ILL/petri-nets/MCC/JoinFreeModules_joinFree-4_5_1.p  # not probed; the grace bounds it
+lltp-classical ILL/petri-nets/MCC/IOTPpurchase_IOTP_c5m4p3d2_1_1.p  # ended after 20 s on an efficiency core
+lltp-classical ILL/petri-nets/MCC/Diffusion2D_2D8_gradient_10x10_50_5_1.p  # not probed; the grace bounds it
+lltp-classical ILL/petri-nets/MCC/Dekker_dekker-20_1_1.p  # not probed; the grace bounds it
+lltp-classical ILL/petri-nets/MCC/DES_des_01_a_20_1.p  # ended after 112 s on an efficiency core
+lltp-classical ILL/petri-nets/MCC/DES_des_00_a_50_1.p  # not probed; the grace bounds it
+lltp-classical ILL/petri-nets/MCC/DES_des_00_a_20_1.p  # not probed; the grace bounds it
+lltp-classical ILL/petri-nets/MCC/ClientsAndServers-0002-0_1_1.p  # not probed; the grace bounds it
+lltp-classical ILL/petri-nets/MCC/AutoFlight_afcs_05_a_50_1.p  # not probed; the grace bounds it
+lltp-classical ILL/petri-nets/MCC/AutoFlight_afcs_05_a_20_1.p  # not probed; the grace bounds it
+lltp-classical ILL/petri-nets/MCC/AutoFlight_afcs_05_a_1_1.p  # not probed; the grace bounds it
+lltp-classical ILL/ILLTP-SYJ-cbv/SYJ212+1.020.p  # 95 MB, loads in under 20 s
+lltp-classical ILL/ILLTP-SYJ-cbv/SYJ212+1.019.p  # 48 MB, loads in under 20 s
+lltp-classical ILL/ILLTP-SYJ-cbv/SYJ206+1.020.p  # 80 MB, loads in under 20 s
+lltp-classical ILL/ILLTP-SYJ-cbn/SYJ212+1.020.p  # 77 MB, loads in under 20 s
+lltp-classical ILL/ILLTP-SYJ-cbn/SYJ206+1.020.p  # 61 MB, loads in under 20 s
+lltp-classical ILL/ILLTP-SYJ-01/SYJ212+1.020.p  # 103 MB, loads in under 20 s
+lltp-classical ILL/ILLTP-SYJ-01/SYJ212+1.019.p  # 52 MB, loads in under 20 s
+lltp-classical ILL/ILLTP-SYJ-01/SYJ206+1.020.p  # 83 MB, loads in under 20 s
+lltp-classical ILL/ILLTP-SYJ-01/SYJ206+1.018.p  # repaired in the flake, loads
+lltp-recursion ILL/petri-nets/MCC/DatabaseWithMutex_database20UNFOLD_5_1.p  # not probed; the grace bounds it
+lltp-recursion ILL/petri-nets/MCC/Diffusion2D_2D8_gradient_20x20_50_1_1.p  # not probed; the grace bounds it
+lltp-recursion ILL/petri-nets/MCC/Diffusion2D_2D8_gradient_30x30_50_1_1.p  # not probed; the grace bounds it
+lltp-recursion ILL/petri-nets/MCC/Diffusion2D_2D8_gradient_40x40_50_1_1.p  # not probed; the grace bounds it
+lltp-recursion ILL/petri-nets/MCC/SimpleLoadBal_simple_lbs-20_100_1.p  # not probed; the grace bounds it
+lltp-recursion ILL/petri-nets/MCC/SimpleLoadBal_simple_lbs-20_20_1.p  # not probed; the grace bounds it
+lltp-recursion ILL/petri-nets/MCC/SimpleLoadBal_simple_lbs-20_50_1.p  # not probed; the grace bounds it
+lltp-recursion ILL/petri-nets/MCC/TokenRing-15-unfolded_1_1.p  # not probed; the grace bounds it
+lltp-recursion ILL/petri-nets/MCC/TokenRing-20-unfolded_1_1.p  # not probed; the grace bounds it
+lltp-all-cores ILL/ILLTP-SYJ-01/SYJ206+1.018.p  # repaired in the flake, loads
+lltp-all-cores ILL/ILLTP-SYJ-01/SYJ206+1.019.p  # 41 MB, crashed
+lltp-all-cores ILL/ILLTP-SYJ-01/SYJ206+1.020.p  # 83 MB, loads in under 20 s
+lltp-all-cores ILL/ILLTP-SYJ-01/SYJ212+1.019.p  # 52 MB, crashed
+lltp-all-cores ILL/ILLTP-SYJ-01/SYJ212+1.020.p  # 103 MB, loads in under 20 s
+lltp-all-cores ILL/ILLTP-SYJ-cbn/SYJ206+1.019.p  # 30 MB, crashed
+lltp-all-cores ILL/ILLTP-SYJ-cbn/SYJ206+1.020.p  # 61 MB, crashed
+lltp-all-cores ILL/ILLTP-SYJ-cbn/SYJ212+1.019.p  # 38 MB, crashed
+lltp-all-cores ILL/ILLTP-SYJ-cbn/SYJ212+1.020.p  # 77 MB, loads in under 20 s
+lltp-all-cores ILL/ILLTP-SYJ-cbv/SYJ206+1.020.p  # 80 MB, loads in under 20 s
+lltp-all-cores ILL/ILLTP-SYJ-cbv/SYJ212+1.019.p  # 48 MB, loads in under 20 s
+lltp-all-cores ILL/ILLTP-SYJ-cbv/SYJ212+1.020.p  # 95 MB, loads in under 20 s
+lltp-portfolio ILL/ILLTP-SYJ-01/SYJ206+1.018.p  # repaired in the flake, loads
+lltp-portfolio ILL/ILLTP-SYJ-01/SYJ206+1.019.p  # 41 MB, crashed
+lltp-portfolio ILL/ILLTP-SYJ-01/SYJ206+1.020.p  # 83 MB, loads in under 20 s
+lltp-portfolio ILL/ILLTP-SYJ-01/SYJ212+1.019.p  # 52 MB, crashed
+lltp-portfolio ILL/ILLTP-SYJ-01/SYJ212+1.020.p  # 103 MB, loads in under 20 s
+lltp-portfolio ILL/ILLTP-SYJ-cbn/SYJ206+1.019.p  # 30 MB, crashed
+lltp-portfolio ILL/ILLTP-SYJ-cbn/SYJ206+1.020.p  # 61 MB, crashed
+lltp-portfolio ILL/ILLTP-SYJ-cbn/SYJ212+1.019.p  # 38 MB, crashed
+lltp-portfolio ILL/ILLTP-SYJ-cbn/SYJ212+1.020.p  # 77 MB, loads in under 20 s
+lltp-portfolio ILL/ILLTP-SYJ-cbv/SYJ206+1.020.p  # 80 MB, loads in under 20 s
+lltp-portfolio ILL/ILLTP-SYJ-cbv/SYJ212+1.019.p  # 48 MB, loads in under 20 s
+lltp-portfolio ILL/ILLTP-SYJ-cbv/SYJ212+1.020.p  # 95 MB, loads in under 20 s

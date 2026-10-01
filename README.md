@@ -473,14 +473,17 @@ $ linlog-bench summary runs.csv
 family, engine and thread count and the whole LLTP library, unattended
 in the night: a user timer starts it as a systemd user unit at 20:00 (or
 at once if that has passed), where it waits for an otherwise idle
-machine, runs about nine and a half hours, and is stopped at 07:00
+machine, runs about ten and a half hours, and is stopped at 07:00
 whatever its state (`--slot=HH:MM-HH:MM` for other times; the script run
 again without `--fresh` finishes a stopped baseline on another night).
 Every baseline keeps a directory of its own named by the day it started,
 `bench/results/DAY/`: the CSV files of its runs, `starts.txt` with the
 commit measured, and its tables in `RESULTS.md`, which `bench/RESULTS.md`
 copies for the latest baseline; `journalctl --user -fu linlog-baseline`
-follows it. The first baseline, of the night of 2026-09-30, took 9 h 21 min
+follows it. A last stage runs again, with more time before the kill and
+more memory, the runs that `bench/reruns.txt` lists: those of an earlier
+baseline that were killed or crashed and that measurement showed to
+finish with more room. The first baseline, of the night of 2026-09-30, took 9 h 21 min
 on a 16-core Intel Core Ultra X9 388H; `bench/RESULTS.md` has its
 tables.
 
