@@ -484,8 +484,9 @@ follows it. A last stage runs again, with more time before the kill and
 more memory, the runs that `bench/reruns.txt` lists: those of an earlier
 baseline that were killed or crashed and that measurement showed to
 finish with more room. The first baseline, of the night of 2026-09-30, took 9 h 21 min
-on a 16-core Intel Core Ultra X9 388H; `bench/RESULTS.md` has its
-tables.
+on a 16-core Intel Core Ultra X9 388H, and a supplement on the next
+night added that last stage to it in 1 h 28 min; `bench/RESULTS.md` has
+its tables.
 
 ## What exists and what is planned
 

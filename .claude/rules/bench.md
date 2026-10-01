@@ -130,15 +130,20 @@ beyond clap and anyhow, which the CLI already has.
   600 and 16 GiB on one thread and `--grace` 60 and 32 GiB on every
   core. The list is chosen from measurements, not from the rows: its
   header says how, and a later baseline reruns the same list so that the
-  two compare. `--only` matches `FAMILY/NAME`, which names one
-  translation of an LLTP problem exactly (the three translations share
-  file names).
+  two compare. The grace lets a search that misses its stop run on, so
+  a rerun's `time_ms` can exceed its limit many times over, and
+  `summary` counts a verdict found that late as solved (two Petri nets
+  proved after 21.6 s and 552 s under 5 s in the first baseline):
+  compare these files by verdict, reason and time. `--only` matches
+  `FAMILY/NAME`, which names one translation of an LLTP problem exactly
+  (the three translations share file names).
 - **The library is repaired in one byte**: the flake's `lltp` package
   turns the only tab in the library, in `ILL/ILLTP-SYJ-01/SYJ206+1.018.p`,
   into the closing parenthesis it replaced, so that every file of the
   library loads. Every header reads: 111 ILLTP-SYJ problems say
-  `Unsolved` and have no expected verdict, 23 contradict their problems
-  (see the step 14 report).
+  `Unsolved` and have no expected verdict, and 25 files contradict their
+  problems (23 headers, and two more translations of one of them; see
+  the step 14 report).
 - **Every baseline keeps a directory of its own**, `results/DAY/`, DAY
   the day it started, so that two baselines (before and after a
   performance pass) sit side by side. A run without `--fresh` resumes

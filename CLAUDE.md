@@ -53,7 +53,7 @@ Workspace crates:
   `RESULTS.md`) and copies its tables to `bench/RESULTS.md`, the latest
   baseline's; it needs the machine to itself for a night, 20:00 to
   07:00. The first baseline is `bench/results/2026-09-30/`, taken before
-  the performance pass. Its invariants live in
+  the performance pass in two nights (the second added the reruns). Its invariants live in
   `.claude/rules/bench.md`, which loads when a file under `bench/` is
   read.
 

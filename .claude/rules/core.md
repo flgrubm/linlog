@@ -920,7 +920,10 @@ has no or-choices worth sharing out). What the code relies on:
   `SPLITS_PER_POLL` splits does not stop that enumeration. At 16
   threads, 166 other small Petri nets, which one thread stops at 5 s,
   ran past the kill as well (`bench/results/2026-09-30/`, rows with
-  `reason` `killed`). No test catches it.
+  `reason` `killed`). Given 600 s before the kill, such one-thread runs
+  stop 10 s to 506 s after their start, and two Petri nets are proved
+  after their limit (`TokenRing-20-unfolded_1_1` at 552 s under 5 s; the
+  `*-generous.csv` rows). No test catches it.
 - **Cube-and-conquer is nested fork-join at the first `LEVELS` (2)
   choices of a branch**, not a static enumeration: at a choice among
   alternatives (`decide_with`'s candidates and copies together, the two
