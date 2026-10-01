@@ -18,13 +18,40 @@ harness and the machine, made a baseline keep a directory of its own,
 made the run start and stop unattended within the night, took it, and
 wrote this report.
 
+**Progress on 2026-10-01, midday (a partial report).** The baseline
+stands, and a supplement to it is armed for the night of 2026-10-01 to
+10-02. On the author's request, the second session made sure every
+problem loads and has a readable header, and prepared reruns of the runs
+the baseline killed or crashed that more room lets finish:
+
+- Every LLTP file now loads. The one malformed file is repaired in the
+  flake, and every header reads.
+- The harness gained `--grace` (the seconds before the kill) and exact
+  problem names in `--only`. The script gained stage 4, the reruns from
+  `bench/reruns.txt` (95 runs), and `--into=DIR` to add runs to an
+  existing baseline.
+- Tonight's run adds three things to `bench/results/2026-09-30/`: the
+  runs the script missed (the net engine's cubes on MLL 3-Partition and
+  its one-thread Partition table), and stage 4. It should take one to
+  one and a half hours, three and a half at most.
+- To choose the reruns, the session ran the killed problems again by
+  day, on three efficiency cores, for about three hours. That broke the
+  rule that benchmark runs wait for the night; the author stopped it at
+  69 of 90 runs. Those probes found the cause of most kills (below).
+
+The details are in "After the baseline: loading every problem, and the
+reruns", and what remains in "Open questions and follow-ups". The
+morning after the run finishes this report: the reruns' numbers, and
+the stage-4 rows against the baseline's.
+
 ## Outcome
 
 - **LLTP input**: `linlog::lltp::read` (feature `parse`) reads the LLTP
   library's `fof(name, role, formula).` files into a `Sequent` and the
-  status the header claims. Every file of the library reads except
-  SYJ206+1.018, which is malformed in the library itself (one
-  parenthesis short). `Reading::new` refused none of the 4 495
+  status the header claims. Every one of the library's 4 512 files
+  reads. The one malformed file, SYJ206+1.018 in its 01 translation, has
+  a tab where a closing parenthesis belongs, and the flake's `lltp`
+  package repairs it. `Reading::new` refused none of the 4 495
   intuitionistic problems.
 - **Families**: `linlog::families` (feature `parse`) generates 17 problem
   families at any size, each instance with a verdict known from the
@@ -235,10 +262,13 @@ systemctl --user list-timers                         # linlog-baseline and its s
 source, families included), `--reverse`, `--modes
 given,classical,intuitionistic`, `--engines auto,focus,net,two-sided,
 additive`, `--jobs 1,2,…,all`, `--portfolio`, `--copies`,
-`--test-period`, `--recursion-limit`, `--timeout`, `--repeat` with
-`--repeat-under`, `--output` with `--append` and `--resume`.
-`baseline.sh` takes `--arm` (with `--slot=HH:MM-HH:MM`, by default
-20:00-07:00), `--detach` (at once, never stopped), `--fresh` and
+`--test-period`, `--recursion-limit`, `--timeout`, `--grace` (the
+seconds before the kill, by default a tenth of the limit and five),
+`--repeat` with `--repeat-under`, `--output` with `--append` and
+`--resume`. `--only` matches `FAMILY/NAME`, so it can name one of the
+three translations of an LLTP problem. `baseline.sh` takes `--arm` (with
+`--slot=HH:MM-HH:MM`, by default 20:00-07:00), `--detach` (at once, never
+stopped), `--fresh`, `--into=DIR` (resume DIR, finished or not) and
 `--force`.
 
 **Timing.** `time_ms` is wall-clock time (`Instant`) around `prove_until`
@@ -384,8 +414,11 @@ here were not (see the follow-ups).
 - 638 proved and 99 refuted (16.4 %).
 - Unknown: 984 at the time limit, 983 at the recursion limit of 2 048,
   898 at the copy bound of 3, 845 with a context of more than 63 formulas
-  to split, and 47 killed (the largest files, whose parse alone takes
-  most of the kill's grace). One file is malformed.
+  to split, and 47 killed. Of the killed, 8 are among the largest files,
+  which take up to 16 s to load where the kill comes at 10.5 s. The other
+  39 are smaller files whose search ran past the kill inside a long split
+  enumeration (see the follow-ups). One file did not parse; it has since
+  been repaired.
 - Per collection: KLE-IMP-CONJ 162 of 222, its ALT 27 and NON-THEOREMS
   22 (all); KLE-01, cbn and cbv 50, 68 and 67 of 88; ILLTP-SYN 11, 16 and
   16 of 19; ILLTP-SYJ 11, 34 and 39 of 252; ILLTP-LCL 1 of 6; misc 3 of 3;
@@ -589,6 +622,17 @@ whose header is the one already known to be wrong.
   restores them, since that needs no root. The system timers and the
   sync clients stay in the author's block, since stopping them needs
   root or concerns the author's own applications.
+- **The reruns are an explicit list**, `bench/reruns.txt`, not a rule
+  over the rows: whether a killed run can finish depends on how its
+  enumeration ends, which only running it tells, and a later baseline
+  must rerun the same set to compare.
+- **`--into=DIR` adds runs to a finished baseline**, rather than
+  deleting its `RESULTS.md` so that the default lookup resumes it. The
+  armed unit now gets its directory from the arming command, instead of
+  looking it up again.
+- **The library is repaired in the flake's fetch** (`postFetch`, with the
+  new hash), not by copying it into a second derivation. The repair is
+  one byte, located and verified as above.
 - **The `parallel-net` run is split in two** after the baseline, since
   its `--only partition-table` filtered out the MLL 3-Partition family it
   was meant to run. It also gains a one-thread column taken alone. The
@@ -616,8 +660,14 @@ whose header is the one already known to be wrong.
 - **Partition items are drawn from 1 to n** (not larger), so that the net
   engine still decides the small sizes at all.
 - **The script changed after the baseline** (the split `parallel-net`
-  run and the estimate), so step 16 runs a script that adds rows to this
-  one's. No row of this baseline is affected.
+  run, the estimate, stage 4), so step 16 runs a script that adds rows
+  to this one's. No row of this baseline is affected. Tonight's
+  supplement adds those rows to this baseline too.
+- **Probes of the engines ran by day**, on 2026-10-01 from 08:40 to
+  about 11:30, on three efficiency cores, to choose the reruns. On the
+  shared machine benchmark runs wait for the night; the author stopped
+  them. Their numbers inform the choice in `bench/reruns.txt` and are not
+  part of the baseline.
 
 ## The runs
 
@@ -734,23 +784,32 @@ independently of the engines, by the countermodels above.
   limit to 16 384 decides 56 of the 983 and turns 401 of them into the
   63-member limit. The lazy contexts or the branch-and-bound split are
   what the last needs.
-- **A stop the parallel path misses** (recorded in
-  `.claude/rules/core.md`): at sixteen threads, 166 small Petri nets ran
-  on past the harness's kill at 10.5 s, where one thread stops every one
-  of them at 5 s. Something in the parallel focused engine does not poll
-  its flags during long work, as the sequential engine did not before
-  the split poll. This is for the parallel follow-ups. The CLI's `prove`
-  on a pool runs the same engine, so its time limit can presumably
-  overrun the same way.
-- **Aborts at sixteen threads**: three of the largest SYJ problems (8 to
-  12 million occurrences) abort with a panic at sixteen threads (5
-  runs). A rerun of one at sixteen threads on four cores under 8 GB
-  timed out cleanly, so the cause is likely the memory that sixteen
-  workers fill under the 12 GiB cap (the unit's peak was 11.9 GB), but
-  that is unconfirmed: the harness keeps only the last line of a
-  child's error output. Keeping the whole of it for a crash row is a
-  small harness follow-up. The focused engine forced onto the additive
-  family at depth 16 aborts the same way, after 12.2 s.
+- **A stop the split enumeration misses, on one thread and on a pool**
+  (recorded in `.claude/rules/core.md`):
+  - On one thread, 90 runs on files under 2 MB ran past the harness's
+    kill at 10.5 s. Run without the kill, the Petri net
+    `AutoFlight_afcs_05_a_1_1` examines 1.8 billion splits at a single
+    stable sequent and stops after 242 s under a 5 s limit. So the poll
+    every `SPLITS_PER_POLL` splits does not stop that enumeration.
+  - At sixteen threads, 166 other small Petri nets ran past the kill,
+    although one thread stops them at 5 s. Of three sampled again at
+    sixteen threads on four cores, one stopped after 16 s and two ran
+    past 300 s.
+  - The CLI's `prove` runs the same engine, so its time limit can
+    presumably overrun the same way.
+- **The proof arena grows without bound inside such an enumeration**:
+  - Run without the kill, 9 of the 69 one-thread runs probed abort with
+    `memory allocation of 17179869184 bytes failed`. The backtrace
+    shows `Engine::push` growing the proof-node arena (`Vec<Node>`) from
+    `initial` inside `enumerate_split`, at about 110 MB a second.
+  - With 24 GiB, one of them fails again after 152 s, at the next
+    doubling.
+  - The five aborts at sixteen threads on three of the largest SYJ
+    problems end with the same last line, which suggests the same cause.
+    So does the focused engine forced onto the additive family at
+    depth 16 (12.2 s under the 12 GiB cap).
+  - The harness keeps only the last line of a crashed child's error
+    output; keeping all of it is a small harness follow-up.
 - **The parallel engines on LLTP and the portfolio**: sixteen threads
   lose on LLTP (2.2× slower in the median, 11 gained against 7 lost);
   the portfolio gains nothing measurable. Whether to keep the portfolio
@@ -765,12 +824,132 @@ independently of the engines, by the countermodels above.
   or no memo for `&` pairs.
 - **LLTP data**:
   - the 23 header contradictions above are worth reporting upstream;
-  - SYJ206+1.018 is malformed;
-  - the largest SYJ files (up to 103 MB) take longer to parse than a run
-    gets.
+  - SYJ206+1.018 in its 01 translation has a tab where a closing
+    parenthesis belongs, repaired here and worth reporting upstream too;
+  - the largest files (up to 103 MB) load in up to 16 s with 2 GB, past
+    the default kill; stage 4 reruns them with a longer grace.
 - **D3** (index width): nothing in these numbers points at the `u32`
   indices; the limits that bind are the recursion depth and the split
   width.
+
+## After the baseline: loading every problem, and the reruns
+
+The author asked how long it would take to run again the problems that
+broke or did not finish, then to add the reruns that can realistically
+finish with more generous caps, and to make sure every problem loads and
+every header is good. This section covers the work of 2026-10-01; its
+results come the morning after the night it runs.
+
+**Every problem loads, and every header reads.**
+
+- **The check.** Every one of the 4 512 files was loaded with the
+  harness's own child, with the net engine forced. That engine refuses
+  every non-MLL problem right after loading, so the check covers the
+  parse, the header's status and the forest, and runs no search.
+- **The malformed file.** One file did not load: SYJ206+1.018 in its 01
+  translation.
+  - Comparing its token patterns with the well-formed size 17 located
+    the defect. Character 8 772 549 of the formula is a tab where a
+    closing parenthesis belongs (`!(a1⇥ -o !(a2)`).
+  - It is the only tab in the library.
+  - Repaired, the problem has 6 029 278 occurrences: twice size 17's and
+    34, as every step of the family from size 15 to 19 is.
+  - The flake's `lltp` package now applies that one-byte repair. A diff
+    against the old package shows one changed byte and the same file
+    list.
+- **The headers.** 111 files (37 ILLTP-SYJ problems in three
+  translations) say `Status (intuit.) : Unsolved` and correctly get no
+  expected verdict. The 23 headers that contradict their problems are
+  listed under "Mismatches with the headers".
+- **Loading is cheap.** The largest file (103 MB, 30 million
+  occurrences) loads in 16 s with 2 GB. The rules said that parsing the
+  largest files takes over 15 GB, which is wrong and is corrected. The
+  one-thread kills of the eight largest files were the kill at 10.5 s
+  cutting off the load.
+
+**Why the other runs were killed or crashed.** The session found out by
+running the killed problems again without the harness's kill: 5 s search
+limit, the baseline's 12 GiB, at most 600 s each. That is a benchmark run
+by day, which the shared machine's rule forbids. It ran on three
+efficiency cores for about three hours before the author stopped it, at
+69 of the 90 one-thread kills on files under 20 MB.
+
+- **32 ended**, after 5.3 s to 570 s (median 112 s), all at the time
+  limit's `timeout`. The search had missed its stop inside a long split
+  enumeration and stopped when the enumeration ended.
+- **9 aborted** with `memory allocation of 17179869184 bytes failed`.
+  The proof-node arena grows inside such an enumeration (`Engine::push`
+  from `initial`, under `enumerate_split`) at about 110 MB a second. With
+  24 GiB, one of them failed again after 152 s, at the next doubling.
+- **28 ran past 600 s.**
+- **At sixteen threads**, three small Petri nets killed in
+  `lltp-all-cores` were sampled on the four low-power cores. One stopped
+  after 16 s, and two ran past 300 s.
+
+Both causes are engine bugs for the performance pass (see the
+follow-ups). No caps on this machine let the 9 memory aborts or the 28
+long runs finish within a night.
+
+**Stage 4 and `bench/reruns.txt`.** The script gains a fourth stage. It
+runs again, into `FILE-generous.csv`, the runs that `bench/reruns.txt`
+lists (`FILE FAMILY/NAME`, each with the reason it is there):
+
+- **On one thread**: 71 runs, in three streams pinned to performance
+  cores, with a grace of 600 s before the kill and 16 GiB per process.
+  - the 16 kills on files over 20 MB, since they load in under 20 s;
+  - the repaired file, in both modes;
+  - the 32 probe runs that ended;
+  - the 21 the probe did not reach, whose cost the grace bounds.
+- **On every core**: 12 runs each for `lltp-all-cores` and
+  `lltp-portfolio`, alone, with a grace of 60 s and 32 GiB.
+  - the 5 crashes on the largest SYJ problems (a pool's memory);
+  - the 6 kills on files over 20 MB (loading);
+  - the repaired file.
+- **Left out**:
+  - the 9 memory aborts and the 28 runs past 600 s;
+  - the 203 kills at sixteen threads on small files, per configuration;
+  - the focused engine forced onto the additive family at depth 16,
+    whose memory grows by about 1 GB a second.
+
+The list is explicit, not derived from the rows, because the choice
+rests on measurements that the rows do not contain. A later baseline
+runs the same list, so that the two compare.
+
+The harness changes behind it: `run --grace SECONDS` (by default a tenth
+of the limit and five, as before), and `--only` matching `FAMILY/NAME`,
+so that it names one of the three translations of an LLTP problem, which
+share file names. Every entry of the list selects exactly one file.
+`baseline.sh --into=DIR` resumes DIR even when it is finished, which
+adds a later script's new runs to an existing baseline.
+
+A dry run of stage 4, with three entries into a scratch directory, took
+under a minute:
+
+- the 103 MB file, killed in the baseline, now loads and times out
+  cleanly at 5.6 s;
+- the repaired file runs classically and times out at 5.2 s;
+- a probe-chosen Petri net stops at 14.5 s on a performance core;
+- the empty lists for sixteen threads are skipped, and `RESULTS.md` is
+  written.
+
+**Tonight**, armed with `bench/baseline.sh --arm
+--into=bench/results/2026-09-30`:
+
+- The unit starts at 20:00 once the machine is idle, or at 20:30
+  regardless. The estimate is now 10 h 30 min for a whole baseline,
+  stage 4 included.
+- It resumes the baseline's directory: stages 1 to 3 skip everything
+  they have, so only the runs the first night missed are new (the net
+  engine's MLL 3-Partition at 1 to 16 threads, and its one-thread
+  Partition table alone), about 15 minutes. Then comes stage 4.
+- It rewrites `bench/results/2026-09-30/RESULTS.md` and
+  `bench/RESULTS.md` with the new files, and `starts.txt` gains a second
+  line.
+- The binary is built from a newer commit. The engines are unchanged:
+  `core/`, `cli/`, the Cargo files and the toolchain do not differ from
+  `b53cb17c6831`. The harness differs only in the kill's grace and the
+  filter, and the rows the first night wrote stay as they are.
+- The stop timer ends it at 07:00 whatever its state.
 
 ## What step 16 must repeat for its numbers to compare
 
@@ -778,9 +957,14 @@ independently of the engines, by the countermodels above.
   --fresh` from the devshell, with the commit to measure checked out
   and the working copy clean. The baseline then goes into its own
   directory beside `bench/results/2026-09-30/`.
-  - Its only differences from this run are the split `parallel-net` run
-    (rows this one lacks) and the new estimate (an earlier latest
-    start).
+  - Its differences from this baseline's first night are those that
+    tonight's supplement makes up for: the split `parallel-net` run, and
+    stage 4 with `bench/reruns.txt` as it stands. Step 16 reruns the same
+    list, even where its own engines no longer need it, so that the
+    `*-generous.csv` files compare.
+  - The repaired LLTP file has a row of its own in step 16's LLTP passes,
+    where this baseline has an error row. Its `-generous` rows are the
+    ones to compare.
   - Compare rows by configuration: the CSV file, family, problem, mode,
     requested engine, jobs, portfolio and test period.
 - **The same machine and settings**:
@@ -821,5 +1005,13 @@ independently of the engines, by the countermodels above.
 - **In the morning** (2026-10-01): `nix flake check` printed "all checks
   passed!" with the results, the script fix and this report in the
   tree.
+- **For tonight's supplement** (2026-10-01):
+  - Every LLTP file loads with the harness's own child, the repaired one
+    included.
+  - The repaired library differs from the old in exactly one byte.
+  - `cargo clippy` is clean and `cargo test --workspace` passes after
+    the harness change.
+  - Every entry of `bench/reruns.txt` selects exactly one file.
+  - A dry run of stage 4 on three entries behaved as described.
 - **Against the preliminary rows**: the same verdicts and counters on
   every one of the 1 543 problems both decided.
