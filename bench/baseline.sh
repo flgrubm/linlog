@@ -13,8 +13,8 @@
 # problems that ended at the copy bound or the recursion limit with those
 # raised; then the thread counts 2, 4, 8 and every core on the hard
 # families, and every core with and without the portfolio on the LLTP
-# problems not decided at once. About eight and a half hours on sixteen
-# cores, on an otherwise idle machine.
+# problems not decided at once. About nine and a half hours on sixteen
+# cores, on an otherwise idle machine (9 h 21 min on 2026-09-30).
 #
 #   nix build .#lltp -o bench/lltp          # once: the LLTP library
 #   bench/baseline.sh --arm --fresh          # from the devshell
@@ -69,7 +69,7 @@ lltp=bench/lltp
 results=bench/results
 cores=(1 0 2 3)
 slot=20:00-07:00
-estimate=$((8 * 3600 + 30 * 60))
+estimate=$((9 * 3600 + 45 * 60))
 
 # The user slices a detached run keeps off the performance cores, and the
 # file listing the user timers it stopped for its duration.
@@ -385,7 +385,7 @@ mll=(--family "partition-yes=4,5,6" --family "partition-no=3,4" --family 3-parti
 
 # Stage 1, sequential, four streams: every family, the engines against each
 # other, the net engine's test period, the intuitionistic mode, the whole
-# LLTP library in both modes. About an hour and forty minutes.
+# LLTP library in both modes. About an hour and three quarters.
 streams=()
 run "${cores[0]}" families --all-families --timeout 300 "${repeat[@]}" &
 streams+=($!)
@@ -424,7 +424,7 @@ ended() {
 # 300 s, once each with 20 minutes, for the times the performance pass has
 # to beat; and the LLTP problems that ended at the copy bound or at the
 # recursion limit, again with a bound of 10 and a limit of 16384. About an
-# hour and a half.
+# hour.
 streams=()
 run "${cores[0]}" long-1 --family 3-partition-no=5 --family partition-no=5 --family partition-yes=7 \
   --family counter=16 --timeout 1200 &
@@ -442,15 +442,18 @@ wait "${streams[@]}"
 
 # Stage 3, alone on the machine: the hard families on 1 (the speedups'
 # baseline, taken alone like the rest), 2, 4, 8 and every core, the net
-# engine's cubes, and the LLTP problems that are not decided at once on
+# engine on the same thread counts, and the LLTP problems that are not decided at once on
 # every core, with and without the portfolio (every core is the command's
-# default). About five hours.
+# default). About six and three-quarter hours.
 run - parallel --family 3-partition-yes --family 3-partition-no --family partition-yes=5,6,7 \
   --family partition-no=4,5 --family qbf=16,20,24 --family mix=8,9,10,11 --family counter \
   --family counter-over --family wide-m3=24,30,36 --family wide-m4=28,32,36 \
   --jobs 1,2,4,8,all --timeout 120 "${repeat[@]}"
-run - parallel-net --family 3-partition-mll-no=4,5,6 --problems bench/problems/slow-tests.txt \
-  --only partition-table --engines net --jobs 2,4,8,all --timeout 60 "${repeat[@]}"
+# Two runs, since --only would drop the family.
+run - parallel-net --family 3-partition-mll-no=4,5,6 --engines net --jobs 1,2,4,8,all --timeout 60 \
+  "${repeat[@]}"
+run - parallel-net --problems bench/problems/slow-tests.txt --only partition-table --engines net \
+  --jobs 1,2,4,8,all --timeout 60 "${repeat[@]}"
 slow=$(ended slow)
 run - lltp-all-cores --lltp "$lltp/ILL" --only "$slow" --jobs all --timeout 5
 run - lltp-portfolio --lltp "$lltp/ILL" --only "$slow" --jobs all --portfolio --timeout 5

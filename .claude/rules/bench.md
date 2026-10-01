@@ -74,7 +74,13 @@ beyond clap and anyhow, which the CLI already has.
   parallel run is the sum over the threads.
 - **Timings mean something only from `baseline.sh`** on an otherwise idle
   machine: the sequential streams are pinned to performance cores with
-  `taskset`, the parallel runs run alone. The `bench` flake check runs the
+  `taskset`, the parallel runs run alone. Four streams at once cost a
+  stream 3–11 % against the same run alone (shared L3, heat), the same
+  for every sequential row, which is why stage 3 takes its own one-thread
+  rows. The kill at the limit plus a tenth plus five seconds counts from
+  the child's start, parse included, so a `killed` row on a file of
+  megabytes may be its parse; on a small file it is a search that did
+  not stop. The `bench` flake check runs the
   harness for its verdicts only (a `MISMATCH` fails it), never for times.
 - **A mismatch is a verdict against the known one.** For a generated
   family it is a bug in an engine or in the family's construction; for an
@@ -95,7 +101,7 @@ beyond clap and anyhow, which the CLI already has.
   `$XDG_RUNTIME_DIR/linlog-baseline-timers`; the inhibitor dies with the
   unit). System timers and services need root: the author stops them. The unit waits for an
   idle machine (on mains, a load average of at most 1) until the slot's
-  end minus `estimate` (8.5 h), then starts regardless and says so in
+  end minus `estimate` (9 h 45 min), then starts regardless and says so in
   `starts.txt`: a night not used is worse than rows marked as disturbed.
   `--detach` starts the unit at once and never stops it. The unit,
   `linlog-baseline`, runs the script with `--force` (24 GiB and no swap,
@@ -139,10 +145,13 @@ beyond clap and anyhow, which the CLI already has.
   4–11 efficiency cores (4.0 GHz, two clusters of four sharing an L2),
   12–15 low-power efficiency cores (3.7 GHz, shared L2 and no share of
   the L3). The sequential streams are pinned to 0–3; "every core" in the
-  parallel stage includes the slow low-power ones, so speedups flatten
-  above eight threads for a reason of the hardware. It throttles
-  thermally under long loads (the package counter is recorded per run
-  and in the journal), turbo stays on (off, the night would not fit),
+  parallel stage includes the slow low-power ones; on the families that
+  scale, speedups still grew from eight threads to sixteen in the first
+  baseline (the unsolvable 3-Partition 6.0× to 7.8×, the net engine's
+  Partition table 6.3–7.0× to 11.8–13.6×). It throttles thermally under
+  long loads (the package counter is recorded per run and in the
+  journal; 11 283 s of throttling over the first baseline's 9 h 21 min,
+  most of it in the all-core stage), turbo stays on (off, the night would not fit),
   TLP's power profile is `performance` on mains. A detached run keeps the
   user's other slices (`app.slice`, `session.slice`, `background.slice`)
   on CPUs 4–15 for its whole duration and gives them back in the unit's

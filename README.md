@@ -473,7 +473,7 @@ $ linlog-bench summary runs.csv
 family, engine and thread count and the whole LLTP library, unattended
 in the night: a user timer starts it as a systemd user unit at 20:00 (or
 at once if that has passed), where it waits for an otherwise idle
-machine, runs about eight and a half hours, and is stopped at 07:00
+machine, runs about nine and a half hours, and is stopped at 07:00
 whatever its state (`--slot=HH:MM-HH:MM` for other times; the script run
 again without `--fresh` finishes a stopped baseline on another night).
 Every baseline keeps a directory of its own named by the day it started,
