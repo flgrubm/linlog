@@ -1,48 +1,55 @@
 # Step 14 report: benchmarks, LLTP input and the hard families
 
-Sessions of 2026-09-30 and 2026-10-01. The baseline is taken: the night
-of 2026-09-30 to 10-01, from 21:23 to 06:45 (9 h 21 min), every stage
-complete, on commit `b53cb17c6831`, on the 16-core Intel Core Ultra X9
-388H, on mains, with turbo on. Its rows are `bench/results/2026-09-30/`
-and its tables `bench/RESULTS.md`. Nothing in the night disturbed it
-measurably: sequential runs waited for a CPU 0.07 % of their time, and no
-scheduled job ran. It found no wrong verdict of an engine. It did find:
-nine more LLTP headers that contradict their problems, a stop the
-parallel path misses on small Petri nets, five aborts at sixteen threads
-on the largest problems, and one hole in the script (the net engine's
-cubes on MLL 3-Partition were never run). All four are below.
+Sessions of 2026-09-30 and 2026-10-01. The baseline is taken, in two
+nights. The first, 2026-09-30 to 10-01, from 21:23 to 06:45 (9 h 21 min),
+ran every stage on commit `b53cb17c6831`. A supplement on the night of
+2026-10-01, from 20:00 to 21:27, added to the same directory the runs the
+script had missed (the net engine's cubes on MLL 3-Partition) and reran,
+with more time before the kill and more memory, 95 runs the first night
+had killed or crashed. Both nights ran the same engines on the 16-core
+Intel Core Ultra X9 388H, on mains, with turbo on. The rows are
+`bench/results/2026-09-30/` and the tables `bench/RESULTS.md`. Nothing in
+either night disturbed them measurably: sequential runs waited for a CPU
+0.07 % and 0.08 % of their time, and no scheduled job ran. The baseline
+found no wrong verdict of an engine. It did find: nine more LLTP headers
+that contradict their problems; a stop the focused engine misses inside
+long split enumerations, on one thread and on a pool, which lets a run go
+on for minutes past its limit; a proof arena that grows without bound
+there; and one hole in the script (the MLL 3-Partition cubes), which the
+supplement filled. All are below.
 
 The step was done in two runs. The first session built everything and
 could not take the baseline (see "The runs"). The second checked the
 harness and the machine, made a baseline keep a directory of its own,
-made the run start and stop unattended within the night, took it, and
-wrote this report.
+made the run start and stop unattended within the night, and took it.
+On the author's request it then made sure every LLTP problem loads and
+has a readable header, chose the reruns, took the supplement, and wrote
+this report.
 
-**Progress on 2026-10-01, midday (a partial report).** The baseline
-stands, and a supplement to it is armed for the night of 2026-10-01 to
-10-02. On the author's request, the second session made sure every
-problem loads and has a readable header, and prepared reruns of the runs
-the baseline killed or crashed that more room lets finish:
+**The supplement in brief** (details in "After the baseline: loading
+every problem, and the reruns"):
 
-- Every LLTP file now loads. The one malformed file is repaired in the
+- Every LLTP file loads: the one malformed file is repaired in the
   flake, and every header reads.
 - The harness gained `--grace` (the seconds before the kill) and exact
   problem names in `--only`. The script gained stage 4, the reruns from
-  `bench/reruns.txt` (95 runs), and `--into=DIR` to add runs to an
-  existing baseline.
-- Tonight's run adds three things to `bench/results/2026-09-30/`: the
-  runs the script missed (the net engine's cubes on MLL 3-Partition and
-  its one-thread Partition table), and stage 4. It should take one to
-  one and a half hours, three and a half at most.
+  `bench/reruns.txt`, and `--into=DIR` to add runs to an existing
+  baseline.
+- Of the 95 reruns, 81 now end cleanly:
+  - 42 stop at the limit or the copy bound within 4.0 to 5.8 s of
+    search: the large files whose loading the kill had cut off, the
+    repaired file, and at sixteen threads the five aborts on the largest
+    SYJ problems, which end with 32 GiB where 12 GiB aborted them;
+  - 37 time out only 10 s to 506 s after their start, and 2 Petri nets
+    are proved after their limit (at 21.6 s and 552 s under 5 s): their
+    search misses its stop inside a long split enumeration.
+- 7 reruns abort, most likely on the proof arena, and 7 are killed at
+  605 s.
+- The net engine's cubes on MLL 3-Partition scale as on the Partition
+  table: 7.5× at eight threads and 13.0× at sixteen at five bins.
 - To choose the reruns, the session ran the killed problems again by
-  day, on three efficiency cores, for about three hours. That broke the
-  rule that benchmark runs wait for the night; the author stopped it at
-  69 of 90 runs. Those probes found the cause of most kills (below).
-
-The details are in "After the baseline: loading every problem, and the
-reruns", and what remains in "Open questions and follow-ups". The
-morning after the run finishes this report: the reruns' numbers, and
-the stage-4 rows against the baseline's.
+  day, on three efficiency cores, for about three hours, against the
+  rule that benchmark runs wait for the night; the author stopped it.
 
 ## Outcome
 
@@ -81,8 +88,10 @@ the stage-4 rows against the baseline's.
   baseline goes into `bench/results/DAY/`, named by the day it started,
   with `starts.txt` naming the commit measured and `RESULTS.md` its
   tables; `bench/RESULTS.md` copies the latest.
-- **The baseline**: taken, every stage complete, before the 07:00 stop.
-  Its numbers are below, under "The baseline's numbers".
+- **The baseline**: taken, every stage complete, before the 07:00 stop,
+  and completed by the next night's supplement (the MLL 3-Partition
+  cubes and stage 4). Its numbers are below, under "The baseline's
+  numbers" and "After the baseline".
 - **Checks**: the flake's `bench` check runs the harness on the smallest
   instance of every family and on the committed problem file and fails
   on any verdict against a known one; the `lltp` package fetches the
@@ -101,7 +110,15 @@ record the machine's state", and its amendment. Of the second: "Keep
 every baseline in a directory of its own and run it unattended in the
 night slot", "Record the baseline", "Drop the preliminary rows the
 baseline supersedes", "Run the net engine's cubes on MLL 3-Partition
-too, and estimate the baseline from its night", and this report.
+too, and estimate the baseline from its night", "Report the baseline"
+(this report's first version), "Repair the LLTP library's one malformed
+file", "Grace a run before its kill, and let the problem filter name a
+family", "Rerun what more room lets finish, as a fourth stage of the
+baseline", "Report the progress of the reruns", "Add the night of
+2026-10-01 to the baseline: the reruns and the net engine's cubes on MLL
+3-Partition", "Say when an armed baseline resumes, instead of a whole
+baseline's duration", "Document the baseline's supplement", and this
+report.
 
 ## The night: what the unit and the administrator did
 
@@ -137,8 +154,9 @@ the baseline.
 | 2 | the largest sizes that time out at 300 s, once each with 20 min; the LLTP problems that ended at the copy bound again with a bound of 10, those at the recursion limit again with 16 384; four streams | 1 h 30 | 1 h 03 (23:10–00:13) |
 | 3 | alone: the hard families on 1, 2, 4, 8 and 16 threads (120 s), 2 h 41; the net engine's cubes on the Partition table, 14 min; the LLTP problems that timed out or took 50 ms or more on 16 threads, 1 h 48, and the same with the portfolio, 1 h 49 | 5 h | 6 h 32 (00:13–06:45) |
 
-The script now estimates 9 h 45 min (it said 8 h 30), so an armed run
-starts by 21:15 at the latest. The order already puts the sequential
+The script then estimated 9 h 45 min from this night (it had said
+8 h 30); with stage 4 it estimates 10 h 30 min, so an armed whole
+baseline starts by 20:30 at the latest. The order already puts the sequential
 stages, which step 15 compares with first, before the parallel one, so a
 run that overruns loses only part of stage 3, which resumes on another
 night.
@@ -406,8 +424,26 @@ tenth):
 | 2-2-2-2-2-2-9-1 | > 60 s (focus too) | > 60 s | > 60 s | 861 ms | 955 ms |
 
 The last two rows depend on which cube the solution lies in, not on the
-thread count. The MLL 3-Partition instances that were meant to be run
-here were not (see the follow-ups).
+thread count.
+
+The supplement took the one-thread column alone, and the MLL
+3-Partition instances that the first night's filter had dropped. Against
+that column, with the Partition table's other columns from the first
+night:
+
+| problem | 1 thread, alone | 2 | 4 | 8 | 16 |
+|---|---|---|---|---|---|
+| 3-partition-mll-no/4 | 1.59 s | 1.9× | 3.6× | 6.4× | 11.2× |
+| 3-partition-mll-no/5 | 59.71 s | 2.3× | 4.3× | 7.5× | 13.0× |
+| partition-table/1-2-5 | 4.09 s | 2.0× | 4.0× | 7.0× | 13.2× |
+| partition-table/2-3-2-1 | 4.34 s | 1.9× | 3.6× | 6.6× | 12.8× |
+| partition-table/1-1-1-5 | 7.40 s | 1.9× | 3.7× | 6.7× | 12.1× |
+| partition-table/1-1-2-4 | 1.07 s | 1.9× | 3.8× | 7.2× | 14.0× |
+
+Six bins stay over 60 s at every thread count. The one-thread column
+taken alone (and not pinned) is within 12 % of the four-stream one in
+either direction (0.88 to 1.12), not consistently faster, so the first
+table's speedups stand. Every MLL 3-Partition verdict is the family's.
 
 **LLTP, one thread, 5 s**, intuitionistic pass over all 4 495 problems:
 
@@ -456,9 +492,10 @@ more on one thread:
 - The portfolio decides 34, the 32 and two more Petri nets. Its times on
   the 32 shared match all-cores within 0.69–1.27× (median 1.01).
 
-**Mismatches with the headers**: 23 verdicts contradict what an LLTP
-header claims, every one of them the library's doing, none an
-engine's. The 5 s pass finds the 14 the first session found:
+**Mismatches with the headers**: 26 rows on 25 files contradict what
+an LLTP header claims: 23 headers, two further translations of one of
+them, and one file in two passes. Every one is the library's doing, none
+an engine's. The 5 s pass finds the 14 the first session found:
 
 - KLE065 (three translations) and SYJ212+1.001 (cbn) are marked
   Non-Theorem, but linlog's proofs pass the checker and LLTP's own result
@@ -500,9 +537,10 @@ whose header is the one already known to be wrong.
 - **The net engine** is linear on distinct atoms and wide contexts (14 335
   occurrences in 0.64 s) and exponential in the symmetry of equal
   literals within one tree. Its cubes scale almost linearly to eight
-  threads and keep scaling to sixteen (11.8–13.6×), which reproduces
-  step 13's 7.4× and 6.7× at eight on the Partition table (6.3–7.0×
-  here).
+  threads and keep scaling to sixteen: on the Partition table 6.6–7.2×
+  at eight and 12.1–14.0× at sixteen against a one-thread run alone,
+  which reproduces step 13's 7.4× and 6.7× at eight, and on MLL
+  3-Partition 7.5× and 13.0× at five bins.
 - **The parallel focused engine** reproduces step 13's 6.0× on the
   unsolvable 3-Partition at eight threads (6.1× here) and reaches 7.8× at
   sixteen. It also scales on Partition, up to 9–11× at sixteen.
@@ -661,13 +699,17 @@ whose header is the one already known to be wrong.
   engine still decides the small sizes at all.
 - **The script changed after the baseline** (the split `parallel-net`
   run, the estimate, stage 4), so step 16 runs a script that adds rows
-  to this one's. No row of this baseline is affected. Tonight's
-  supplement adds those rows to this baseline too.
+  to this one's. No row of this baseline is affected. The
+  supplement added those rows to this baseline too.
 - **Probes of the engines ran by day**, on 2026-10-01 from 08:40 to
   about 11:30, on three efficiency cores, to choose the reruns. On the
   shared machine benchmark runs wait for the night; the author stopped
   them. Their numbers inform the choice in `bench/reruns.txt` and are not
   part of the baseline.
+- **One line of `plan/15-performance.md` was edited** on the first
+  morning: a reference to this report's section, by its new name ("The
+  baseline's numbers"). The protocol reserves the plan's step files for
+  the planning session; its review noted the edit as harmless.
 
 ## The runs
 
@@ -687,9 +729,9 @@ whose header is the one already known to be wrong.
 
 The harness answers all three:
 
-- The baseline runs detached, with 24 GiB and no swap for the unit and
-  `OOMPolicy=continue`.
-- Every process is capped at 12 GiB.
+- The baseline runs detached, with 24 GiB (40 GiB since stage 4) and no
+  swap for the unit and `OOMPolicy=continue`.
+- Every process is capped at 12 GiB (16 and 32 GiB in stage 4).
 - The run starts and stops itself within the slot and waits for an idle
   machine.
 - Every run records its CPU time and run-queue wait.
@@ -714,6 +756,29 @@ The harness answers all three:
     timer was scheduled again.
 - It armed the baseline at 21:22. The run took 9 h 21 min and finished
   before the stop.
+
+**The fifth run is the supplement**, on the night of 2026-10-01, armed at
+midday with `bench/baseline.sh --arm --into=bench/results/2026-09-30`:
+
+- The machine rebooted at 19:29, which dropped the transient timers.
+  They were armed again with the same command at 19:33. The author's
+  evening block went in at 19:32, before the slot this time.
+- `obsidian-snapshot.timer` was stopped by hand at 19:36, so the unit
+  found no user timer due, and paused and restored none. It stays
+  stopped until started again.
+- The unit started at 20:00 with a load average of 0.00, on commit
+  `5b2d49de6880`, which changes only `plan/` over the commit that added
+  stage 4. The engines are those of `b53cb17c6831`; the harness differs
+  only in the kill's grace and the filter.
+- Stages 1 to 3 skipped, within seconds, everything the first night had
+  run. The `parallel-net` additions took 20:00 to 20:11, stage 4 20:11
+  to 21:27. The unit used 3 h 53 min of CPU in 1 h 28 min and peaked at
+  16.6 GB of its 40 GiB; the package throttled for 962 s.
+- `RESULTS.md`, its header listing both starts, and `bench/RESULTS.md`
+  were written at 21:27. The slices got every core back and the
+  inhibitor was released; the stop timer has nothing left to stop.
+- The arming command had said the run "takes about 10 h 30 min", the
+  estimate of a whole baseline. It now says so when it resumes one.
 
 ## Review
 
@@ -751,8 +816,9 @@ step:
   - The poll counter can skip a multiple of 4 096 when splits are counted
     outside the loops; that costs a poll, never a verdict.
 
-The second run's changes are to a shell script and the documentation,
-nothing soundness-critical, and had no reviewer. They were tested as
+The second run's changes are to the script, the harness's kill and
+problem filter, the flake's fetch of the library and the documentation:
+nothing soundness-critical, and no reviewer. They were tested as
 "The runs" says. The nine new header contradictions were checked
 independently of the engines, by the countermodels above.
 
@@ -795,6 +861,12 @@ independently of the engines, by the countermodels above.
     although one thread stops them at 5 s. Of three sampled again at
     sixteen threads on four cores, one stopped after 16 s and two ran
     past 300 s.
+  - Given 600 s before the kill (the supplement's stage 4), 37 one-thread
+    runs time out only 10 s to 506 s after their start, and two Petri
+    nets are proved after their limit: `TokenRing-15-unfolded_1_1` at
+    21.6 s and `TokenRing-20-unfolded_1_1` at 552 s, under 5 s, both with
+    checked proofs. A missed stop turns a timeout into a late verdict,
+    which `summary` counts as solved.
   - The CLI's `prove` runs the same engine, so its time limit can
     presumably overrun the same way.
 - **The proof arena grows without bound inside such an enumeration**:
@@ -804,30 +876,36 @@ independently of the engines, by the countermodels above.
     `initial` inside `enumerate_split`, at about 110 MB a second.
   - With 24 GiB, one of them fails again after 152 s, at the next
     doubling.
+  - In the supplement, 7 of the 21 one-thread reruns the probe had not
+    reached abort under 16 GiB after 53 s to 469 s, with the last line
+    the probes' allocation failures had. A 16 GiB cap allows the arena
+    no further doubling than 12 GiB did, since the next one needs more
+    than 16 GiB in all.
   - The five aborts at sixteen threads on three of the largest SYJ
-    problems end with the same last line, which suggests the same cause.
-    So does the focused engine forced onto the additive family at
-    depth 16 (12.2 s under the 12 GiB cap).
+    problems were not this: with 32 GiB the supplement's reruns of them
+    end cleanly within 5.3 s (three timeouts, two at the copy bound), so
+    12 GiB was too little for a pool on 8 to 15 million occurrences. The
+    focused engine forced onto the additive family at depth 16 aborts
+    after 12.2 s under the 12 GiB cap; which allocation fails there, the
+    harness does not say.
   - The harness keeps only the last line of a crashed child's error
     output; keeping all of it is a small harness follow-up.
 - **The parallel engines on LLTP and the portfolio**: sixteen threads
   lose on LLTP (2.2× slower in the median, 11 gained against 7 lost);
   the portfolio gains nothing measurable. Whether to keep the portfolio
   is now the performance pass's call on these numbers.
-- **The net engine's cubes on MLL 3-Partition were not measured**: the
-  script's `--only partition-table` filtered the family out of its run.
-  The script is fixed for step 16, which takes those rows and a
-  one-thread column alone for the net engine.
 - **The net engine's test period**: a period of 16 above a few thousand
   occurrences is 1.39× faster on the wide sequents; a small follow-up.
 - **The additive memo is unbounded** (8 GB at depth 16). It needs a cap,
   or no memo for `&` pairs.
 - **LLTP data**:
-  - the 23 header contradictions above are worth reporting upstream;
+  - the 25 files whose headers contradict them (above) are worth
+    reporting upstream;
   - SYJ206+1.018 in its 01 translation has a tab where a closing
     parenthesis belongs, repaired here and worth reporting upstream too;
   - the largest files (up to 103 MB) load in up to 16 s with 2 GB, past
-    the default kill; stage 4 reruns them with a longer grace.
+    the default kill; with stage 4's longer grace every one of them
+    times out cleanly, at 5.1 to 5.8 s of search.
 - **D3** (index width): nothing in these numbers points at the `u32`
   indices; the limits that bind are the recursion depth and the split
   width.
@@ -837,8 +915,8 @@ independently of the engines, by the countermodels above.
 The author asked how long it would take to run again the problems that
 broke or did not finish, then to add the reruns that can realistically
 finish with more generous caps, and to make sure every problem loads and
-every header is good. This section covers the work of 2026-10-01; its
-results come the morning after the night it runs.
+every header is good. This section covers the work of 2026-10-01 and
+the supplement that ran it that night.
 
 **Every problem loads, and every header reads.**
 
@@ -859,8 +937,8 @@ results come the morning after the night it runs.
     list.
 - **The headers.** 111 files (37 ILLTP-SYJ problems in three
   translations) say `Status (intuit.) : Unsolved` and correctly get no
-  expected verdict. The 23 headers that contradict their problems are
-  listed under "Mismatches with the headers".
+  expected verdict. The 25 files whose headers contradict their problems
+  are listed under "Mismatches with the headers".
 - **Loading is cheap.** The largest file (103 MB, 30 million
   occurrences) loads in 16 s with 2 GB. The rules said that parsing the
   largest files takes over 15 GB, which is wrong and is corrected. The
@@ -932,24 +1010,38 @@ under a minute:
 - the empty lists for sixteen threads are skipped, and `RESULTS.md` is
   written.
 
-**Tonight**, armed with `bench/baseline.sh --arm
---into=bench/results/2026-09-30`:
+**What the supplement found**, by the reason a run is on the list:
 
-- The unit starts at 20:00 once the machine is idle, or at 20:30
-  regardless. The estimate is now 10 h 30 min for a whole baseline,
-  stage 4 included.
-- It resumes the baseline's directory: stages 1 to 3 skip everything
-  they have, so only the runs the first night missed are new (the net
-  engine's MLL 3-Partition at 1 to 16 threads, and its one-thread
-  Partition table alone), about 15 minutes. Then comes stage 4.
-- It rewrites `bench/results/2026-09-30/RESULTS.md` and
-  `bench/RESULTS.md` with the new files, and `starts.txt` gains a second
-  line.
-- The binary is built from a newer commit. The engines are unchanged:
-  `core/`, `cli/`, the Cargo files and the toolchain do not differ from
-  `b53cb17c6831`. The harness differs only in the kill's grace and the
-  filter, and the rows the first night wrote stay as they are.
-- The stop timer ends it at 07:00 whatever its state.
+| on the list because | runs | outcome |
+|---|--:|---|
+| sixteen threads: it aborted (five problems, all cores and portfolio) | 10 | all end within 4.0–5.3 s: 6 timeouts, 4 at the copy bound |
+| sixteen threads: a file over 20 MB, or the repaired one | 14 | all time out at 5.1–5.3 s |
+| one thread: a file over 20 MB, or the repaired one | 18 | all time out at 5.1–5.8 s |
+| one thread: it ended in the probe | 32 | all time out, after 10.0 s to 401 s (median 74 s) |
+| one thread: not probed | 21 | 5 time out after 26 s to 506 s; 2 proved after 21.6 s and 552 s; 7 abort after 53 s to 469 s; 7 killed at 605 s |
+
+- **The kills on large files were the load.** With the grace, each of
+  them loads and then stops at its 5 s limit, at every thread count. So
+  does the repaired file, provable by its header and not proved within
+  5 s.
+- **The aborts at sixteen threads were the 12 GiB cap.** With 32 GiB,
+  the five problems end cleanly in both configurations.
+- **The probe's numbers hold.** The 32 runs the probe saw finish end
+  again, on a performance core in about two thirds of the probe's time
+  (median ratio 0.66), 31 of them with the same `nodes` and `splits`. The one
+  that differs, `ClientsAndServers-0005-0_1_1`, stopped at 5.3 s in the
+  probe and at 10.0 s here, with 2.4 times the splits: where a timeout
+  stops depends on when the limit falls.
+- **Of the 21 not probed**, 7 abort, most likely on the proof arena (see
+  the follow-ups), and 7 run past the grace. Nothing here argues for
+  adding the 37 runs left out.
+- **Two late proofs.** `TokenRing-15-unfolded_1_1` and
+  `TokenRing-20-unfolded_1_1`, under the recursion limit of 16 384, are
+  proved after 21.6 s and 552 s under a 5 s limit, with checked proofs
+  and as their headers say. They count as solved in the
+  `lltp-recursion-generous` row of `bench/RESULTS.md`; within the limit,
+  neither is.
+- **No new mismatch.**
 
 ## What step 16 must repeat for its numbers to compare
 
@@ -957,8 +1049,8 @@ under a minute:
   --fresh` from the devshell, with the commit to measure checked out
   and the working copy clean. The baseline then goes into its own
   directory beside `bench/results/2026-09-30/`.
-  - Its differences from this baseline's first night are those that
-    tonight's supplement makes up for: the split `parallel-net` run, and
+  - Its differences from this baseline's first night are those that the
+    supplement made up for: the split `parallel-net` run, and
     stage 4 with `bench/reruns.txt` as it stands. Step 16 reruns the same
     list, even where its own engines no longer need it, so that the
     `*-generous.csv` files compare.
@@ -977,7 +1069,7 @@ under a minute:
   `rust-toolchain.toml` names at the measured commit; a toolchain bump
   between the two baselines is a difference to name.
 - **The evening block pasted before 20:00**, not after the run has
-  started as on this night. Stage 1 of this baseline ran with the sync
+  started as on the first night (the supplement had it from 19:32). Stage 1 of this baseline ran with the sync
   clients on and the system's services free to use the performance
   cores. Its rows show no sign of it, but an exact repetition removes
   the question.
@@ -986,7 +1078,10 @@ under a minute:
     times second;
   - parallel rows only against the same stage's one-thread rows;
   - LLTP passes by the counts of decided problems per collection and
-    reason.
+    reason;
+  - the `*-generous.csv` files by verdict, reason and time, since
+    `summary` counts a verdict found after the limit as solved (the two
+    TokenRing proofs).
 
 ## Verification
 
@@ -999,13 +1094,16 @@ under a minute:
     rebuilt and passed.
   - The three armed test runs behaved as "The runs" says.
 - **The baseline**: complete, `RESULTS.md` written at 06:45. It reports
-  no mismatch on any generated family. Each of the 23 LLTP mismatches
-  is a header that contradicts its problem: 14 known from the first
-  run, 9 new ones refuted by classical countermodels.
+  no mismatch on any generated family. Each of the 26 LLTP mismatch
+  rows, on 25 files, is a header that contradicts its problem: the 14
+  files known from the first run, 9 new ones refuted by classical
+  countermodels, and two further translations of SYJ212+1.001, whose
+  header was known to be wrong (its cbn translation mismatches in two
+  passes).
 - **In the morning** (2026-10-01): `nix flake check` printed "all checks
   passed!" with the results, the script fix and this report in the
   tree.
-- **For tonight's supplement** (2026-10-01):
+- **Before the supplement** (2026-10-01, by day):
   - Every LLTP file loads with the harness's own child, the repaired one
     included.
   - The repaired library differs from the old in exactly one byte.
@@ -1013,5 +1111,13 @@ under a minute:
     the harness change.
   - Every entry of `bench/reruns.txt` selects exactly one file.
   - A dry run of stage 4 on three entries behaved as described.
+- **The supplement** (night of 2026-10-01): complete, `RESULTS.md`
+  written at 21:27, no new mismatch, and the counters of 31 of the 32
+  probe-chosen reruns equal to the probe's (the 32nd a timeout that
+  stopped at another point).
+- **Finally** (2026-10-01, evening), with the supplement's rows, the
+  arming message's fix and this report: `nix flake check` printed "all
+  checks passed!" (only `treefmt` rebuilt; the Rust sources are those
+  checked in the morning).
 - **Against the preliminary rows**: the same verdicts and counters on
   every one of the 1 543 problems both decided.
