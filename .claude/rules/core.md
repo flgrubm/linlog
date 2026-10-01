@@ -421,8 +421,7 @@ the net engine's, and the others stay zero.
   worth of nodes for every wrong choice among them, which the focused
   engine's counts refute at once), else to `focus`. Multiplicity is a
   proxy, measured by the benchmarks (the `engines` runs of
-  `bench/baseline.sh`; until a baseline is committed, the numbers are in
-  `plan/reports/14-benchmarks.md`): the net engine loses on Horn encodings (literals six times and
+  `bench/RESULTS.md`, read in `plan/reports/14-benchmarks.md`): the net engine loses on Horn encodings (literals six times and
   more, by one to four orders of magnitude) and on equal literals inside
   one pure `⊗` or `⅋` tree (a sequent of five blocks `x ⊗ x ⊗ x ⊗ x`
   against `~x ⅋ ~x ⅋ ~x ⅋ ~x` with one defect: over 10 s against 20 ms at
@@ -913,6 +912,12 @@ has no or-choices worth sharing out). What the code relies on:
   `Stop::Flags`; the sequential engines poll the closure through
   `Stop::Closure`. rayon tasks cannot be killed, so a place that stops
   polling is a place cancellation does not reach.
+- **Such a place exists, not yet found.** In the baseline's
+  `lltp-all-cores` and `lltp-portfolio` runs (16 threads, a 5 s limit),
+  166 small LLTP Petri nets (files under 0.2 MB) ran on past the
+  harness's kill at 10.5 s, where one thread stops every one of them at
+  5 s (`bench/results/2026-09-30/`, rows with `reason` `killed`). No test
+  catches it.
 - **Cube-and-conquer is nested fork-join at the first `LEVELS` (2)
   choices of a branch**, not a static enumeration: at a choice among
   alternatives (`decide_with`'s candidates and copies together, the two

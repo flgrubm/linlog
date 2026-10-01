@@ -5,7 +5,7 @@ only (never git), thematic commits as soon as a unit is done, doc comments on
 every item, the verification table, no pushing. Read before you start:
 
 - `plan/README.md` (D7, D8, D9, D10) and every report in `plan/reports/`,
-  above all `14-benchmarks.md` ("Preliminary numbers", "What the numbers
+  above all `14-benchmarks.md` ("The baseline's numbers", "What the numbers
   say about each engine", "Open questions and follow-ups; what step 15
   must beat"), `03-focused-engine.md` ("Performance observations", "Open
   questions and follow-ups"), `07-exponentials.md` ("Timings", "Open

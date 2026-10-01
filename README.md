@@ -480,7 +480,9 @@ Every baseline keeps a directory of its own named by the day it started,
 `bench/results/DAY/`: the CSV files of its runs, `starts.txt` with the
 commit measured, and its tables in `RESULTS.md`, which `bench/RESULTS.md`
 copies for the latest baseline; `journalctl --user -fu linlog-baseline`
-follows it.
+follows it. The first baseline, of the night of 2026-09-30, took 9 h 21 min
+on a 16-core Intel Core Ultra X9 388H; `bench/RESULTS.md` has its
+tables.
 
 ## What exists and what is planned
 

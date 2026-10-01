@@ -82,12 +82,6 @@ beyond clap and anyhow, which the CLI already has.
   KLE013 and KLE065 of `KLE-cbn` and of SYN001 contradict their problems;
   see the step 14 report). Keep the families' claims derived
   from the combinatorial problem, never from an engine.
-- **`bench/preliminary/`** holds the rows of the one run that got far
-  (2026-09-30, a shared machine, stopped early, no `cpu_ms`/`wait_ms`
-  columns) and their summary: not a baseline, but its verdicts and
-  counters are machine-independent and serve as the record of the engines
-  before the performance pass. Nothing regenerates it; `baseline.sh`
-  writes to `bench/results/`.
 - **The LLTP library is not in the repository** (GPL-3.0): `nix build
   .#lltp -o bench/lltp` fetches it, `bench/lltp` is ignored.
 - **`baseline.sh`** is meant to run as `bench/baseline.sh --arm
