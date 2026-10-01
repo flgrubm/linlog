@@ -264,7 +264,13 @@ if $arm || $detach; then
   systemd-run --user --unit=linlog-baseline-stop --on-calendar="$(date -d "@$end" '+%F %T')" \
     --timer-property=AccuracySec=1s "$(command -v systemctl)" --user stop \
     linlog-baseline.timer linlog-baseline.service
-  echo "armed, into $out: it starts at $(date -d "@$start" '+%a %H:%M') once the machine is idle, at $(date -d "@$latest" +%H:%M) whatever the load, takes about $((estimate / 3600)) h $((estimate % 3600 / 60)) min and is stopped at $(date -d "@$end" '+%a %H:%M')"
+  # The estimate is a whole baseline's; a resumed one runs only what its
+  # CSV files lack, which may be minutes.
+  length="takes about $((estimate / 3600)) h $((estimate % 3600 / 60)) min"
+  if compgen -G "$out/*.csv" >/dev/null; then
+    length="runs only what the directory's CSV files lack (a whole baseline ${length})"
+  fi
+  echo "armed, into $out: it starts at $(date -d "@$start" '+%a %H:%M') once the machine is idle, at $(date -d "@$latest" +%H:%M) whatever the load, $length and is stopped at $(date -d "@$end" '+%a %H:%M')"
   if [ -n "$due" ]; then
     echo "timers due in the slot: ${due%, }; stop them for the night"
   fi
