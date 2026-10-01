@@ -100,7 +100,10 @@ pub fn run(args: &RunArgs) -> Result<()> {
     references.extend(problems::lltp(&args.lltp)?);
     references.extend(problems::files(&args.problems)?);
     if !args.only.is_empty() {
-        references.retain(|r| args.only.iter().any(|only| r.name.contains(only.as_str())));
+        references.retain(|r| {
+            let path = format!("{}/{}", r.family, r.name);
+            args.only.iter().any(|only| path.contains(only.as_str()))
+        });
     }
     let jobs = args
         .jobs
@@ -302,7 +305,8 @@ fn child(
 
     let start = Instant::now();
     // Time for the parser, the pool's teardown and the proof check.
-    let limit = Duration::from_secs_f64(args.timeout * 1.1 + 5.0);
+    let grace = args.grace.unwrap_or(args.timeout * 0.1 + 5.0);
+    let limit = Duration::from_secs_f64(args.timeout + grace);
     let status = loop {
         if let Some(status) = process.try_wait()? {
             break Some(status);

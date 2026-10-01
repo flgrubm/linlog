@@ -68,7 +68,8 @@ pub struct RunArgs {
     /// `bench/problems/`); repeatable
     #[arg(long, value_name = "FILE")]
     problems: Vec<PathBuf>,
-    /// Run only the problems whose name contains one of these
+    /// Run only the problems whose family and name, `FAMILY/NAME` (as
+    /// `ILL/KLE-cbn/KLE017+1.p`), contain one of these
     #[arg(long, value_delimiter = ',', value_name = "TEXT")]
     only: Vec<String>,
     /// Run the problems in the reverse of their order: two runs over one
@@ -106,6 +107,11 @@ pub struct RunArgs {
     /// The time limit per run, in seconds
     #[arg(long, default_value_t = 60.0)]
     timeout: f64,
+    /// The seconds a child may run past its time limit before it is killed,
+    /// for its start, the parsing, the pool's teardown and the proof check
+    /// (default: a tenth of the limit and five seconds)
+    #[arg(long, value_name = "SECONDS")]
+    grace: Option<f64>,
     /// How often to run a problem whose first run took less than
     /// `--repeat-under` seconds; the summary takes the median
     #[arg(long, default_value_t = 1)]
