@@ -30,12 +30,55 @@ files, one child process per run, one CSV row per run with the verdict,
 wall time, CPU time, run-queue wait and the engine's counters;
 `linlog-bench summary` turns CSV files into tables, one column per
 configuration, the CSV file's name being part of the configuration. The
-baseline was taken in step 14, on a night the machine was the
-benchmark's: its rows are in `bench/results/<day>/` and its tables in
-`bench/RESULTS.md`, whose header names the commit it measured. That is
-the record of the engines before your changes, and step 16 takes the
-baseline again after them, on another such night. By day the machine is
-shared, and you work by day.
+baseline was taken in step 14 on the night of 2026-09-30, when the
+machine was the benchmark's, on commit `b53cb17c6831`, and completed by
+a supplement on the night of 2026-10-01 (the net engine's cubes on MLL
+3-Partition and its one-thread Partition table, which the first night's
+filter had dropped, and a fourth stage that ran the killed or crashed
+runs of `bench/reruns.txt` again with more grace and memory, into
+`*-generous.csv`): its rows are in `bench/results/2026-09-30/`, whose
+`starts.txt` names both starts, and its tables in `bench/RESULTS.md`.
+The engines were identical on both nights. That is the record of the
+engines before your changes, and step 16 takes the baseline again after
+them, on another such night. By day the machine is shared, and you work
+by day.
+
+## What the baseline found in the engines
+
+Beyond the times, the night turned up defects of the focused engine that
+this step's changes must remove, since they are in the code the step
+rewrites (the report's "Open questions and follow-ups" and
+`.claude/rules/core.md`, "Such places exist, in the split enumeration"):
+
+- **The stop is missed inside a long split enumeration.** 90 one-thread
+  LLTP runs on files under 2 MB ran past the harness's kill at 10.5 s
+  under a 5 s limit; the Petri net `ILL/petri-nets/MCC/AutoFlight_afcs_05_a_1_1.p`
+  examines 1.8 billion splits at one stable sequent and stops after
+  242 s. The poll every `SPLITS_PER_POLL` splits does not reach that
+  loop. `linlog prove --timeout` runs the same engine, so a user's time
+  limit overruns the same way. After item 2 the split search must poll
+  the stop condition at a bounded interval of work wherever it loops,
+  and a run of that problem under a 2 s limit must end within a few
+  seconds; pin that with one test on a generated instance that shows the
+  same behaviour, not on the library file.
+- **The proof arena grows without bound under a failing enumeration.**
+  Nine probed runs aborted with `memory allocation of 17179869184 bytes
+  failed`, the backtrace showing `Engine::push` growing the proof-node
+  arena from `initial` inside `enumerate_split`, at about 110 MB a
+  second: nodes are pushed for premises that the split then rejects and
+  are never reclaimed. The additive family at depth 16 on the forced
+  focused engine, and the five sixteen-thread aborts on the largest SYJ
+  problems, end with the same last line. Nodes a failed branch pushed
+  must not stay in the arena (truncate on backtrack, or push only once a
+  split's premises are proved; on the shared arena of the parallel path
+  argue what is safe), and the memory of a refutation must stay bounded
+  by the memo, not by the splits examined.
+- **At sixteen threads, 166 small Petri nets that one thread stops at
+  5 s ran past the kill** (`lltp-all-cores.csv`, `reason` `killed`): the
+  same miss, reached through the workers. The fix above must hold on
+  the pool too; the four-thread runs the constraints ask for are where
+  to see it.
+- **The additive memo is unbounded**, as item 6 says.
 
 So this step measures differently from a baseline, and the rule binds
 everything below:
@@ -98,7 +141,11 @@ sound in `.claude/rules/core.md`.
    after). Sizes that time out before stay in the set: deciding them is
    the point. Take the LLTP names from the baseline's
    `lltp-intuitionistic.csv`, whose `reason` column says how each problem
-   ended. Commit the script, the before file and, at the end, the after
+   ended, and add the Petri nets of `bench/reruns.txt` whose enumeration
+   misses its stop (`AutoFlight_afcs_05_a_1_1` first), which the
+   `*-generous.csv` rows time. A target that today runs past its limit
+   is run with a kill you can afford (`--grace`) and counted as such.
+   Commit the script, the before file and, at the end, the after
    file and a short table (`bench/TARGETS.md`).
 2. **Splits without enumeration.** Today `split` moves members one at a
    time through all `2^n` submasks in Gray-code order

@@ -45,12 +45,21 @@ session's transcript is
   intuitionistic mode, interactive proving, LaTeX and Typst export, SVG
   export, Rocq certificates for NanoYalla, and parallel search.
 - Step 14 (benchmarks) built its code (an LLTP reader, seventeen problem
-  families, the `linlog-bench` harness, a baseline script) but never took
-  its baseline: a first run died when a reviewer's scratch program took
-  62 GB and the kernel's OOM killer took the terminal with it; a second
-  shared the machine and was stopped. Its preliminary rows are in
-  `bench/preliminary/`. The step is to be run again with a rewritten
-  prompt that takes the baseline on a night.
+  families, the `linlog-bench` harness, a baseline script) in a first
+  session that never took its baseline (a reviewer's scratch program
+  took 62 GB and the kernel's OOM killer took the terminal with it), and
+  took it in a second session on the night of 2026-09-30
+  (`bench/results/2026-09-30/`, `bench/RESULTS.md`), with a supplement
+  of reruns on the night of 2026-10-01. The Status log of
+  `plan/README.md` has the details.
+- Since 2026-09-30 the author runs the step sessions from a second
+  Claude account whose configuration directory is `/home/tux/.claude-2`
+  (the same Unix user, so the working copy, the jj identity, the gpg
+  agent and the repository's `.claude/` are shared, but not this
+  account's memory notes: anything a step session must know goes into
+  the repository, never only into memory). While a step session is
+  running, do not edit the shared working copy: your edits would land in
+  its `@`.
 - On 2026-09-30 the plan was renumbered into whole numbers and
   restructured on the author's wishes: step 15 is the performance pass on
   the focused engine, step 16 the baseline again with the comparison,
@@ -63,19 +72,21 @@ session's transcript is
 
 ## Where things stand
 
-As of this handoff (2026-09-30, late morning) the next command is step 14,
-run again; whether the author has started it, ask or look (`jj log`):
+As of 2026-10-01 (midday) step 14's baseline is taken and reviewed, its
+supplement is armed for the night of 2026-10-01 (`systemctl --user
+list-timers` shows `linlog-baseline` and its stop), and the step's
+session finishes its report the morning after on the author's
+"continue". Then the planning session reviews that, and the next command
+is step 15:
 
 ```nu
-claude --model claude-opus-5-5 --effort xhigh --name step-14 ((open --raw plan/14-benchmarks.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-15 ((open --raw plan/15-performance.md) + "\n" + (open --raw plan/conduct.md))
 ```
 
-The order is 14 (its baseline in the night slot), 15 (by day, after the
-baseline is committed, since the baseline measures whatever is checked
-out at 20:00), 16 (a second night), 17 (assessment, the author's answers,
-then the plan from 18). The author has given the machine to the
-benchmarks from 20:00 to 07:00 on the two baseline nights; by day it is
-shared.
+The order is 15 (by day), 16 (a second night, after 15 is reviewed),
+17 (assessment, the author's answers, then the plan from 18). The author
+gives the machine to the benchmarks from 20:00 to 07:00 on baseline
+nights; by day it is shared.
 
 ## What a review is
 
@@ -147,9 +158,16 @@ what the steps so far showed.
 
 - A step's session can die with its terminal. If the author asks what
   happened to one, look at `journalctl` around the time, at the step's
-  transcript under `~/.claude/projects/-home-tux-Projects-own-linlog/`,
+  transcript under `/home/tux/.claude-2/projects/-home-tux-Projects-own-linlog/`
+  (the second account; `~/.claude/projects/…` for sessions of this one),
   and at what it left in its scratch directory under `/tmp`, which is
   volatile: rescue data from there before it is lost.
+- The gpg cache's two-hour maximum cannot be extended by the signing
+  loop. To restart the clock while the author is present:
+  `gpg-connect-agent 'CLEAR_PASSPHRASE --mode=normal <keygrip>' /bye`,
+  then sign once (the memory note on the commit identity has the
+  keygrip); without `--mode=normal` the command returns OK and clears
+  nothing.
 - A report can say more than was done. Check that files a report or a
   documentation file cites exist (`bench/RESULTS.md` was cited before any
   baseline had been taken).

@@ -51,7 +51,11 @@ its enumerations bounded by size, because an unbounded checker once took
 say so in every sub-agent's brief. Anything that runs for more than a few
 minutes runs detached from the terminal (a systemd user unit) so that it
 survives the session. Do not use every core or run `bench/baseline.sh`
-unless the step says the machine is free.
+unless the step says the machine is free. A benchmark or probe run by
+day that the step does not name is asked for first, however small and
+on whichever cores, with its purpose, its duration and the cores it
+takes, and waits for the author's yes; one step ran three hours of
+probes on the efficiency cores to choose a list and had to be stopped.
 
 Delegate independent work to sub-agents and keep working while they run:
 the `crate-source-explorer` agent for any question about a dependency's API

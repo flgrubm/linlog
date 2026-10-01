@@ -29,7 +29,7 @@ amended (see "Review protocol"). `notes/` holds research the prompts rely on.
 | 11 | SVG export of sequents, derivations and proof nets | `11-svg.md` | Opus 5.5 | xhigh | 9 |
 | 12 | Rocq certificates | `12-certificates.md` | Fable 5.1 | high | 10 |
 | 13 | Parallel search | `13-parallel.md` | Fable 5.1 | xhigh | 9 |
-| 14 | Benchmarks, LLTP input, hard families, and the baseline (the harness is built; run again to take the baseline on a night) | `14-benchmarks.md` | Opus 5.5 | xhigh | 13 |
+| 14 | Benchmarks, LLTP input, hard families, and the baseline (taken on the night of 2026-09-30, completed by a supplement on the night of 2026-10-01) | `14-benchmarks.md` | Opus 5.5 | xhigh | 13 |
 | 15 | Performance pass on the focused engine, driven by 14's baseline, measured by day through the engines' counters | `15-performance.md` | Fable 5.1 | xhigh | 14 |
 | 16 | The baseline again, after the pass, and the comparison of the two | `16-baseline.md` | Opus 5.5 | xhigh | 15 |
 | 17 | Assessment and planning: the state of the repository, the two baselines, every candidate in `later.md`; the author's decisions; then the prompts for the steps from 18 | `17-assessment.md` | Fable 5.1 | xhigh | 16 |
@@ -788,3 +788,50 @@ into an option or names it as a follow-up.
   general code audit with the refactoring it justifies, behaviour
   unchanged, with the engines' deterministic counters as the regression
   oracle.
+- 2026-10-01: step 14's baseline reviewed and accepted; the step
+  continues with a supplement in the night of 2026-10-01 and its report
+  is finished the morning after. Ten commits of the second run so far,
+  "Keep every baseline in a directory of its own and run it unattended
+  in the night slot" to "Report the progress of the reruns"; all checks
+  pass including `nix flake check`; `core/`, `cli/`, the Cargo files and
+  the toolchain are identical to the measured commit. The baseline is
+  taken: 21:23 to 06:45 on commit `b53cb17c6831`, every stage complete
+  before the 07:00 stop, no scheduled job in the run, the sequential
+  rows waiting for a CPU 0.07 % of their time; `bench/results/2026-09-30/`
+  holds the rows and `starts.txt` the commit, `bench/RESULTS.md` the
+  tables, `bench/preliminary/` is gone, and the documentation no longer
+  says the baseline is pending. The planning session checked the
+  report's counts against the rows (638 proved and 99 refuted of 4 495
+  intuitionistic problems; 984, 983, 898, 845 and 47 unknown by reason;
+  209 kills and 5 aborts at sixteen threads; the preliminary verdicts and
+  counters reproduced exactly) and the unattended path against the
+  journal (the unit waited one minute for the load to fall, the timers
+  it paused, the stop timer firing on an inactive unit). The numbers
+  confirm step 13's speedups (6.1× at eight threads on the unsolvable
+  3-Partition, the net engine's cubes 6.3–7.0×, 11.8–13.6× at sixteen),
+  show sixteen threads a net loss on LLTP and the portfolio worthless,
+  and make the two-sided engine's gain library-wide (never fewer
+  decisions, 1.36× in the median on the Petri nets). Two findings go to
+  step 15 as defects, not tuning: the stop condition is missed inside a
+  long split enumeration (a Petri net examines 1.8 billion splits at one
+  stable sequent and stops after 242 s under a 5 s limit; 90 one-thread
+  and 166 sixteen-thread runs ran past the harness's kill; the CLI's
+  `--timeout` has the same hole), and the proof arena grows without
+  bound under a failing enumeration (aborts at 16 GiB). Accepted: the
+  first night's `parallel-net` filter dropped the MLL 3-Partition
+  family, fixed for the supplement; the LLTP library's one malformed
+  file is repaired in the flake's fetch; `--grace` and `FAMILY/NAME`
+  filters in the harness; stage 4 from an explicit `bench/reruns.txt`,
+  since whether a killed run can finish is known only by running it.
+  Not accepted as practice: the step ran about three hours of probes by
+  day on the efficiency cores to choose that list, against the rule,
+  until the author stopped it; `conduct.md` now says a measurement the
+  step does not name is asked for first. Nits for the final report: the
+  mismatch count is 25 files in 26 rows (23 distinct headers plus two
+  further translations of a known one), and the step edited one line of
+  `15-performance.md`, which the protocol reserves for this session
+  (harmless, a heading's name). Prompts 15 and 16 amended: 15 gets the
+  two defects as requirements with the stop-miss instance in its target
+  set, 16 the two-night shape of the first baseline, `reruns.txt` run as
+  it stands, the evening block before 20:00 and the killed rows as the
+  place to look for step 15's fixes.

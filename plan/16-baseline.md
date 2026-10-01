@@ -9,8 +9,9 @@ every item, the verification table, no pushing. Read before you start:
   must repeat exactly") and `plan/reports/15-performance.md` (what
   changed in the engines, the target set's before and after, and which
   rows of the baseline to look at first).
-- `.claude/rules/bench.md`, `bench/baseline.sh`, `bench/RESULTS.md` and
-  the first baseline's directory under `bench/results/`.
+- `.claude/rules/bench.md`, `bench/baseline.sh`, `bench/reruns.txt`,
+  `bench/RESULTS.md` and the first baseline's directory,
+  `bench/results/2026-09-30/`, whose `starts.txt` lists its two starts.
 - `plan/README.md`: the step table and the Status entries for steps 14
   and 15.
 
@@ -40,7 +41,20 @@ work on this step" below apply.
    context wider than 63 members is now a run and no longer a refusal)
    or made a family's sizes too easy, in which case the old sizes stay
    and the new ones are added, so every row of the first baseline has its
-   counterpart.
+   counterpart. Know how the first baseline came about: its stages 1 to
+   3 ran on the night of 2026-09-30 on commit `b53cb17c6831`; a second
+   night, 2026-10-01, added what the first had missed (the net engine's
+   cubes on MLL 3-Partition and its one-thread Partition table) and the
+   fourth stage, the killed or crashed runs of `bench/reruns.txt` again
+   with more grace and memory into `*-generous.csv`, from a later commit
+   of the harness alone (`core/`, `cli/`, the Cargo files and the
+   toolchain identical, as `jj diff --from b53cb17c6831 --to <commit>
+   --stat -- core cli Cargo.toml Cargo.lock rust-toolchain.toml` shows).
+   Your one night runs the whole script, stage 4 included, with
+   `bench/reruns.txt` as it stands, even where step 15's engines no
+   longer need the room, so that the `-generous` files compare too.
+   Have the author paste the evening block before 20:00, not after the
+   run has started as on the first night.
 2. **The night.** Arm the unattended start as step 14 did, give the
    author the two blocks to paste (before leaving, and in the morning),
    the time the run should end, and the word to come back with
@@ -62,7 +76,11 @@ work on this step" below apply.
    rather than computing the tables by hand. Every verdict that differs
    between the two baselines on the same problem in the same mode is
    looked at: a decided verdict that changed is a bug in step 15 and is
-   reported as such, at the top.
+   reported as such, at the top. The rows that were `killed` or
+   `crash` on the first night (a search that missed its stop inside a
+   split enumeration, a proof arena that outgrew its cap; the first
+   report explains both) are where step 15's fixes should show as clean
+   `timeout` rows or decisions; count them.
 5. **Documentation.** README and the rules files where they quote
    numbers; `plan/later.md` where a candidate's premise changed (the
    net engine's targets, what is left for the inverse method and for the
