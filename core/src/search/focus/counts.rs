@@ -453,13 +453,19 @@ impl Split {
         self.lo[side][atom] + self.below[atom] > 0 || self.hi[side][atom] + self.above[atom] < 0
     }
 
-    /// Applies `change` to the sums of every atom of the occurrence's row
-    /// and brings the sides' counts of excluded atoms up to date.
-    fn update(&mut self, counts: &Counts, o: OccId, change: impl Fn(&mut Self, usize, Entry)) {
+    /// Moves a member between the open ones and a side, or adds it to
+    /// either, in one pass over its row: `side` gains it `settled` times
+    /// (1, 0 or −1) and the open members gain it `opened` times, and the
+    /// sides' counts of excluded atoms are brought up to date.
+    fn shift(&mut self, counts: &Counts, o: OccId, side: Side, settled: i32, opened: i32) {
+        let side = side as usize;
         for e in counts.row(o) {
             let a = e.atom.index();
             let was = [self.excludes(0, a), self.excludes(1, a)];
-            change(self, a, e);
+            self.lo[side][a] += settled * e.lo;
+            self.hi[side][a] += settled * e.hi;
+            self.below[a] += opened * e.lo.min(0);
+            self.above[a] += opened * e.hi.max(0);
             for (side, was) in was.into_iter().enumerate() {
                 match (was, self.excludes(side, a)) {
                     (false, true) => self.bad[side] += 1,
@@ -468,56 +474,62 @@ impl Split {
                 }
             }
         }
-    }
-
-    /// Adds (`sign` 1) or removes (`sign` −1) a member of a side.
-    fn settle(&mut self, counts: &Counts, o: OccId, side: Side, sign: i32) {
-        let side = side as usize;
-        self.update(counts, o, |split, a, e| {
-            split.lo[side][a] += sign * e.lo;
-            split.hi[side][a] += sign * e.hi;
-        });
         if counts.absorbs(o) {
-            self.absorbers[side] = self.absorbers[side].wrapping_add_signed(sign);
-        }
-        self.slack[side] += i64::from(sign) * (1 - i64::from(counts.weight(o)));
-    }
-
-    /// Adds (`sign` 1) or removes (`sign` −1) an open member.
-    fn leave_open(&mut self, counts: &Counts, o: OccId, sign: i32) {
-        self.update(counts, o, |split, a, e| {
-            split.below[a] += sign * e.lo.min(0);
-            split.above[a] += sign * e.hi.max(0);
-        });
-        if counts.absorbs(o) {
-            self.open_absorbers = self.open_absorbers.wrapping_add_signed(sign);
+            self.absorbers[side] = self.absorbers[side].wrapping_add_signed(settled);
+            self.open_absorbers = self.open_absorbers.wrapping_add_signed(opened);
         }
         let slack = 1 - i64::from(counts.weight(o));
-        self.slack_below += i64::from(sign) * slack.min(0);
-        self.slack_above += i64::from(sign) * slack.max(0);
+        self.slack[side] += i64::from(settled) * slack;
+        self.slack_below += i64::from(opened) * slack.min(0);
+        self.slack_above += i64::from(opened) * slack.max(0);
     }
 
     /// Adds a member to a side for good: a subformula of the `⊗`, or a
     /// member the search does not move.
     pub(crate) fn place(&mut self, counts: &Counts, o: OccId, side: Side) {
-        self.settle(counts, o, side, 1);
+        self.shift(counts, o, side, 1, 0);
     }
 
     /// Adds a member that a search will assign to a side.
     pub(crate) fn open(&mut self, counts: &Counts, o: OccId) {
-        self.leave_open(counts, o, 1);
+        self.shift(counts, o, Side::Left, 0, 1);
     }
 
     /// Assigns an open member to a side.
     pub(crate) fn assign(&mut self, counts: &Counts, o: OccId, side: Side) {
-        self.leave_open(counts, o, -1);
-        self.settle(counts, o, side, 1);
+        self.shift(counts, o, side, 1, -1);
+    }
+
+    /// Moves an assigned member from the other side to this one.
+    pub(crate) fn flip(&mut self, counts: &Counts, o: OccId, side: Side) {
+        let (to, from) = (side as usize, 1 - side as usize);
+        for e in counts.row(o) {
+            let a = e.atom.index();
+            let was = [self.excludes(0, a), self.excludes(1, a)];
+            self.lo[from][a] -= e.lo;
+            self.hi[from][a] -= e.hi;
+            self.lo[to][a] += e.lo;
+            self.hi[to][a] += e.hi;
+            for (side, was) in was.into_iter().enumerate() {
+                match (was, self.excludes(side, a)) {
+                    (false, true) => self.bad[side] += 1,
+                    (true, false) => self.bad[side] -= 1,
+                    _ => {}
+                }
+            }
+        }
+        if counts.absorbs(o) {
+            self.absorbers[from] -= 1;
+            self.absorbers[to] += 1;
+        }
+        let slack = 1 - i64::from(counts.weight(o));
+        self.slack[from] -= slack;
+        self.slack[to] += slack;
     }
 
     /// Takes an assigned member back from its side: it is open again.
     pub(crate) fn unassign(&mut self, counts: &Counts, o: OccId, side: Side) {
-        self.settle(counts, o, side, -1);
-        self.leave_open(counts, o, 1);
+        self.shift(counts, o, side, -1, 1);
     }
 
     /// Returns whether some assignment of the open members may still pass

@@ -1309,8 +1309,7 @@ impl<'a> Engine<'a> {
                 next -= 1;
                 let m = members[next];
                 if trail[next] == Side::Right {
-                    split.unassign(self.counts, m, Side::Right);
-                    split.assign(self.counts, m, Side::Left);
+                    split.flip(self.counts, m, Side::Left);
                     right.remove(m);
                     left.insert(m);
                     trail[next] = Side::Left;
