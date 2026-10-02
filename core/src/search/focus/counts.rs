@@ -292,7 +292,15 @@ impl Counts {
             slack: [-2; 2],
             slack_below: 0,
             slack_above: 0,
+            inert: false,
         }
+    }
+
+    /// Returns whether the occurrence's row has an interval that excludes
+    /// zero by itself: only such a member can make a set fail the interval
+    /// check.
+    pub(crate) fn tight(&self, o: OccId) -> bool {
+        self.row(o).any(|e| e.lo > 0 || e.hi < 0)
     }
 
     /// Returns an empty tally of this forest's width.
@@ -476,6 +484,9 @@ pub(crate) struct Split {
     slack_below: i64,
     /// The sum of their positive contributions.
     slack_above: i64,
+    /// Whether no prune can cut any assignment of these members, so that
+    /// the counts need not follow the search.
+    inert: bool,
 }
 
 impl Split {
@@ -493,6 +504,15 @@ impl Split {
         self.slack = [-2; 2];
         self.slack_below = 0;
         self.slack_above = 0;
+        self.inert = false;
+    }
+
+    /// Says, once every member is placed or open, whether no prune in
+    /// force can cut any assignment of them: [`feasible`](Self::feasible)
+    /// then answers yes without the counts, which stop following the
+    /// members' moves.
+    pub(crate) fn set_inert(&mut self, inert: bool) {
+        self.inert = inert;
     }
 
     /// Whether no assignment of the open members can bring the side's
@@ -545,11 +565,16 @@ impl Split {
 
     /// Assigns an open member to a side.
     pub(crate) fn assign(&mut self, counts: &Counts, o: OccId, side: Side) {
-        self.shift(counts, o, side, 1, -1);
+        if !self.inert {
+            self.shift(counts, o, side, 1, -1);
+        }
     }
 
     /// Moves an assigned member from the other side to this one.
     pub(crate) fn flip(&mut self, counts: &Counts, o: OccId, side: Side) {
+        if self.inert {
+            return;
+        }
         let (to, from) = (side as usize, 1 - side as usize);
         for e in counts.row(o) {
             let a = e.atom.index();
@@ -577,7 +602,9 @@ impl Split {
 
     /// Takes an assigned member back from its side: it is open again.
     pub(crate) fn unassign(&mut self, counts: &Counts, o: OccId, side: Side) {
-        self.shift(counts, o, side, -1, 1);
+        if !self.inert {
+            self.shift(counts, o, side, -1, 1);
+        }
     }
 
     /// Returns whether some assignment of the open members may still pass
@@ -586,6 +613,9 @@ impl Split {
     /// one side only) and the count equation, `≥` with Mix. With no open
     /// member, whether the split passes them.
     pub(crate) fn feasible(&self, intervals: bool, equation: bool, mix: bool) -> bool {
+        if self.inert {
+            return true;
+        }
         if intervals {
             let needy = (0..2)
                 .filter(|&side| self.absorbers[side] == 0 && self.bad[side] > 0)
@@ -643,6 +673,8 @@ mod tests {
         assert_eq!(row(5), [e(a, -1, 1), e(b, -1, 0)], "the ⊕");
         assert_eq!(row(6), [e(a, 0, 1), e(b, -1, 0)], "the &");
         assert_eq!(row(10), [], "the 1");
+        assert!(c.tight(OccId::new(2)), "a literal's interval excludes zero");
+        assert!(!c.tight(OccId::new(5)), "the ⊕ can be balanced by itself");
         assert!(!c.absorbs(OccId::new(0)));
         assert_eq!(c.weight(OccId::new(0)), 0, "one ⊗, one ⅋");
         assert_eq!(c.weight(OccId::new(10)), -1);

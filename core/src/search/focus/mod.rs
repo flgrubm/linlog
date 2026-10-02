@@ -1317,6 +1317,8 @@ impl<'a> Engine<'a> {
         let mut split = self.take_split();
         split.place(self.counts, a, Side::Left);
         split.place(self.counts, b, Side::Right);
+        let mut placed = self.take_list();
+        placed.extend([a, b]);
         // Two-sided, on a hypothesis `A ⊸ B`: the goal stays with `B`, so it
         // is fixed on the consequent's side and left out of the search.
         if let Some(reading) = self.reading
@@ -1326,6 +1328,7 @@ impl<'a> Engine<'a> {
                 .position(|&m| reading.position(m) == Position::Output)
         {
             let goal = members.remove(at);
+            placed.push(goal);
             if consequent == a {
                 right.remove(goal);
                 left.insert(goal);
@@ -1334,7 +1337,8 @@ impl<'a> Engine<'a> {
                 split.place(self.counts, goal, Side::Right);
             }
         }
-        self.open(&mut members, &mut split);
+        self.open(&mut members, &mut split, &placed);
+        self.give_list(placed);
         let join = Join::Tensor(f, a, b);
 
         #[cfg(feature = "parallel")]
@@ -1374,7 +1378,8 @@ impl<'a> Engine<'a> {
     /// members that bear on an atom are decided one after the other and
     /// its counts are settled early (those without a row last);
     /// interchangeable members next to each other, the lowest id last.
-    fn open(&self, members: &mut [OccId], split: &mut Split) {
+    /// `placed` are the members that have their side already.
+    fn open(&self, members: &mut [OccId], split: &mut Split, placed: &[OccId]) {
         members.sort_unstable_by_key(|&m| {
             (
                 std::cmp::Reverse(self.counts.row_len(m)),
@@ -1386,6 +1391,14 @@ impl<'a> Engine<'a> {
         for &m in members.iter() {
             split.open(self.counts, m);
         }
+        // Without the equation, a split can only fail the counts through a
+        // member whose own interval of some atom excludes zero: with none,
+        // every sum of intervals contains zero and every split passes.
+        let tight = |o: &OccId| self.counts.tight(*o);
+        split.set_inert(
+            !self.rules.equation
+                && (!self.rules.intervals || !placed.iter().chain(members.iter()).any(tight)),
+        );
     }
 
     /// Searches the splits of a context into two sides that pass the
@@ -1548,7 +1561,7 @@ impl<'a> Engine<'a> {
         split.place(self.counts, members[0], Side::Left);
         let mut rest = self.take_list();
         rest.extend_from_slice(&members[1..]);
-        self.open(&mut rest, &mut split);
+        self.open(&mut rest, &mut split, &members[..1]);
         let result = self.search_splits(
             theta,
             &rest,
