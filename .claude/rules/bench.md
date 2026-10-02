@@ -54,9 +54,12 @@ beyond clap and anyhow, which the CLI already has.
 - **The CSV columns are the interface** (`run::HEADER`): `summary` reads
   them by name, and the committed `results/*/*.csv` are what a later change
   is compared with, so add columns at the end of the tail and never
-  rename one (`bias`, the last, came after the first baseline: a file
+  rename one (`bias` came after the first baseline: a file
   without it ran everything with `auto`, which is how `--resume` and
-  `summary` read it). Fields never contain commas (`clean` turns them into `;`),
+  `summary` read it; `forward_copies`, the last, came with the default
+  bias that runs two searches on a sequent with exponentials: a file
+  without it ran `auto` as the rarer-literal search alone, so `--resume`
+  takes none of its rows as done). Fields never contain commas (`clean` turns them into `;`),
   so the files are split on commas without quoting.
 - **`verdict` and `reason`**: `proved`, `unprovable`, `unknown` (reasons
   `timeout`, `copy_bound`, `context_too_wide`, `recursion_limit`,
@@ -237,13 +240,17 @@ beyond clap and anyhow, which the CLI already has.
   limit fell. `splits` changed its meaning with the pass: steps of the
   split searches (a member assigned and the counts tested) and forced
   splits, where it was submasks enumerated.
-- **The three labels** of the pass are committed: `before` (the engines
+- **The four labels** of the pass are committed: `before` (the engines
   of the first baseline), `after-search` (after the changes to what the
-  engine searches) and `after` (after the changes to what a unit of
+  engine searches), `after` (after the changes to what a unit of
   search costs, which leave the counters of every decided row as they
-  were); `bench/TARGETS.md` has the table. A later change that must not
-  alter the search runs the script under a label of its own and compares
-  with `after.csv`; trial labels `scratch-*` are ignored by jj.
+  were) and `after-bias` (the default bias running both searches on a
+  sequent with exponentials: the rows without exponentials have the
+  counters of `after`, those with them the sum over the turns of both
+  searches); `bench/TARGETS.md` has the table. A later change that must
+  not alter the search runs the script under a label of its own and
+  compares with `after-bias.csv`, or with `after.csv` under an explicit
+  `--bias`; trial labels `scratch-*` are ignored by jj.
 
 ## Extension points
 
@@ -258,4 +265,4 @@ beyond clap and anyhow, which the CLI already has.
   argument in `child`, a `OneArgs` field applied in `tail`, a column at
   the end of the tail (also filled in by `died` and by the error rows),
   the key of `finished`, and the label in `summary`'s `config`; `--bias`
-  is the model.
+  and `--forward-copies` are the models.

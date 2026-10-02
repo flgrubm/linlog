@@ -17,6 +17,12 @@ each. The three labels here were taken on 2026-10-02:
 - `after`: after the changes to what a unit of search costs, which leave
   the counters of every decided row as `after-search` has them.
 
+A fourth label was taken later the same day, and has a section of its
+own at the end:
+
+- `after-bias`: the default bias runs a backward and a forward search
+  on a sequent with exponentials; without exponentials nothing changed.
+
 Stable sequents and splits are machine-independent on one thread and
 come first; a time is the median of up to three runs, the CPU time of
 the search where it is 100 ms or more and the wall time below that, since
@@ -111,3 +117,73 @@ with 25 s and 55 s before the kill, the last under a recursion limit of
 No run of `after` is killed, and the latest stops 5.27 s after its start
 under its 5 s limit; before, 12 were killed and 5 more stopped 10 s to
 26 s after theirs.
+
+## The default bias
+
+`after-bias` against `after`, the same 165 runs. No row that `after`
+decides is lost, no verdict differs, every proof is checked. The 40
+decided rows on sequents without exponentials have the stable sequents,
+splits, memo hits and memo entries of `after` (their times are 0.95 to
+1.14 of it, 1.00 in the median); the rows below are those with
+exponentials. Under `after-bias` their counters are the two searches'
+together, each as far as it ran when the other decided.
+
+| problem | `after` | stable sequents / splits | time | `after-bias` | stable sequents / splits | time |
+|---|---|--:|--:|---|--:|--:|
+| counter/8 | proved | 14 228 / 42 105 | 1.6 ms | proved | 47 / 151 | 84 µs |
+| counter/8 (two-sided) | proved | 701 / 2 697 | 131 µs | proved | 47 / 151 | 89 µs |
+| counter/16 | proved | 473 232 / 2 004 517 | 56 ms | proved | 404 / 1 529 | 244 µs |
+| counter/16 (two-sided) | proved | 9 141 / 53 727 | 1.2 ms | proved | 404 / 1 529 | 250 µs |
+| counter-over/8 | copy bound | 19 423 / 59 335 | 2.2 ms | refuted | 64 / 245 | 91 µs |
+| counter-over/8 (two-sided) | copy bound | 709 / 2 724 | 140 µs | refuted | 64 / 245 | 92 µs |
+| growing/16 | copy bound | 409 / 256 | 128 µs | copy bound | 1 396 / 900 | 340 µs |
+| growing/64 | copy bound | 6 241 / 4 096 | 1.6 ms | copy bound | 6 241 / 4 096 | 1.6 ms |
+| growing/256 | copy bound | 98 689 / 65 536 | 44 ms | copy bound | 98 689 / 65 536 | 43 ms |
+| growing/1024 | recursion limit | 392 961 / 261 633 | 270 ms | recursion limit | 392 961 / 261 633 | 260 ms |
+| chain/16 | proved | 253 / 1 817 | 154 µs | proved | 253 / 1 817 | 155 µs |
+| chain/64 | proved | 4 069 / 127 073 | 5.5 ms | proved | 4 069 / 127 073 | 5.4 ms |
+| chain/128 | proved | 16 325 / 1 032 385 | 43 ms | proved | 16 325 / 1 032 385 | 42 ms |
+| chain/256 | proved | 65 413 / 8 323 457 | 340 ms | proved | 65 413 / 8 323 457 | 340 ms |
+| chain-over/12 | copy bound | 70 / 260 | 50 µs | copy bound | 96 / 414 | 112 µs |
+
+The counter's clauses are Horn, so the forward search runs within its
+own bound of 30 copies and proves in a chain of 7 and of 15 steps what
+the backward search proves within 3 and 4 copies a branch; the counter
+with the unreachable goal is refuted, the forward search having run out
+of markings. On `growing` and `chain` the two rules give every atom the
+same literal, so one search runs (`growing` at 16 within the forward
+bound of 30).
+
+The LLTP sample:
+
+| the first baseline's problems that | runs | `after` | `after-bias` |
+|---|--:|---|---|
+| ended at the time limit | 24 | 1 copy bound, 23 time limit | 16 proved, 8 time limit |
+| ended at the copy bound | 24 | 24 copy bound | 2 proved, 20 copy bound, 2 time limit |
+| ended at the recursion limit | 24 | 4 proved, 3 copy bound, 2 recursion limit, 15 time limit | 12 proved, 2 recursion limit, 10 time limit |
+| had a context too wide | 24 | 3 proved, 21 time limit | 12 proved, 12 time limit |
+| missed their stop | 13 | 4 proved, 9 time limit | 8 proved, 5 time limit |
+| under a recursion limit of 16 384 | 4 | 3 proved, 1 time limit | 3 proved, 1 time limit |
+| all | 113 | 14 proved, 28 copy bound, 2 recursion limit, 69 time limit | 53 proved, 20 copy bound, 2 recursion limit, 38 time limit |
+
+The latest stop of `after-bias` is 5.26 s after the start. On the 109
+sampled problems that run under the default limits, against one run
+under each explicit bias with the same engine (5 s, one pinned core;
+those three runs are not committed):
+
+| | proved | refuted | copy bound or recursion limit | time limit |
+|---|--:|--:|--:|--:|
+| `--bias rarer` | 11 | 0 | 29 | 69 |
+| `--bias factors` | 23 | 0 | 78 | 8 |
+| `--bias factors --copies 10` | 48 | 1 | 23 | 37 |
+| the default, `after-bias` | 50 | 0 | 22 | 37 |
+
+The default decides all 26 problems that either explicit bias decides at
+the default bound. Against `--bias factors --copies 10` it has every
+Petri net of the 49 and six more (nets of 20 and 50 steps, within the
+forward bound of 30), and lacks five translations of intuitionistic
+problems that a copy bound of 10 decides under either bias: they are
+not Horn, so the forward search keeps to `--copies` there. The 44
+problems that the default and an explicit run both decide take the
+default 6.5 s together where the better explicit run takes 4.1 s; the
+ratio is 1.6 in the median and 4.4 at most (64 ms against 14 ms).
