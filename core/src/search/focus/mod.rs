@@ -1090,9 +1090,11 @@ impl<'a> Engine<'a> {
     // The context splits.
 
     /// What a factor of a `⊗` forces on its side of the split: nothing at
-    /// all for `0`, the empty context for `1` and `!`, and the dual literal
-    /// alone for a positive literal. With weakening nothing but `0` forces
-    /// anything, since every leaf takes any context.
+    /// all for `0`, the empty context for `1` and `!`, the dual literal
+    /// alone for a positive literal, and one dual per literal for a tensor
+    /// of positive literals whose duals lie in the linear zone only. With
+    /// weakening nothing but `0` forces anything, since every leaf takes
+    /// any context.
     fn forced_side(&self, factor: OccId) -> Option<Forced> {
         match self.forest.kind(factor) {
             Kind::Zero => Some(Forced::Nothing),
@@ -1101,6 +1103,7 @@ impl<'a> Engine<'a> {
             Kind::Var | Kind::DualVar if self.forest.polarity(factor) == Polarity::Positive => {
                 Some(Forced::Dual)
             }
+            Kind::Tensor if self.counts.literal_tensor(factor) => Some(Forced::Duals),
             _ => None,
         }
     }
@@ -1201,6 +1204,30 @@ impl<'a> Engine<'a> {
                     } else {
                         None
                     }
+                }
+                // One dual per literal, each the first left in `Γ`: every
+                // literal is proved by exactly its dual, and no dual lies in
+                // `Θ`, so no other context proves the factor.
+                Forced::Duals => {
+                    let mut side = self.take_context();
+                    let complete = self.forest.subtree(x).all(|leaf| {
+                        if !self.forest.is_literal(leaf) {
+                            return true;
+                        }
+                        let dual = self.dual_in(leaf, |m| rest.contains(m));
+                        dual.is_some_and(|dual| {
+                            rest.remove(dual);
+                            side.insert(dual);
+                            true
+                        })
+                    });
+                    let node = if complete {
+                        self.focus(theta, &side, x, budget)
+                    } else {
+                        Ok(None)
+                    };
+                    self.give_context(side);
+                    node?
                 }
             };
             let Some(x_node) = x_node else {
@@ -1642,6 +1669,9 @@ enum Forced {
     Empty,
     /// The dual literal alone: the factor is a positive literal.
     Dual,
+    /// One dual literal per literal of the factor, a tensor of positive
+    /// literals.
+    Duals,
 }
 
 #[cfg(all(test, feature = "parse"))]

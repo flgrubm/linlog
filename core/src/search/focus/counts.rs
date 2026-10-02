@@ -6,7 +6,7 @@
 //! the `MLL` count equation sums. Both are necessary conditions on a
 //! provable sequent, computed once per forest and summed per sequent.
 
-use crate::occurrences::{Forest, OccId};
+use crate::occurrences::{Forest, OccId, Polarity};
 use crate::proofs::Side;
 use crate::sequents::{Atom, Kind};
 
@@ -61,6 +61,9 @@ pub(crate) struct Counts {
     /// that a copy can absorb any imbalance and the intervals prune
     /// nothing.
     absorbs_from_copies: bool,
+    /// Per occurrence, whether it is a tensor of positive literals none of
+    /// whose duals can lie in the unrestricted zone.
+    literal_tensor: Box<[bool]>,
 }
 
 /// One entry of a row: the atom and the interval of its balance.
@@ -94,6 +97,26 @@ impl Counts {
                 }
             }
         }
+        // The literals that a `?` can put into the unrestricted zone: those
+        // directly under one.
+        let mut unrestricted = vec![[false; 2]; num_atoms];
+        for o in forest.ids() {
+            if forest.kind(o) == Kind::Quest
+                && let Some(below) = forest.left(o)
+                && let (Some(atom), Some(sign)) = (forest.atom(below), forest.sign(below))
+            {
+                unrestricted[atom.index()][sign as usize] = true;
+            }
+        }
+        // A positive literal whose dual only ever lies in the linear zone.
+        let linear = |o: OccId| match (forest.atom(o), forest.sign(o)) {
+            (Some(atom), Some(sign)) => {
+                forest.polarity(o) == Polarity::Positive
+                    && !unrestricted[atom.index()][!sign as usize]
+            }
+            _ => false,
+        };
+        let mut literal_tensor = vec![false; n];
         // Every descendant has a larger id than its ancestor, so a pass from
         // the last id down sees the children before the parent.
         let mut rows: Vec<Vec<Entry>> = vec![Vec::new(); n];
@@ -156,6 +179,10 @@ impl Counts {
             rows[o.index()] = row;
             absorbs[o.index()] = absorb;
             weight[o.index()] = w;
+            literal_tensor[o.index()] = kind == Tensor
+                && forest
+                    .children(o)
+                    .all(|c| linear(c) || literal_tensor[c.index()]);
         }
 
         let mut row_start = Vec::with_capacity(n + 1);
@@ -178,7 +205,16 @@ impl Counts {
             weight: weight.into_boxed_slice(),
             num_atoms,
             absorbs_from_copies,
+            literal_tensor: literal_tensor.into_boxed_slice(),
         }
+    }
+
+    /// Returns whether the occurrence is a tensor of positive literals
+    /// none of whose duals can lie in the unrestricted zone (none is
+    /// directly under a `?`): in focus, such a tensor is proved by exactly
+    /// one dual per literal, each from the linear zone.
+    pub(crate) fn literal_tensor(&self, o: OccId) -> bool {
+        self.literal_tensor[o.index()]
     }
 
     /// Returns the row of an occurrence: its interval per atom occurring

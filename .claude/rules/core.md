@@ -770,6 +770,31 @@ relies on:
   takes the empty context; a factor `0` fails the candidate, not the
   sequent. `⊤`, `⊥` and negative literals force nothing: `⊢ ⊥ ⊗ b, a, ~a,
   ~b` needs `{a, ~a}` on the `⊥` side.
+- **A factor that is a tensor of positive literals forces its side too**
+  (`Forced::Duals`, `Counts::literal_tensor`): one dual per literal, each
+  the first left in `Γ`, and the candidate fails when one is missing.
+  The argument: in focus the factor is decomposed by `⊗` rules down to
+  its literals, each of which stays in focus and closes by an initial
+  rule alone, that is on exactly its dual, from `Γ` or by a copy from
+  `Θ`; the rule applies only to tensors none of whose literals has a dual
+  directly under a `?` anywhere in the forest (the only way a literal
+  gets into `Θ`), so every dual comes from `Γ` and the factor's side is
+  one dual per literal and nothing else. Which occurrences is immaterial
+  by the lemma on interchangeable occurrences. Without that proviso the
+  rule would be the single literal's "dual from `Γ` first" applied per
+  literal, which is complete but moves copies between branches, and
+  would leave fewer proofs within a copy bound than the search of every
+  split finds; so with a dual in `Θ` the split stays searched. Two-sided
+  it needs no change, for the reason the single literal needs none: the
+  premise it forces is the only classically provable one. Affine mode
+  forces nothing, as before. This is what a Horn clause's body is when
+  its atoms are positive, so `(b ⊗ t) ⊗ ~d` costs no split search at
+  all. Measured (splits, the stable sequents unchanged): the unsolvable
+  3-Partition with bins of five 36 072 before and 3 074 after, Partition
+  with seven items 2 078 and 766, the unsolvable one with five 11 433
+  and 2 106; of the sampled LLTP nets, `RwMutex_rwmutex-r2000w10_1_1` is
+  proved in 1.1 s and `Diffusion2D_2D8_gradient_40x40_50_5_1` in 0.27 s
+  where 4.9 s were needed before it.
 - **`split_passes`** is the count test of a split as a function (the
   engine's `Rules::new` and a `Split` with every member placed), for the
   interactive state's helper. It is `Split::feasible`, the very test the
