@@ -34,8 +34,8 @@ use crate::proofs::{Node, NodeId, Side};
 use crate::search::parallel::{Flags, Runtime};
 use crate::search::{Options, Reason, Statistics, Stop};
 use std::hash::BuildHasher as _;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Condvar, Mutex};
 
 /// How many choices of a branch, from the root, run their alternatives on
 /// several threads.
@@ -97,24 +97,214 @@ pub(crate) fn search_goal(
         ),
         |(result, _, _)| result.is_ok(),
     );
-    let mut statistics = forward.2;
-    statistics.add(&backward.2);
-    statistics.memo_hits += backward.2.memo_hits;
-    statistics.memo_entries += backward.2.memo_entries;
+    Ok(merged(forward, backward, options))
+}
+
+/// The work a search does between two points at which it gives way to
+/// the other, when two alternate on one core: about a thousand stable
+/// sequents of a small problem, against which a change of threads costs
+/// little.
+const SLICE: u64 = 1 << 16;
+
+/// How long the calling thread waits for a search that runs on alone
+/// before it polls the caller's stop condition again.
+const POLL: std::time::Duration = std::time::Duration::from_millis(1);
+
+/// Which of two alternating searches may run, and what both must know of
+/// each other.
+#[derive(Default)]
+struct Baton {
+    /// The state.
+    state: Mutex<Turns>,
+    /// Signalled whenever the state changes.
+    changed: Condvar,
+}
+
+/// The state two alternating searches share.
+#[derive(Default)]
+struct Turns {
+    /// The search that may run.
+    holder: usize,
+    /// Whether each search has ended.
+    ended: [bool; 2],
+    /// Whether both must stop: one decided, the caller's stop condition
+    /// fired, or a thread panicked.
+    stop: bool,
+}
+
+impl Baton {
+    /// Locks the state; it is plain data, so a panic of the other thread
+    /// leaves it usable.
+    fn lock(&self) -> std::sync::MutexGuard<'_, Turns> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Waits until search `me` may run, and returns whether it must stop
+    /// instead.
+    fn wait(&self, me: usize) -> bool {
+        let mut turns = self.lock();
+        while turns.holder != me && !turns.stop {
+            turns = self
+                .changed
+                .wait(turns)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+        }
+        turns.stop
+    }
+
+    /// Gives way to the other search, unless it has ended, and waits for
+    /// the turn of search `me` to come again. Returns whether it must stop.
+    fn pass(&self, me: usize) -> bool {
+        {
+            let mut turns = self.lock();
+            if turns.stop || turns.ended[1 - me] {
+                return turns.stop;
+            }
+            turns.holder = 1 - me;
+        }
+        self.changed.notify_all();
+        self.wait(me)
+    }
+
+    /// Tells both searches to stop.
+    fn stop(&self) {
+        self.lock().stop = true;
+        self.changed.notify_all();
+    }
+}
+
+/// Marks a search as ended when its thread leaves it, by a return or by a
+/// panic, so that the other never waits for it.
+struct Ended<'a>(&'a Baton, usize);
+
+impl Drop for Ended<'_> {
+    fn drop(&mut self) {
+        let Ended(baton, me) = *self;
+        {
+            let mut turns = baton.lock();
+            turns.ended[me] = true;
+            turns.holder = 1 - me;
+            turns.stop |= std::thread::panicking();
+        }
+        baton.changed.notify_all();
+    }
+}
+
+/// Decides a goal by two searches that alternate on one core: the first
+/// on the calling thread, the second on a thread of its own, one of them
+/// running at a time for a slice of work ([`SLICE`], the second search
+/// [`BACKWARD_SHARE`](super::BACKWARD_SHARE) of them), so that each is the
+/// search it would be alone, none starts again, and the run is a function
+/// of the input. The first to decide stops the other at the end of its
+/// slice; a search that ended without deciding leaves the other to run
+/// on. The caller's stop condition is polled by the first search, and
+/// once that has ended, every millisecond. Returns what
+/// [`super::search_goal`] does, the counters of both searches together,
+/// or `None` when the thread cannot start.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn alternate(
+    forest: &Forest,
+    goal: &[OccId],
+    fragment: Fragment,
+    mode: Mode,
+    reading: Option<&Reading>,
+    classes: &Classes,
+    options: &Options,
+    [(first, first_counts), (second, second_counts)]: [(Rule, &Counts); 2],
+    stop: &mut dyn FnMut() -> bool,
+) -> Option<(Search, Vec<Node>, Statistics)> {
+    let baton = Baton::default();
+    let (forward, backward) = std::thread::scope(|scope| {
+        let baton = &baton;
+        let thread = std::thread::Builder::new()
+            .name("linlog-search".to_owned())
+            .stack_size(options.stack_size())
+            .spawn_scoped(scope, move || {
+                let _ended = Ended(baton, 1);
+                if baton.wait(1) {
+                    return (Err(Reason::Stopped), Vec::new(), Statistics::default());
+                }
+                let mut give_way = |passed: bool| passed && baton.pass(1);
+                let slice = SLICE * super::BACKWARD_SHARE;
+                let (result, nodes, statistics, _) = second.search(
+                    forest,
+                    goal,
+                    fragment,
+                    mode,
+                    reading,
+                    (second_counts, classes),
+                    options,
+                    Stop::Slice(&mut give_way, slice, slice),
+                );
+                if result.is_ok() {
+                    baton.stop();
+                }
+                (result, nodes, statistics)
+            })
+            .ok()?;
+        let forward = {
+            let _ended = Ended(baton, 0);
+            let mut give_way = |passed: bool| stop() || (passed && baton.pass(0));
+            let (result, nodes, statistics, _) = first.search(
+                forest,
+                goal,
+                fragment,
+                mode,
+                reading,
+                (first_counts, classes),
+                options,
+                Stop::Slice(&mut give_way, SLICE, SLICE),
+            );
+            if !matches!(result, Err(reason) if reason != Reason::Stopped) {
+                baton.stop();
+            }
+            (result, nodes, statistics)
+        };
+        // The second search runs on alone, or is about to end.
+        let mut turns = baton.lock();
+        while !turns.ended[1] {
+            turns = baton
+                .changed
+                .wait_timeout(turns, POLL)
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .0;
+            turns.stop |= stop();
+        }
+        drop(turns);
+        let backward = thread
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+        Some((forward, backward))
+    })?;
+    Some(merged(forward, backward, options))
+}
+
+/// The answer of two searches of one goal that ran together, from what
+/// each returned: a verdict of either; else the stop, which without a
+/// verdict is the caller's; else the second search's reason. The counters
+/// are both searches' together.
+fn merged(
+    first: (Search, Vec<Node>, Statistics),
+    second: (Search, Vec<Node>, Statistics),
+    options: &Options,
+) -> (Search, Vec<Node>, Statistics) {
+    let mut statistics = first.2;
+    statistics.add(&second.2);
+    statistics.memo_hits += second.2.memo_hits;
+    statistics.memo_entries += second.2.memo_entries;
     debug_assert!(
-        !matches!((&forward.0, &backward.0), (Ok(a), Ok(b)) if a.is_some() != b.is_some()),
+        !matches!((&first.0, &second.0), (Ok(a), Ok(b)) if a.is_some() != b.is_some()),
         "the two searches contradict each other"
     );
-    // A verdict of either; else the caller's stop, which also names a
-    // search that the other's verdict would have stopped; else the
-    // backward search's reason.
-    let (result, nodes) = match (forward.0, backward.0) {
-        (Ok(root), _) => (Ok(root), forward.1),
-        (_, Ok(root)) => (Ok(root), backward.1),
+    let (result, nodes) = match (first.0, second.0) {
+        (Ok(root), _) => (Ok(root), first.1),
+        (_, Ok(root)) => (Ok(root), second.1),
         (Err(Reason::Stopped), _) | (_, Err(Reason::Stopped)) => (Err(Reason::Stopped), Vec::new()),
         (Err(_), Err(reason)) => (Err(super::reason(reason, options)), Vec::new()),
     };
-    Ok((result, nodes, statistics))
+    (result, nodes, statistics)
 }
 
 impl Rule {

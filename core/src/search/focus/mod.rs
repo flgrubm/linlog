@@ -148,35 +148,77 @@ pub(crate) fn search_goal(
     let classes = Classes::new(forest, reading);
     let (first, second) = plan(forest, fragment, mode, options);
     let Some(second) = second else {
+        let counts = Counts::new(forest, first.bias);
         let (result, nodes, statistics, _) = first.search(
-            forest, goal, fragment, mode, reading, &classes, options, stop, None,
+            forest,
+            goal,
+            fragment,
+            mode,
+            reading,
+            (&counts, &classes),
+            options,
+            Stop::Closure(stop),
         );
         return (result.map_err(|r| reason(r, options)), nodes, statistics);
     };
-    // The two searches take turns, each from its start, on an amount of
-    // work that grows from round to round, until one decides. A search
-    // that ended without deciding takes no further turn, and the other
-    // then runs to its own end.
-    let rules = [first, second];
+    let counts = [first, second].map(|rule| Counts::new(forest, rule.bias));
+    let searches = [(first, &counts[0]), (second, &counts[1])];
+    // With threads the two searches alternate in slices and none starts
+    // again; without them, or when a thread cannot start, they take
+    // turns from their start.
+    #[cfg(feature = "parallel")]
+    if let Some(result) = parallel::alternate(
+        forest, goal, fragment, mode, reading, &classes, options, searches, stop,
+    ) {
+        return result;
+    }
+    turns(
+        forest, goal, fragment, mode, reading, &classes, options, searches, stop,
+    )
+}
+
+/// Decides a goal by two searches that take turns on one thread, each
+/// from its start with a memo and an arena of its own, on an amount of
+/// work that grows from round to round, until one decides; a search that
+/// ended without deciding takes no further turn, and the other then runs
+/// to its own end. The counters are those of every turn together, the
+/// memo's entries the most of one turn.
+#[allow(clippy::too_many_arguments)]
+fn turns(
+    forest: &Forest,
+    goal: &[OccId],
+    fragment: Fragment,
+    mode: Mode,
+    reading: Option<&Reading>,
+    classes: &Classes,
+    options: &Options,
+    searches: [(Rule, &Counts); 2],
+    stop: &mut dyn FnMut() -> bool,
+) -> (Search, Vec<Node>, Statistics) {
     let mut ended: [Option<Reason>; 2] = [None, None];
     let mut statistics = Statistics::default();
     let mut turn = FIRST_TURN;
     loop {
-        for (i, rule) in rules.iter().enumerate() {
+        for (i, (rule, counts)) in searches.into_iter().enumerate() {
             if ended[i].is_some() {
                 continue;
             }
-            let alone = ended[1 - i].is_some();
+            let stop = if ended[1 - i].is_some() {
+                Stop::Closure(&mut *stop)
+            } else if i == 0 {
+                Stop::Turn(&mut *stop, turn)
+            } else {
+                Stop::Turn(&mut *stop, turn.saturating_mul(BACKWARD_SHARE))
+            };
             let (result, nodes, run, over) = rule.search(
                 forest,
                 goal,
                 fragment,
                 mode,
                 reading,
-                &classes,
+                (counts, classes),
                 options,
                 stop,
-                (!alone).then_some(turn),
             );
             statistics.add(&run);
             statistics.memo_hits += run.memo_hits;
@@ -201,6 +243,13 @@ pub(crate) fn search_goal(
 /// thousand stable sequents of a small problem.
 const FIRST_TURN: u64 = 1 << 16;
 
+/// How much work the backward search of the default bias gets for each
+/// unit of the forward one: it is the search the default ran alone
+/// before, so under a time limit what it decides alone in two thirds of
+/// the limit is still decided, and what the forward search decides in a
+/// third.
+pub(crate) const BACKWARD_SHARE: u64 = 2;
+
 /// The factor by which the turns of the two searches grow from round to
 /// round. A search starts afresh in every turn, so with turns that grow
 /// geometrically the turns that ended early cost a fraction of the one
@@ -218,33 +267,27 @@ pub(crate) struct Rule {
 
 impl Rule {
     /// Runs the search of this rule alone, with a memo and an arena of its
-    /// own, until it ends, `stop` fires or the work of the turn given is
-    /// done. Returns what [`search_goal`] does, and whether it was the
-    /// turn that ended the search.
+    /// own, until it ends or the stop condition fires. Returns what
+    /// [`search_goal`] does, and whether it was a turn that ran out of
+    /// its work.
     #[allow(clippy::too_many_arguments)]
-    fn search(
+    fn search<'a>(
         self,
-        forest: &Forest,
+        forest: &'a Forest,
         goal: &[OccId],
         fragment: Fragment,
         mode: Mode,
-        reading: Option<&Reading>,
-        classes: &Classes,
+        reading: Option<&'a Reading<'a>>,
+        (counts, classes): (&'a Counts, &'a Classes),
         options: &Options,
-        stop: &mut dyn FnMut() -> bool,
-        turn: Option<u64>,
+        stop: Stop<'a>,
     ) -> (Search, Vec<Node>, Statistics, bool) {
-        let stop = match turn {
-            Some(work) => Stop::Turn(stop, work),
-            None => Stop::Closure(stop),
-        };
-        let counts = Counts::new(forest, self.bias);
-        let rules = Rules::new(fragment, mode, &counts);
+        let rules = Rules::new(fragment, mode, counts);
         let mut engine = Engine::new(
             forest,
             rules,
             reading,
-            (&counts, classes),
+            (counts, classes),
             &options.clone().copies(self.copies),
             stop,
             Table::Own(Memo::new(options.memo_limit)),
@@ -2303,11 +2346,11 @@ mod tests {
         assert_eq!(default, fast);
     }
 
-    /// The default bias on a sequent with exponentials takes turns between
-    /// the forward and the backward search, each from its start on a
-    /// number of polls that grows, and answers with the first that
-    /// decides: here the backward one, after the forward one used up a
-    /// turn and then its bound.
+    /// The two searches of the default bias on one core. In turns from
+    /// their start, on work that grows: here the backward search decides,
+    /// after the forward one used up turns and then its bound. And, with
+    /// threads, alternating in slices, where each search is the one it is
+    /// alone and none starts again.
     #[test]
     fn default_bias_takes_turns() {
         // The counter with eight tokens takes seven steps forward, more than
@@ -2335,25 +2378,49 @@ mod tests {
         assert!(verdict.proof().is_some());
         let (verdict, forward) = run(&text, m, &options.clone().bias(Bias::Factors).copies(4));
         assert!(matches!(verdict, Verdict::Unknown(Reason::CopyBound(4))));
-        let (verdict, both) = run(&text, m, &options);
-        assert!(verdict.proof().is_some());
+
+        let sequent: Sequent = text.parse().unwrap();
+        let forest = Forest::new(&sequent).unwrap();
+        let classes = Classes::new(&forest, None);
+        let in_turns = || {
+            let (first, second) = plan(&forest, sequent.fragment(), m, &options);
+            let second = second.expect("two searches");
+            let counts = [first, second].map(|rule| Counts::new(&forest, rule.bias));
+            let (result, _, statistics) = turns(
+                &forest,
+                forest.roots(),
+                sequent.fragment(),
+                m,
+                None,
+                &classes,
+                &options,
+                [(first, &counts[0]), (second, &counts[1])],
+                &mut || false,
+            );
+            assert!(matches!(result, Ok(Some(_))));
+            statistics
+        };
+        let both = in_turns();
         // What the turns cut short cost: less than a third of the turn
         // the forward search ends in for itself, and at most that turn and
         // the ones before it for the backward search, which then runs
         // alone.
-        let turns = both.nodes - forward.nodes - backward.nodes;
+        let cut = both.nodes - forward.nodes - backward.nodes;
         assert!(
-            0 < turns && turns < 7 * forward.nodes,
-            "{turns} stable sequents in the turns cut short, {forward:?}, {backward:?}"
+            0 < cut && cut < 7 * forward.nodes,
+            "{cut} stable sequents in the turns cut short, {forward:?}, {backward:?}"
         );
         // One thread, so the run is a function of the input.
-        assert_eq!(run(&text, m, &options).1, both);
-        // With no bound of its own the forward search gives up sooner, and
-        // the default is the backward search after it.
-        let (_, cut) = run(&text, m, &options.clone().bias(Bias::Factors));
-        let (verdict, after) = run(&text, m, &options.forward_copies(0));
-        assert!(verdict.proof().is_some());
-        assert!(cut.nodes + backward.nodes <= after.nodes && after.nodes < both.nodes);
+        assert_eq!(in_turns(), both);
+
+        #[cfg(feature = "parallel")]
+        {
+            let (verdict, slices) = run(&text, m, &options);
+            assert!(verdict.proof().is_some());
+            assert_eq!(slices.nodes, forward.nodes + backward.nodes);
+            assert_eq!(slices.splits, forward.splits + backward.splits);
+            assert_eq!(run(&text, m, &options).1, slices);
+        }
     }
 
     /// The contract of the default bias: on a sequent with exponentials it

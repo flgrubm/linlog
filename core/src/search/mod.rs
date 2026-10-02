@@ -36,6 +36,10 @@ pub(crate) enum Stop<'a> {
     /// search stops as well: one turn of a search that takes turns with
     /// another.
     Turn(&'a mut dyn FnMut() -> bool, u64),
+    /// A condition that is told, at every poll, whether a slice of work
+    /// (the last field) has passed since it was last told so: one of two
+    /// searches that alternate, which gives way to the other there.
+    Slice(&'a mut dyn FnMut(bool) -> bool, u64, u64),
     /// A worker's flags.
     #[cfg(feature = "parallel")]
     Flags(parallel::Flags<'a>),
@@ -50,6 +54,14 @@ impl Stop<'_> {
             Self::Turn(stop, left) => {
                 *left = left.saturating_sub(work);
                 *left == 0 || stop()
+            }
+            Self::Slice(stop, left, slice) => {
+                *left = left.saturating_sub(work);
+                let passed = *left == 0;
+                if passed {
+                    *left = *slice;
+                }
+                stop(passed)
             }
             #[cfg(feature = "parallel")]
             Self::Flags(flags) => flags.raised(),
