@@ -5,12 +5,17 @@
 //! zones that holds regardless of how the search reached it; a failed one
 //! is a fact only relative to the copy budget that was left when it failed,
 //! unless the search space below it was explored without ever hitting the
-//! budget. A failure holds as well for every sequent that differs in
-//! interchangeable members of the linear zone only, so failures are kept
-//! under a key with every such member replaced by the first of its class
-//! (the *canonical* key); a proof names its occurrences and stays under
-//! the sequent's own key. One table holds both: a key that is nobody's
-//! canonical key can only hold a proof. The table is a plain map with a cap; when the search runs on
+//! budget. A complete failure holds as well for every sequent that differs
+//! in interchangeable members of the linear zone only, so it is kept under
+//! a key with every such member replaced by the first of its class (the
+//! *canonical* key). A proof names its occurrences and stays under the
+//! sequent's own key, and so does a failure cut by the budget: shared, it
+//! would answer for a relative that the search of the sequent itself
+//! leads to, level after level, and keep both from ever being complete.
+//! One table holds all three: a key that is not canonical holds a proof
+//! or a cut failure, a canonical one may also hold a complete failure,
+//! which is all a relative reads there. The table is a plain map with a
+//! cap; when the search runs on
 //! several threads it is one shard of a sharded map, [`Shared`], whose
 //! merge under the shard's lock keeps the same invariant: an entry's
 //! validity only ever grows.
@@ -103,30 +108,13 @@ impl Memo {
         Some(entry)
     }
 
-    /// Returns the failure recorded under a canonical key that applies with
-    /// `remaining` copies left; a proof recorded there is the proof of
-    /// another sequent, the canonical one, and no answer.
-    pub(crate) fn failed(&mut self, key: &Key, remaining: u32) -> Option<Failure> {
-        match self.map.get(key).copied()? {
-            Entry::Failed(Failure::Exhausted(then)) if remaining > then => None,
-            Entry::Failed(failure) => {
-                self.hits += 1;
-                Some(failure)
-            }
-            Entry::Proved(_) => None,
-        }
-    }
-
-    /// Returns the proof recorded under a sequent's own key, counted as a
-    /// hit unless the lookup of the same sequent `counted` one already.
-    pub(crate) fn proved(&mut self, key: &Key, counted: bool) -> Option<NodeId> {
-        match self.map.get(key).copied()? {
-            Entry::Proved(node) => {
-                self.hits += u64::from(!counted);
-                Some(node)
-            }
-            Entry::Failed(_) => None,
-        }
+    /// Returns whether a complete failure is recorded under a canonical
+    /// key: the answer for every sequent the key stands for. Whatever else
+    /// the key holds is about the canonical sequent alone.
+    pub(crate) fn refuted(&mut self, key: &Key) -> bool {
+        let refuted = self.map.get(key) == Some(&Entry::Failed(Failure::Complete));
+        self.hits += u64::from(refuted);
+        refuted
     }
 
     /// Records what the search found out about a stable sequent, making
@@ -212,14 +200,9 @@ impl Shared {
         Self::lock(self.shard(key)).get(key, remaining)
     }
 
-    /// [`Memo::failed`] on the key's shard.
-    pub(crate) fn failed(&self, key: &Key, remaining: u32) -> Option<Failure> {
-        Self::lock(self.shard(key)).failed(key, remaining)
-    }
-
-    /// [`Memo::proved`] on the key's shard.
-    pub(crate) fn proved(&self, key: &Key, counted: bool) -> Option<NodeId> {
-        Self::lock(self.shard(key)).proved(key, counted)
+    /// [`Memo::refuted`] on the key's shard.
+    pub(crate) fn refuted(&self, key: &Key) -> bool {
+        Self::lock(self.shard(key)).refuted(key)
     }
 
     /// [`Memo::insert`] on the key's shard.
@@ -258,19 +241,11 @@ impl Table<'_> {
         }
     }
 
-    /// [`Memo::failed`].
-    pub(crate) fn failed(&mut self, key: &Key, remaining: u32) -> Option<Failure> {
+    /// [`Memo::refuted`].
+    pub(crate) fn refuted(&mut self, key: &Key) -> bool {
         match self {
-            Self::Own(memo) => memo.failed(key, remaining),
-            Self::Shared(shared) => shared.failed(key, remaining),
-        }
-    }
-
-    /// [`Memo::proved`].
-    pub(crate) fn proved(&mut self, key: &Key, counted: bool) -> Option<NodeId> {
-        match self {
-            Self::Own(memo) => memo.proved(key, counted),
-            Self::Shared(shared) => shared.proved(key, counted),
+            Self::Own(memo) => memo.refuted(key),
+            Self::Shared(shared) => shared.refuted(key),
         }
     }
 
@@ -304,32 +279,26 @@ mod tests {
     use super::*;
     use crate::occurrences::OccId;
 
-    /// Under a canonical key a failure answers, within its budget, and a
-    /// proof does not, being the proof of another sequent; under a
-    /// sequent's own key only a proof answers.
+    /// Under a canonical key only a complete failure answers for the
+    /// sequents the key stands for: a cut failure and a proof there are
+    /// the canonical sequent's own.
     #[test]
-    fn failures_and_proofs() {
-        let key = |o| {
-            let mut key = Key {
-                theta: OccSet::empty(8),
-                gamma: Context::empty(8),
-            };
-            key.gamma.insert(OccId::new(o));
-            key
+    fn complete_failures_are_shared() {
+        let mut key = Key {
+            theta: OccSet::empty(8),
+            gamma: Context::empty(8),
         };
-        let (canonical, own) = (key(1), key(5));
+        key.gamma.insert(OccId::new(1));
         let mut memo = Memo::new(10);
-        memo.insert(&canonical, Entry::Failed(Failure::Exhausted(1)));
-        assert_eq!(memo.failed(&canonical, 2), None);
-        assert_eq!(memo.failed(&canonical, 1), Some(Failure::Exhausted(1)));
-        assert_eq!(memo.proved(&canonical, false), None);
-        assert_eq!(memo.proved(&own, false), None);
-        memo.insert(&own, Entry::Proved(NodeId::new(3)));
-        assert_eq!(memo.proved(&own, false), Some(NodeId::new(3)));
-        assert_eq!(memo.proved(&own, true), Some(NodeId::new(3)));
-        memo.insert(&canonical, Entry::Proved(NodeId::new(4)));
-        assert_eq!(memo.failed(&canonical, 0), None);
-        assert_eq!(memo.hits(), 2, "one hit per sequent looked up");
+        assert!(!memo.refuted(&key));
+        memo.insert(&key, Entry::Failed(Failure::Exhausted(1)));
+        assert!(!memo.refuted(&key));
+        memo.insert(&key, Entry::Failed(Failure::Complete));
+        assert!(memo.refuted(&key));
+        let mut proved = Memo::new(10);
+        proved.insert(&key, Entry::Proved(NodeId::new(4)));
+        assert!(!proved.refuted(&key));
+        assert_eq!((memo.hits(), proved.hits()), (1, 0));
     }
 
     /// A failure cut by the budget is a hit only with at most as many

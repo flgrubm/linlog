@@ -622,23 +622,19 @@ impl<'a> Engine<'a> {
         }
         let mut key = self.take_key();
         key.assign(theta, gamma);
-        // Failures are recorded up to interchangeable members: under the
-        // canonical key, where it differs from the sequent's own.
+        // Complete failures are recorded up to interchangeable members:
+        // under the canonical key, where it differs from the sequent's own.
         let mut canonical = self.take_key();
         let renamed =
             !self.classes.distinct() && canonical.gamma.canonical_from(gamma, self.classes);
         // A proof or a complete failure from the memo settles it; a
         // failure cut by the budget waits for the loop check, which may
         // give the stronger answer that the branch is redundant.
-        let entry = if renamed {
+        let entry = if renamed && {
             canonical.theta.clone_from(theta);
-            match self.memo.failed(&canonical, budget) {
-                Some(Failure::Complete) => Some(Entry::Failed(Failure::Complete)),
-                failed => match self.memo.proved(&key, failed.is_some()) {
-                    Some(node) => Some(Entry::Proved(node)),
-                    None => failed.map(Entry::Failed),
-                },
-            }
+            self.memo.refuted(&canonical)
+        } {
+            Some(Entry::Failed(Failure::Complete))
         } else {
             self.memo.get(&key, budget)
         };
@@ -728,13 +724,15 @@ impl<'a> Engine<'a> {
             Ok(None) => {
                 self.nodes.release(mark);
                 if dependency == NO_DEPENDENCY {
-                    let failure = if exhausted {
-                        Failure::Exhausted(budget)
+                    // A complete failure answers for every relative; one
+                    // cut by the budget stays the sequent's own.
+                    if exhausted {
+                        self.memo
+                            .insert(&key, Entry::Failed(Failure::Exhausted(budget)));
                     } else {
-                        Failure::Complete
-                    };
-                    let key = if renamed { &canonical } else { &key };
-                    self.memo.insert(key, Entry::Failed(failure));
+                        let key = if renamed { &canonical } else { &key };
+                        self.memo.insert(key, Entry::Failed(Failure::Complete));
+                    }
                 }
             }
             _ => {}
@@ -1941,6 +1939,23 @@ mod tests {
         );
         let (verdict, _) = run(&wide, Mode::CLASSICAL, &Options::default());
         assert!(matches!(verdict, Verdict::Unprovable));
+    }
+
+    /// A sequent whose search comes back to it with other occurrences of
+    /// the same formulas is refuted, not left at the copy bound by its own
+    /// failure of the level before: a failure cut by the budget answers
+    /// for its own sequent alone.
+    #[test]
+    fn repeats_up_to_equal_members() {
+        for input in [
+            "|- ~b, (1 * a), ?(b * ((a par ~b) * ~a))",
+            "a, a, b, b, !(((b * a) * a) -o b), !(((b * a) * a) -o b) |- ((b * b) * b)",
+        ] {
+            assert!(!provable(input, Mode::CLASSICAL), "{input:?}");
+        }
+        // Here the relative is reached on another branch.
+        let sibling = "!(!!(b -o c) -o !c), b |- (c * ((a -o a) * c))";
+        assert!(!provable(sibling, Mode::INTUITIONISTIC));
     }
 
     /// A split search whose splits all fail in focus visits no stable
