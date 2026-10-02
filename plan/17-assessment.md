@@ -54,7 +54,11 @@ reader of a paper that cites the tool would expect of it.
    for a stated behaviour or present in excess of what they pin, where
    the crate-wide lint allowances in `core/src/lib.rs` hide something.
    This feeds the "Code audit and refactoring" candidate: give it a
-   concrete list, ranked by what each item costs to leave alone. The
+   concrete list, ranked by what each item costs to leave alone (step
+   15's report has a second list to merge into it, the hot spots its
+   profile showed and it did not take, and says what its reviews did not
+   cover: `prove_goal` off the roots, the interactive path, the
+   portfolio). The
    follow-up lists in `plan/later.md`: which entries are done, which are
    obsolete, which still stand.
 2. **What the baselines say.** Where each engine stands after the
@@ -65,7 +69,15 @@ reader of a paper that cites the tool would expect of it.
    of other provers; use them, and say what is and is not comparable).
    Which of the remaining losses are an engine's algorithm, which a
    limit, which the problem's nature. What the numbers say about the
-   dispatch between the engines.
+   dispatch between the engines, now that the focused engine is as fast
+   as the net engine on the wide sequents that were the net engine's
+   case. And what they say about the atom bias (`Options::bias`), the
+   largest gain step 15 left on the table: the second baseline has the
+   default pass and two passes under `--bias factors`, at the default
+   copy bound and at a bound of 10, so say which default follows (a
+   bias per sequent, the two in turn on a budget, or raced on a pool,
+   which would give the portfolio a use it never had), what it does to
+   the default copy bound, and what it would cost to build.
 3. **Every candidate, one by one.** For each: what it is for and who
    would use it; what in the code it builds on and what would have to
    change first; whether its premises still hold after steps 15 and 16
@@ -95,9 +107,11 @@ reader of a paper that cites the tool would expect of it.
 7. **The author's decisions.** Wherever the order, the scope or the
    dropping of a candidate depends on something only the author can
    decide (research use against teaching use, the web front end's
-   priority, whether a second certificate kernel matters to them, how
-   much behaviour an audit may change, which candidates they do not want
-   at all), make it a question: what is being decided, the options, what
+   priority, when the certificate library comes, whose shape the author
+   has decided already (`plan/later.md`), the default atom bias and copy
+   bound, how much behaviour an audit may change, which candidates they
+   do not want at all), make it a question: what is being decided, the
+   options, what
    each option does to the roadmap, and the one you recommend with its
    reason. Few questions, each one the author can answer in a line.
 

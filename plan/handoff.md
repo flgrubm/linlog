@@ -72,15 +72,16 @@ session's transcript is
 
 ## Where things stand
 
-As of 2026-10-02 step 14 is finished, reviewed and pushed: the first
-baseline is `bench/results/2026-09-30/` (two nights). The next command
-is step 15:
+As of 2026-10-02 (afternoon) steps 14 and 15 are finished, reviewed and
+pushed: the first baseline is `bench/results/2026-09-30/` (two nights),
+and the performance pass is in (`bench/TARGETS.md`,
+`plan/reports/15-performance.md`). The next command is step 16:
 
 ```nu
-claude --model claude-fable-5-1 --effort xhigh --name step-15 ((open --raw plan/15-performance.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort xhigh --name step-16 ((open --raw plan/16-baseline.md) + "\n" + (open --raw plan/conduct.md))
 ```
 
-The order is 15 (by day), 16 (a second night, after 15 is reviewed),
+The order is 16 (a night whose slot the session agrees with the author),
 17 (assessment, the author's answers, then the plan from 18). By day the
 machine is shared; a baseline night's slot is agreed with the author
 (20:00 to 07:00 for the first baseline; for step 16 the author can start

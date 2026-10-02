@@ -121,6 +121,21 @@ the dispatch should route on "no two equal literals under one pure tree",
 or the leaf symmetry break should remove that weakness and the threshold
 rise; decide by the harness. Fable 5.1, xhigh.
 
+Step 15 changed the premise (its report, "What is left for the net
+engine and the inverse method", and the planning session's check of
+2026-10-02): the focused engine now refutes the Horn encodings in
+microseconds and proves `wide-m3` at 30 and `wide-m4` at 28 in 0.15 ms,
+as fast as the net engine, so these are no longer cases where the suite
+is slow, only where that engine is. What the net engine alone still does
+is width at the default recursion limit (`wide-m1` at 2 048: a free
+split costs the focused engine a level per link) and, with it, the net
+itself as a result. So the candidate is now worth what nets are worth as
+a search vehicle in their own right (teaching, the canonical proof
+object, the cubes' near-linear speedup), not what it gains the suite in
+verdicts; the second baseline's `engines` runs say whether `net` should
+stay a default route at all, and a loop for chains of free splits in the
+focused engine would take the last case.
+
 ## MELL proof nets with exponential boxes
 
 Extend `nets` (step 5) with `!`-boxes and the `?` nodes (dereliction,
@@ -163,6 +178,13 @@ benchmark: of the library's 3 137 Petri nets the first baseline decides
 recursion limit, the 63-member split limit or the harness's kill (a
 search that misses its stop), all of which step 15 addresses, so assess
 after step 16 what is left for a reachability route. Opus 5.5, xhigh.
+After step 15 the nets no longer stop at a limit but run into the time
+limit (69 of its 113 sampled problems), and forward chaining by
+`--bias factors` with a raised copy bound proves 48 of 109 where the
+default proves 11: the focused engine under that bias is most of what a
+reachability route would add for the provable nets, so what is left for
+this candidate is refutation (a net whose goal is unreachable ends at
+the copy bound, not at `Unprovable`) and the nets beyond the bound.
 
 ## Cyclic MLL and the Lambek calculus
 
@@ -221,7 +243,7 @@ mode has a statement and a certificate:
   step 8's `⊤`/`0` ambiguity, see the intuitionistic follow-ups below);
 - the certificate as data rather than a tactic script (the planning
   session's proposal for what "idiomatic" should mean for proofs a
-  program emits; for step 17 and the author to confirm): linlog's proof
+  program emits, which the author accepted on 2026-10-02): linlog's proof
   term (D6) as a Rocq datatype, a checker written as a function, and one
   theorem that a term the checker accepts yields a derivation. A
   certificate is then the sequent, the term and `check … = true` by
@@ -340,7 +362,18 @@ from the frontier.
   answers `Unknown` would keep every verdict; so would a larger bound
   under `Factors`, or a bound that counts a chain of forced steps
   differently. Each needs its own measurement on the whole library (the
-  harness has the axis: `run --bias factors --copies 10`).
+  harness has the axis: `run --bias factors --copies 10`). The second
+  baseline takes both passes over the whole library for this. One
+  problem already shows what the default costs: the Petri net
+  `IBM5964_1_1`, proved in 1.8 s before step 15, takes 42 s under the
+  default bias now (the order of the search changed) and 0.08 ms under
+  `factors`; it is the one row of the 1 890 that the first baseline
+  decided which a rerun at 5 s loses. Two things a combined default has
+  to settle: under a time limit the first bias must not spend the whole
+  of it (eight of the sampled nets time out under `factors` too), so the
+  two take turns on a budget or run side by side; and on a pool they can
+  race, one bias per worker, which would give `Options::portfolio` the
+  use that reordering alternatives never had.
 - **Mix costs `3^n` memo lookups** for `n` members that no prune
   separates (the `mix` family: 14.3 million stable sequents at eight
   pairs, eleven pairs not within 300 s), since every part enumerates its

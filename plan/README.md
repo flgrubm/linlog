@@ -243,7 +243,10 @@ keys, which do not depend on index width, and the spec's `u64` bitset
 specialisation for `n ≤ 64` is the optimisation that pays. Two hedges: the
 occurrence index stays behind its single newtype so narrowing the forest
 later is a local change, and step 14's benchmarks decide with numbers
-whether to revisit.
+whether to revisit. (They did not point at the indices. Step 15's
+profile then found no target on which the one-word set would pay: no
+instance that takes a second has a forest of at most 64 occurrences, so
+`OccSet` stays a boxed slice of words at every size.)
 
 **D4. Module layout inside the `linlog` crate**, not eight crates as the
 spec proposes: the workspace stays `core/` and `cli/` (a `bench/` crate may
@@ -312,6 +315,19 @@ whether it is a parameter or a sibling module). Proof-net search is
 | intuitionistic | additives only, two roots | additive (step 8): the same recursion, in every mode |
 | intuitionistic | IMLL without `1`, no literal more than twice | embedding into net search (step 8): every sequentialization of the classical net is intuitionistic; essential nets later (step 15) |
 | intuitionistic | IMLL with `1` or repeated literals, IMALL, IMELL, ILL, affine variants | two-sided focus (step 8): the focused engine given the reading, keeping the goal on the consequent's side of every `⊸L` split |
+
+Since step 15 two things in this table are open again, for step 17 to
+decide from the second baseline. The focused engine searches its splits
+by their counts and is as fast as the net engine on the wide sequents
+that were the net engine's case, so whether unit-free MLL keeps a route
+of its own is a question of the `engines` runs (the net engine still
+alone proves a sequent of thousands of distinct literal pairs at the
+default recursion limit). And the focused rows have a parameter, the
+atom bias (`Options::bias`): `Auto` takes the factor rule without
+exponentials and the rarer-literal rule with them or in affine mode,
+while on Petri nets the factor rule with a raised copy bound proves
+several times as many problems; which bias and bound a sequent gets by
+default is part of the dispatch.
 
 **D9. Outcomes are three-valued.** `Proved(proof)`, `Unprovable` (only when
 the search was exhaustive) and `Unknown` (bound or time limit hit, with the
@@ -889,3 +905,81 @@ into an option or names it as a follow-up.
   type parameters (D2, D3); what is not taken becomes a ranked list for
   the code-audit candidate. The target set gets a third label so that
   step 16 can attribute the gains.
+- 2026-10-02, the certificate candidate: on the author's questions the
+  planning session read NanoYalla and Yalla at their sources. NanoYalla
+  is a 48-line trusted definition of cut-free one-sided LL with a proved
+  positional layer; Yalla is the meta-theory behind it, and its
+  `microyalla/nanoill.v` is a standalone two-sided ILL kernel, which
+  corrects step 12's report (no full Yalla and no OLlibs are needed for
+  intuitionistic statements, only a positional layer). The author
+  decided the shape of the "Second certificate kernels" candidate: the
+  NanoYalla export stays as the compatibility target, and everything
+  new is a Rocq library of linlog's own, written from nothing, with the
+  certificate as data (the proof term, a checker as a function and its
+  soundness theorem) and optional bridge modules to NanoYalla's and
+  Yalla's definitions; a fork of NanoYalla that adds kernels beside the
+  unmodified one is the smaller alternative. `later.md` has it.
+- 2026-10-02: step 15 reviewed and accepted. Twenty-eight commits, "Send
+  a crashed child's whole error output to the run's log" to "Report the
+  performance pass"; all checks pass (clippy, tests with 120 in core,
+  deny, `nix flake check`). The focused engine searches the splits of a
+  `⊗` by their counts instead of enumerating submasks (no width limit:
+  `Reason::ContextTooWide` is gone), chooses among interchangeable
+  occurrences canonically (same term, same position: one lemma carries
+  the split rule, the focus candidates and the memo), shares complete
+  failures among interchangeable sequents, picks the atom bias from the
+  sequent's shape, forces the split of a tensor of positive literals,
+  runs chains of `?` rules and forced splits in loops, and keeps only
+  the proofs of memoized sequents in its arena. Both defects of the
+  first baseline are fixed and pinned: the stop is polled on a counter
+  of its own inside the split search, and a refutation's memory no
+  longer grows with the splits tried. On the target set 6 of the 7
+  family runs that timed out are decided in milliseconds (`mix` at
+  eleven pairs is not: `3^n` memo lookups, which no change here
+  touches), the unsolvable 3-Partition at bins of five went from 292 s
+  to 0.35 ms, the counter with 16 tokens is proved for the first time.
+  The item on constant factors took three changes at identical
+  counters, left `OccSet` and link-time optimisation alone for lack of a
+  target (D3 amended), and its ranked list is in the report. One option
+  was added, `Options::bias` (`--bias`), because with exponentials no
+  rule wins: the factor rule proves 23 of 109 sampled LLTP problems
+  against 11 and loses 3 of those at the copy bound of 3, and 48 with a
+  bound of 10. Two fresh-context reviews compared the engine before and
+  after on 351 560 generated cases with no contradicting verdict, the
+  split search against a brute force, and found three defects that were
+  fixed in the step (cut failures shared through canonical keys kept
+  sequents at the copy bound for good; a level of recursion per link of
+  a left-nested tensor of literals; the factor bias in affine mode).
+  The planning session read the split search, the canonical keys, the
+  forced rules, the arena and the parallel layer, and checked what the
+  reviews had not: every LLTP row the first baseline decided, rerun at
+  5 s with the new engine (1 890 rows of its three sequential passes),
+  has the same verdict but one, the Petri net `IBM5964_1_1`, proved in
+  1.8 s before and in 42 s now under the default bias (0.08 ms under
+  `--bias factors`): a loss at the limit from the changed order of the
+  search, not a wrong verdict; a 2 s limit on the net that ran 242 s
+  past its limit ends after 2.00 s on one thread and on four; eight
+  target rows reproduce `after.csv`'s counters; all families at 5 s
+  give no verdict against a known one; `linlog interact` closes goals
+  off the roots in classical, Mix (four threads) and intuitionistic
+  affine mode, which the step's reviews had not covered. Accepted
+  deviations: decisiveness at the copy bound moved on 17 of the
+  generated cases (decided one bound later) and 299 the other way,
+  which the engine's contract allows and the prompt's wording did not;
+  `splits` and `memo_hits` changed their meaning; `Reason` lost a
+  variant; the step rewrote the follow-up lists of `later.md` it had
+  taken up. Fixed here, in two commits: two statements of the rules file
+  that the step had left stale (the net engine's wins over the focused
+  one, which no longer hold on the wide families, and the JSON example
+  of the removed reason), and what a session does when signing times
+  out, in CLAUDE.md, since the step's last commits had to wait for the
+  author when the passphrase's cache expired. Decisions D8 and D3
+  amended. Prompts amended: 16 gets "What step 15 left you" (the
+  counters' new meaning and the target set as the set-up check, the
+  sequential LLTP passes at about three and a half hours each, the
+  reruns' problem sets fixed to the first baseline's, the one known
+  loss, two `--bias factors` passes over the library, larger family
+  sizes, focus against net for the routing); 17 gets the bias and the
+  routing as questions of its assessment; `later.md` has the changed
+  premises of the net-engine and Petri-net candidates and what a
+  combined bias default must settle.
