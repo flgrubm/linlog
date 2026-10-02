@@ -61,8 +61,7 @@ say.
   those to the copy bound of 3; with the bound raised to 10 it proves
   48 and loses none. `Options::forward_copies` (`--forward-copies`), by
   the second: the default runs both searches, and the forward one has a
-  copy bound of its own, 30, where the hypotheses under `!` are Horn
-  clauses.
+  copy bound of its own, 30, where the sequent is a Horn program.
 
 Commits, in order: "Send a crashed child's whole error output to the
 run's log", "Add the target set of the performance pass", "Keep the nodes
@@ -554,7 +553,12 @@ The second session's part. Commits: "Decide a sequent with exponentials
 under both biases", "Run the forward search within thirty copies by
 default", "Alternate the two searches in slices where threads exist",
 "Record the target set under the combined default", "Document the
-default bias with exponentials", and this report.
+default bias with exponentials", "Report the default bias"; then, from
+the review, "Apply the forward bound to Horn programs only" and "Poll
+the caller's stop once for every poll of the second search", with
+"Record the target set on the engine after the review's fixes",
+"Describe the Horn program test and the polling of the caller's stop"
+and "Report the review of the default bias and what it led to".
 
 ### The scheme
 
@@ -565,8 +569,9 @@ intuitionistic, is decided by two searches (`focus::plan`):
   the default was alone;
 - the **forward** search, `Bias::Factors`, within `Options::copies` as
   well, and within the larger of that and `Options::forward_copies`
-  (default 30) where every formula under a `?` is a Horn clause and the
-  mode has no Mix.
+  (default 30) where the sequent is a Horn program (clauses under `!`,
+  a marking and a goal of atoms, as a Petri net is) and the mode has no
+  Mix.
 
 Each is a search of the engine as it was, with a memo, an arena and a
 branch stack of its own; the engine's rules did not change, and neither
@@ -597,7 +602,7 @@ How the two share the machine:
 
 ### Why this and not something else
 
-- **A bound of its own for the forward search, on Horn clauses only.**
+- **A bound of its own for the forward search, on Horn programs only.**
   The step offered three ways to give the forward search room: a bound
   of its own, a count that treats forced steps differently, a multiple
   of `Options::copies`. No multiple converts one bound into the other:
@@ -608,12 +613,13 @@ How the two share the machine:
   finished, since on arbitrary formulas every level multiplies the
   search by the copies' alternatives. So the bound applies where a copy
   is a step of a chain, which is decided from the sequent's shape
-  (`focus::chains`: every formula under a `?` is a tensor of literals
-  with at most one factor a `⅋` of literals, units for an empty body
-  or head) and not by a second budget inside the engine. That keeps the
+  (`focus::chains`: every root under a `?` is a clause, a tensor of
+  body literals of one sign with at most one factor a head of the other
+  sign, and every other root a marking or a goal) and not by a second
+  budget inside the engine. That keeps the
   engine untouched, which is what makes the contract an identity; the
-  price is that one hypothesis of another shape switches the bound off
-  for the whole sequent (in `plan/later.md`). Mix is excluded: the one
+  price is that one formula of another shape switches the bound off for
+  the whole sequent (in `plan/later.md`). Mix is excluded: the one
   generated sequent that did not finish at a forward bound of 10 was a
   chain that grows under Mix, where every stable sequent is tried in
   every partition.
@@ -719,11 +725,11 @@ With the unit as it is, on the target set:
 
 - the 44 sampled LLTP problems that the default and an explicit run
   both decide take the default 6.5 s together where the better explicit
-  run takes 4.1 s; the ratio is 1.6 in the median, 2.0 in the median of
-  those whose better rule takes 10 ms or more, and 4.4 at most (64 ms
+  run takes 4.1 s; the ratio is 1.7 in the median, 2.0 in the median of
+  those whose better rule takes 10 ms or more, and 4.5 at most (64 ms
   against 14 ms);
 - the rows without exponentials are untouched (identical counters,
-  times within 0.95 to 1.14 of `after`, 1.00 in the median);
+  times within 0.97 to 1.09 of `after`, 1.03 in the median);
 - an undecided sequent costs both searches to their bounds:
   `growing` at 16 takes 1 396 stable sequents where it took 409.
 
@@ -736,7 +742,7 @@ sequents (14 228 before) and with 16 tokens in 404 (473 232); the
 counter with the unreachable goal, which ended at the copy bound, is
 refuted in 64. Of the 113 LLTP problems 53 are proved (14 before), 20
 end at the copy bound (28), 2 at the recursion limit, 38 at the time
-limit (69); the latest stop is 5.26 s after the start.
+limit (69); the latest stop is 5.21 s after the start.
 
 The 109 of them that run under the default limits, with the three runs
 under an explicit bias taken again at the commit this session started
@@ -767,7 +773,7 @@ row the first baseline decided in `lltp-intuitionistic.csv` (737),
 5 s on one pinned core. All 1 890 are decided with their verdict and
 every proof is checked; `IBM5964_1_1` is proved in 0.13 ms in three
 stable sequents (42 s under the old default); the slowest row takes
-3.87 s.
+3.92 s.
 
 `linlog-bench run --all-families --timeout 5` on the final binary: 88
 runs, no verdict against a known one, every proof checked; undecided
@@ -806,8 +812,8 @@ the poll interval, and nothing a verdict depends on.
 
 ### Deviations and assumptions
 
-- **`--copies` no longer bounds every copy under the default.** On Horn
-  clauses the forward search runs within `--forward-copies`, so
+- **`--copies` no longer bounds every copy under the default.** On a
+  Horn program the forward search runs within `--forward-copies`, so
   `linlog prove --copies 0 "!A |- A"` is now provable. That is the
   point of the bound, and it is what the step asks to keep true of the
   backward search only; a user who wants one bound for everything sets
@@ -834,15 +840,105 @@ the poll interval, and nothing a verdict depends on.
 
 ### The review
 
-A fresh-context reviewer was given the commit this session started
-from and the head, the generators of `search::generate`, and the six
-things to check (no `Proved` against an `Unprovable` and every proof
-checked; nothing decided at the start and unknown at the head without a
-stop; the default deciding what `Bias::Factors` decides; the explicit
-biases unchanged, counters included; a stop after a random number of
-polls; four threads), with the baton of the alternating searches to
-read and to stress for lost wake-ups. Its report had not arrived when
-this was written; the section is completed when it does.
+A fresh-context reviewer compared the commit this session started from
+with the head, twice: the first head (the restarting turns, a forward
+bound of 10) and the second (the alternating searches, a bound of 30),
+the latter with and without the `parallel` feature. Its harness was a
+scratch test in exported copies of each revision, release builds, two
+pinned cores, 8 GiB. Its cases: 10 585 generated sequents with
+exponentials (15 226 with the intuitionistic ones also run classically),
+3 939 without, and 4 600 Horn programs of its own with an independent
+breadth-first reachability oracle; per case the copy bounds 0 to 3 and
+the generator's, memo limits default, 0 and 2, and the default at
+forward bounds 30, 0 and 20 beside each explicit bias.
+
+- **Soundness**: no `Proved` against an `Unprovable` in 2.5 million
+  runs on the first head and 925 650 on each build of the second; all
+  1 655 772 proofs pass the checker; 334 069 decided Horn runs agree
+  with the oracle; 426 039 runs with debug assertions, none fired.
+- **Never less than before**: the default agrees with `Bias::Rarer` and
+  with the start commit's default wherever those decide, 446 454 runs
+  on the first head and 298 977 on each build of the second, also with
+  the first turn forced to 1, 64 and 1 000 units. No violation.
+- **The gain is taken**: the default agrees with `Bias::Factors`
+  wherever that decides (467 454 and 300 573 runs). On the alternating
+  build the identity was checked directly on 156 368 configurations:
+  where both searches end undecided the default's stable sequents,
+  splits, memo hits and memo entries are exactly the two explicit
+  searches' sums, and every run repeated gives the same statistics.
+- **The oracle is unchanged**: explicit `Rarer` and `Factors` give
+  identical lines, counters and polls included, at the start and at
+  each head (1 010 544 and 808 764 runs), and so does the default
+  without exponentials and in affine mode (846 324).
+- **Stops**: 9 million stopped runs in turns and 556 000 on the
+  alternating build (a stop at a poll of the forward search, and a stop
+  that fires only after it has ended): every stop that fired gave
+  `Stopped` or the unstopped verdict, and none hung under a watchdog.
+  99 856 runs with a forced panic in either search: every panic reached
+  the caller, none hung.
+- **Pools**: 4.1 million runs on two, three and four threads on the
+  first head and 550 959 on the second: no contradiction with any
+  sequential run, no bad proof, no run that needed its deadline.
+  Decisiveness at the bound differs between one thread and four in a
+  few hundred runs of 824 135, in both directions, as the pool's
+  contract allows.
+- **By reading**: a turn that ran out cannot be taken for the caller's
+  stop or the reverse; a cut turn's result is never used; the turn's
+  growth saturates; `plan` returns two searches only when the fragment
+  and the sequent both have exponentials, the mode is not affine and
+  the rules differ; `race` and `merged` cannot drop a verdict; the
+  baton has no lost wake-up (the predicates are rechecked under the
+  lock) and a thread that starts late sees the holder or the stop flag
+  at once. Goals other than the roots: 494 334 runs per build, nothing.
+
+Two findings, both real and both fixed after the review, in "Apply the
+forward bound to Horn programs only" and "Poll the caller's stop once
+for every poll of the second search":
+
+- **Slow "unknown".** `chains` looked at the shape of the formulas
+  under `?` only. It let through formulas that are no clauses two-sided
+  (`!((c ⊸ b) ⊸ c)`) and sequents whose other formulas are no marking
+  or goal, and there the deeper bound multiplies the search:
+  `(c ⊸ c), !((c ⊸ b) ⊸ c), 1 ⊢ 1 ⊸ 1 ⊗ c` answered "unknown" in
+  0.02 s at the start and after 44 s at a bound of 10, and did not end
+  at 30. The test is now on the whole sequent and on the signs (a Horn
+  program: clauses, a marking, a goal); the reviewer's two sequents of
+  that kind answer in 0.02 s and 0.005 s again. What the fix does not
+  remove is the price of the bound on a real program whose markings
+  grow: of the reviewer's 2 000 random Horn programs 45 took over a
+  second to an "unknown" that took under 0.1 s at the start (3 at a
+  bound of 10), against 471 that are decided now and were not (453).
+  That is the trade the default of 30 makes, and the doc comment of
+  `DEFAULT_FORWARD_COPIES`, which called the cost milliseconds, says so
+  now.
+- **A late stop on one thread.** Once the forward search had ended, the
+  alternating scheme polled the caller's stop once a millisecond, and
+  the command looks at its clock every 1 024th poll: a `--timeout` of
+  300 ms ended after 1.07 s. The calling thread now polls the stop once
+  for every poll the backward search made, so a condition that counts
+  polls sees what it sees of one search; the same run ends after
+  0.32 s, as at the start. A panic of the caller's condition while the
+  backward search runs alone, which the reviewer found would leave that
+  search running, stops it now.
+
+Also from the review: the help text of the `--bias` value `auto` was
+stale, and `Statistics::memo_entries` did not say what it is for two
+searches; both corrected. A thread per search costs 37 µs in the median
+against 7 µs on small sequents. And one thing that is not this
+session's: the test helper's claim that a pool proves exactly where one
+thread proves is false already at the start commit (a sequent that one
+thread leaves at its copy bound and four threads prove six times of
+six, and the reverse once in six); the rules file states the weaker,
+true contract, and the helper's doc comment and assertion are a
+follow-up in `plan/later.md`.
+
+Not covered by the review: sequents beyond its generator's sizes, the
+LLTP files (the target set and the 1 890 rows are that check), the
+fallback when the thread cannot start, a panic on a pool, wasm. The two
+fixes were made after it: the sign-aware test is covered by this
+session's tests, the reviewer's reproductions and the target set, the
+polling by the reviewer's reproduction and the stop tests of the
+suite, not by a second differential run.
 
 ## Decisions
 
@@ -984,7 +1080,7 @@ this was written; the section is completed when it does.
   "The default bias" below).
 - **What is left of the bias question**: the unit in which the two
   searches share a core, which follows the time only roughly; the
-  forward bound, which applies to Horn clauses only; five sampled
+  forward bound, which applies to Horn programs only; five sampled
   translations of intuitionistic problems that a copy bound of 10
   decides under either bias and the default bound of 3 does not. All
   three are in `plan/later.md`.
@@ -1019,7 +1115,7 @@ this was written; the section is completed when it does.
   comparison with the first baseline's `lltp-intuitionistic.csv`, and
   what the default gains over it), under `--bias factors --copies 30`
   (the forward search alone at the default's forward bound: what the
-  alternation costs on the rows it decides, which on the sample is 1.6
+  alternation costs on the rows it decides, which on the sample is 1.7
   times the better rule in the median), and the default itself, which is
   the script's `lltp-intuitionistic` pass as it stands. `--bias factors`
   at the default bound and at `--copies 10`, which the first session
@@ -1133,10 +1229,12 @@ The second session, on its head:
   limit in the first baseline, is proved in 0.25 ms); two nets that time
   out stop 2.005 s to 2.015 s after their start under a 2 s limit on
   one thread and on four.
-- `nix flake check`: "all checks passed!" on the tree with the head's
-  code (build, clippy, test, doc, deny, features, export, rocq, bench,
-  treefmt and the rest), before the last edits of this report, which
-  no check reads.
+- `nix flake check`: "all checks passed!" on the head's tree, after the
+  two fixes the review led to (build, clippy, test, doc, deny, features,
+  export, rocq, bench, treefmt and the rest).
+- The measurements above are those of the engine after the two fixes:
+  the target set, the 1 890 rows and the families were taken again on
+  it, and the README's examples checked again.
 - Not verified: the whole LLTP library and every core, which are step
   16's; how the two pools should share the threads; the default on
   goals other than the roots (`prove_goal`, the interactive `close`)

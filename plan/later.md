@@ -365,9 +365,12 @@ from the frontier.
     literal of every copy with every member of `Γ`, which is most of a
     stable sequent's cost on a net of thousands of transitions), would
     bring the measured cost nearer the scheme's 1.5 and 3 times.
-  - *The forward search's own bound applies only where every formula
-    under a `?` is a Horn clause.* A sequent with one hypothesis of
-    another shape gets the forward search within `--copies` only. A
+  - *The forward search's own bound applies only to a Horn program*
+    (clauses, a marking, a goal). A sequent with one formula of another
+    shape gets the forward search within `--copies` only, and the
+    price of the bound where it applies is a slower "unknown" on
+    programs whose markings grow (45 of a review's 2 000 random ones
+    over a second). A
     count per copy (a clause's copy as a step, any other as a copy)
     would lift that, at the price of a budget with two parts in the
     memo's `Exhausted` entries.
@@ -499,6 +502,15 @@ row height for trees without a raised `⊥` (`Style::line_height` is the
 knob).
 
 ## Follow-ups: parallel search
+
+Found by the review of step 15's second session, and older than it: the
+doc comment and the second assertion of `focus::parallel::tests::agree`
+claim that a pool proves exactly where one thread proves. That is false
+(`b, ((a * 1) -o !a), !(b -o 1), !(1 -o ((1 * 1) -o a)), b |- (!!a * b)`
+with a copy bound of 2 is at its bound on one thread and proved on
+four, every time); the test passes on its samples only. The contract in
+`.claude/rules/core.md` is the true one (decisiveness within the bound
+may differ either way); the helper should assert that and no more.
 
 Left open by step 13 (`plan/reports/13-parallel.md`, "Open questions").
 A per-worker proof arena with a relocation pass at the merge
