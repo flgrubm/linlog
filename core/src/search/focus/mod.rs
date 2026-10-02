@@ -970,7 +970,7 @@ impl<'a> Engine<'a> {
 
     /// Orders the focus candidates: `1` and `!`, then a `⊗` whose split is
     /// forced by a factor (a positive literal, `1`, `!`; or `0`, which
-    /// fails at once), then `⊕`, then a `⊗` whose split must be enumerated.
+    /// fails at once), then `⊕`, then a `⊗` whose split must be searched.
     fn focus_class(&self, o: OccId) -> u8 {
         match self.forest.kind(o) {
             Kind::One | Kind::Bang => 0,
@@ -1879,8 +1879,8 @@ mod tests {
         assert_eq!(first.1, second.1);
     }
 
-    /// The stop condition, the recursion limit and the split width each end
-    /// the search with their reason.
+    /// The stop condition and the recursion limit each end the search with
+    /// their reason, and no context is too wide to split.
     #[test]
     fn limits() {
         let input = "|- a * b, ~a, ~b";

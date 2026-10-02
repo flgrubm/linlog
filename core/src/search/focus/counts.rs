@@ -331,8 +331,7 @@ fn merge(a: &[Entry], b: &[Entry], sum: bool) -> Vec<Entry> {
 /// The running sums of a set of occurrences: the summed interval per atom,
 /// how many atoms' intervals exclude zero, how many members absorb, and the
 /// member count and summed weight the `MLL` equation compares. Members are
-/// added and removed one at a time, at the cost of their row, so a split
-/// enumeration keeps two tallies in step with its two sides.
+/// added and removed one at a time, at the cost of their row.
 #[derive(Clone, Debug)]
 pub(crate) struct Tally {
     /// Per atom, the summed least balance.

@@ -336,7 +336,7 @@ const NET_MULTIPLICITY: usize = 2;
 /// shows, and the focused engine, whose count prunes see the mistake at
 /// once, wins by orders of magnitude on such sequents; with distinct atoms
 /// the linking is nearly forced and the net engine is linear where the
-/// focused engine enumerates context splits.
+/// focused engine searches context splits.
 fn prefers_net(forest: &Forest) -> bool {
     use crate::occurrences::Sign;
     let atoms = forest.sequent().atom_names().len() as u32;
