@@ -1388,17 +1388,19 @@ impl<'a> Engine<'a> {
                 std::cmp::Reverse(m),
             )
         });
-        for &m in members.iter() {
-            split.open(self.counts, m);
-        }
         // Without the equation, a split can only fail the counts through a
         // member whose own interval of some atom excludes zero: with none,
-        // every sum of intervals contains zero and every split passes.
+        // every sum of intervals contains zero and every split passes, and
+        // the counts need not know the members at all.
         let tight = |o: &OccId| self.counts.tight(*o);
-        split.set_inert(
-            !self.rules.equation
-                && (!self.rules.intervals || !placed.iter().chain(members.iter()).any(tight)),
-        );
+        let inert = !self.rules.equation
+            && (!self.rules.intervals || !placed.iter().chain(members.iter()).any(tight));
+        split.set_inert(inert);
+        if !inert {
+            for &m in members.iter() {
+                split.open(self.counts, m);
+            }
+        }
     }
 
     /// Searches the splits of a context into two sides that pass the
