@@ -35,7 +35,8 @@ Workspace crates:
   `--help` text are the doc comments in `argument_parsing.rs`; `prove.rs`
   runs the search on a thread sized from `--recursion-limit` and owns the
   output; `--copies` bounds the copies of `?` formulas per branch and
-  `--bias` picks the focused engines' atom bias;
+  `--bias` picks the focused engines' atom bias (`--forward-copies` the
+  bound of the forward search that the default runs on Horn clauses);
   `--jobs N` (default: every core) runs the search on a pool and
   `--deterministic` the sequential engines; exit status 0 proved/valid,
   1 unprovable/invalid, 2 error, 3 unknown. Its
@@ -85,8 +86,14 @@ embedding of IMLL into MLL, whose `Outcome` also carries the net found),
 units, MALL, MELL and full LL on dyadic sequents with a per-branch copy
 bound that deepens iteratively, `Options::copies`, answering
 `Reason::CopyBound` when it binds, and `Options::bias` for how each atom's
-positive literal is picked, `Bias::Auto`, `Rarer` or `Factors`, which
-changes speed and the copies a proof needs, never provability; affine
+positive literal is picked, `Bias::Rarer` or `Factors`, which
+changes speed and the copies a proof needs, never provability, or
+`Bias::Auto`, which on a sequent with exponentials runs a search under
+each and answers with the first that decides, the forward one within
+`Options::forward_copies` where the formulas under `?` are Horn clauses
+(alternating in slices on one core, or in turns from their start without
+the `parallel` feature, and side by side on a pool);
+affine
 mode, the same search with
 weakening at the leaves; and, given the reading, the two-sided search of
 intuitionistic mode, `Engine::TwoSided`, the same engine keeping the goal

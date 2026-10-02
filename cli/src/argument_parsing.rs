@@ -97,7 +97,7 @@ pub struct ProveArgs {
     /// clauses under `!`, such as a Petri net, is often much faster but
     /// takes one copy per step on a single branch. `auto` runs both
     /// searches on a sequent with exponentials and answers with the first
-    /// that decides: in turns on one thread, side by side on several.
+    /// that decides: alternating on one core, side by side on several.
     #[arg(long, value_enum, value_name = "BIAS", default_value_t = BiasArg::Auto)]
     pub bias: BiasArg,
     /// How often `?` formulas may be copied on one branch of the proof

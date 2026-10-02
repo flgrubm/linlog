@@ -136,31 +136,23 @@ of terms. Invariants the code relies on:
   whenever the sequent has a `!` or `?`, the old rule: the literal with
   fewer occurrences is positive, a tie makes `Var` positive, so an atom
   with one sign only has all its literals negative. The engine takes
-  the old rule in affine mode as well (`focus::bias`): nothing forces a
+  the old rule in affine mode as well (`focus::plan`): nothing forces a
   split there, so the factors have nothing to say, and a review measured
   up to 700 times the stable sequents on generated affine sequents with
-  the factor rule. Why not with
-  exponentials: the bias decides the shape of the focused proofs, hence
-  the copies a branch needs; with the factor rule the counter family
-  chains forward and needs `n − 1` copies on its one branch where the
-  rarer-literal rule needs `log₂ n`, so within the family's bound
-  `Proved` became `CopyBound` (measured), which a default must not do.
-  At a bound of `n − 1` the same rule decides the counter with 16
-  tokens in 19 stable sequents instead of 473 232, which is what
-  `Options::bias` is for: `Bias::Auto` is the rule above, `Bias::Rarer`
-  and `Bias::Factors` name its two halves for any sequent
+  the factor rule. With exponentials the bias decides the shape of the
+  focused proofs, hence the copies a branch needs, and neither rule
+  wins: the counter family chains forward under the factor rule and
+  needs `n − 1` copies on its one branch where the rarer-literal rule
+  needs `log₂ n`, and at a bound of `n − 1` the factor rule decides the
+  counter with 16 tokens in 19 stable sequents instead of 473 232. So
+  `Forest::bias` is the rarer-literal rule there, and the engine's
+  default runs a search under each ("The default bias with exponentials
+  is two searches", below). `Options::bias` names the rules:
+  `Bias::Rarer` and `Bias::Factors` for any sequent
   (`Forest::bias_under`; the engine reads its polarities off
   `Counts::positive`, never off `Forest::polarity`, so that the option
   reaches every place a literal's polarity matters, `literal_tensor`
-  included). On the LLTP sample of the target set (109 intuitionistic
-  problems, 5 s, the default bound of 3), `Factors` proves 23 where
-  `Rarer` proves 11 and answers 45 more at the copy bound within
-  milliseconds where `Rarer` runs into the time limit, and it loses 3
-  of the 11 to the copy bound: no rule wins everywhere, hence the option
-  and its harness axis. With a bound of 10, `Factors` proves 48 and
-  refutes one, the 11 among them. Running `Factors` first and `Rarer`
-  after it when the first answers `Unknown`, or a larger default bound
-  under `Factors`, would keep every verdict and is a follow-up. Rules tried on the
+  included). Rules tried on the
   exponential-free targets and not taken: `Var` always (as good on the
   families written two-sided, where it is forward chaining, but it
   depends on how the atoms happen to be written and loses the gains on
@@ -445,9 +437,10 @@ the `Mode`, the `Engine` that ran, the `Statistics`, and `net`, the
 `ProofStructure` the net engine found (`None` from the focused engine).
 `Options` has private fields and setters (`memo_limit`, `recursion_limit`,
 `engine`, `fragment`, `test_period`, `copies`, `jobs`, `portfolio`,
-`bias`), the
-constants `DEFAULT_MEMO_LIMIT`, `DEFAULT_RECURSION_LIMIT` and
-`DEFAULT_COPIES`, which the CLI shows as its defaults, and `stack_size()`,
+`bias`, `forward_copies`), the
+constants `DEFAULT_MEMO_LIMIT`, `DEFAULT_RECURSION_LIMIT`,
+`DEFAULT_COPIES` and `DEFAULT_FORWARD_COPIES`, which the CLI shows as
+its defaults, and `stack_size()`,
 the stack a thread needs at the recursion limit, which sizes the CLI's
 search thread and the parallel pool's workers alike;
 `Reason`, `Statistics`, `Engine` and `Outcome` are `#[non_exhaustive]` so
@@ -517,7 +510,9 @@ the net engine's, and the others stay zero.
   steps of its searches for the splits of a `⊗` or a Mix (`poll_splits`,
   on a counter of its own, `Engine::steps`): a split search whose splits
   fail in focus visits no stable sequent and can run for minutes. It
-  answers `Unknown (Reason::Stopped)`. The crate docs in
+  answers `Unknown (Reason::Stopped)`. Both polls pass the work done
+  since the last one (`Stop::fired(work)`), which only the two searches
+  of the default bias count (`Stop::Slice`, `Stop::Turn`). The crate docs in
   `lib.rs` show the common path (parse, fragment, prove, derivation, JSON)
   as a doc test; keep it the shortest correct program when the API moves.
   The focused engine recurses on the caller's stack, bounded by
@@ -580,7 +575,9 @@ relies on:
   there, under a `Copy` node) costs one unit of a per-branch budget passed
   down the calls; so does the initial rule `⊢ Θ, p⊥ ; · ⇓ p`, emitted as
   `Copy(p⊥)` above `Ax(p, p⊥)`, so that the bound counts every `?d` of the
-  derivation. `run` deepens the budget from 0 to `Options::copies`. A
+  derivation. `run` deepens the budget from 0 to the search's bound
+  (`Options::copies`; the forward search of the default bias may have
+  a larger one, below). A
   level whose search skipped a copy for lack of budget sets `exhausted`;
   `Unprovable` is answered only by a level that ends with the flag clear,
   and `Reason::CopyBound` when every level set it. The flag is saved and
@@ -652,6 +649,157 @@ relies on:
   of `Γ`, so a comparison of sequents ran over both bitsets before it
   met the difference (the `growing` family at a bound of 1 024 took
   530 ms of CPU for 392 961 stable sequents, 260 ms with the hashes).
+- **The default bias with exponentials is two searches** (`focus::plan`,
+  `search_goal`). `Bias::Auto` on a goal with exponentials in linear
+  mode, classical or intuitionistic (the fragment searched and the
+  forest both have a `!` or `?`, the mode is not affine), is decided by
+  the *backward* search, `Bias::Rarer` within `Options::copies`, which
+  is what `Auto` was alone before, and by the *forward* search,
+  `Bias::Factors`, each an unchanged search of the engine (`Rule`: a
+  bias and a copy bound) with a memo, an arena, a branch stack and
+  counts of its own. The first to decide answers. What the code relies
+  on, and what it promises:
+  - **The contract, never less than the backward search.** With no stop
+    firing, `Auto` answers `Proved` or `Unprovable` wherever
+    `Bias::Rarer` does under the same options, and wherever
+    `Bias::Factors` does, with the same verdict. The argument is an
+    identity, not an estimate: each of the two is the explicit search
+    itself. Where they alternate in slices, a search is never
+    restarted, only made to wait, so its run is the explicit one
+    counter for counter (`default_bias_takes_turns` pins the sum);
+    where they take turns from their start, every turn begins with a
+    fresh `Engine`, memo and arena, so a turn is a prefix of the
+    explicit run and the turn that is not cut *is* that run. `Auto`
+    ends only on a decided result or when both searches ended. The
+    forward search's levels up to `copies` are those of `Bias::Factors`
+    under the same options (the deepening is level by level, so a
+    larger bound continues the same run).
+    `default_bias_decides_what_either_rule_does` pins it on generated
+    sequents, classical and intuitionistic, with and without the memo.
+    On a pool the same holds up to the pool's own caveat (decisiveness
+    within the bound depends on the interleaving).
+  - **Nothing is shared between the two searches but the verdict**, and
+    the forest, the reading and the `Classes`, which are not the
+    search's. A proof and a complete failure are facts under either
+    bias, since provability does not depend on it, and sharing them
+    would be sound; it is not done because it would break the identity
+    above: an entry from the other search changes which entries this one
+    makes, and with them its decisiveness at the bound (the engine's own
+    "the memo can change decisiveness within the bound", which a review
+    of the first pass saw on real cases when complete failures were
+    shared among relatives). A failure cut by the budget is a statement
+    about one rule's search space under one budget, and the loop check
+    about one branch of one search: neither means anything to the
+    other search. The same reason keeps a search's own memo out of its
+    next turn where turns restart it. The price is memory: two memos of
+    at most `Options::memo_limit` entries each where the searches run
+    at once.
+  - **`Unprovable` keeps its meaning**: a level of either search that
+    ended without a cut, which refutes the sequent because focusing is
+    complete for every bias. `Unknown` needs both searches to have ended
+    undecided; its reason is the backward search's, and a copy bound is
+    reported as `CopyBound(Options::copies)`, which is true of both
+    searches (the forward one was cut at every level up to its own
+    bound, which is at least that).
+  - **The forward bound** is `Options::copies`, and the larger of that
+    and `Options::forward_copies` (`DEFAULT_FORWARD_COPIES`) where every
+    formula under a `?` is a Horn clause (`chains`: a tensor of
+    literals with at most one factor a `⅋` of literals, `1` and `⊥`
+    for an empty body or head; what `!(a ⊗ b ⊸ c ⊗ d)` lowers to) and
+    the mode has no Mix. Why a bound of its own: a forward chain takes
+    one copy per step on one branch, where the same derivation
+    backward takes as many as its tree is deep, so no multiple of
+    `copies` converts one into the other. Why only on Horn clauses: a
+    copy of a clause rewrites `Γ` and opens no branch for further
+    copies, so a level costs the markings reachable within it, which
+    the memo holds once each; on arbitrary formulas a deeper bound
+    multiplies the search by the copies' alternatives per level, and
+    with the bound applied everywhere the generated tests no longer
+    finished (the LLTP translations of intuitionistic problems that
+    `--copies 10` decides are decided by the bound, under either bias,
+    and stay the user's `--copies`). Why not under Mix: every stable
+    sequent a chain leaves unproved is tried in every partition, and a
+    chain that grows them (`⊢ !?(~a ⅋ c)`) did not finish at a bound of
+    10. `Options::copies` keeps its documented meaning for the backward
+    search and for either bias named explicitly; with `forward_copies`
+    at 0 the forward search runs within `copies` everywhere.
+  - **When the two rules agree on every atom** the forward search is the
+    backward one continued, and runs alone (its levels up to `copies`
+    are the backward search's).
+  - **The unit of work** is the engine's own, since the crate has no
+    clock: a step of a split search is one, a stable sequent
+    `NODE_WORK` plus what grows with its size (the forest's width for
+    the zones, the members, the copies and their comparisons with the
+    members in `meets`), a split whose premises are tried the forest's
+    width again. The engine adds these up in `Engine::work` and hands
+    them to the stop condition at its two polls (`Stop::fired(work)`);
+    `Stop::Closure` and `Stop::Flags` ignore them, so nothing changes
+    for a search that runs alone. So a run is a function of the input.
+    The unit follows the time only roughly: what a stable sequent and a
+    split step cost varies by two orders of magnitude between problems
+    with the sizes of `Γ` and `Θ` (a forced chain's lookups of duals
+    are not counted at all), so in seconds one search's share can be
+    several times the other's. Counting a poll as the unit made the
+    backward search's share a hundred times too long on Petri nets (a
+    poll in a split search is 4 096 steps), and a flat cost per stable
+    sequent starved a net's backward proof.
+  - **On one core with threads** (`focus::parallel::alternate`, feature
+    `parallel`, whatever `Options::jobs` says below two): the forward
+    search runs on the calling thread and the backward one on a scoped
+    thread of `Options::stack_size()`, and a `Baton` lets one of them
+    run at a time: a search gives way after a slice of work
+    (`Stop::Slice`, `SLICE`; the backward search gets `BACKWARD_SHARE`
+    = 2 slices' worth) and waits for its turn. Nothing is restarted and
+    nothing depends on the scheduler, so the statistics are the two
+    searches' own, added up, and a function of the input. A search that
+    decides stops the other at the end of its slice; one that ended
+    undecided leaves the other to run on, and the calling thread then
+    polls the caller's stop once a millisecond (it polls it at every
+    poll of the forward search before; a caller that reads its clock
+    every `n` polls, as the CLI does every 64 on one thread, is then up
+    to `n` milliseconds late, and while the backward search has its
+    slice nobody polls, which is a slice's time). `Ended`, dropped on return and
+    on a panic, hands the baton on so that nobody waits for a thread
+    that is gone. What it costs against the better rule alone, in units
+    of work `W`: `1.5 W` when the backward search decides and `3 W`
+    when the forward one does, plus a slice. Why the backward search
+    gets twice the work: it is what the default was before, so under a
+    time limit everything it decides alone in two thirds of the limit
+    stays decided; at equal shares two nets that it proves in 2.1 s and
+    1.9 s (`NeighborGrid_z_2d_3n_1m_t_1_2_10_1`, `UtahNoC_5_1`
+    classically) were not proved within 5 s, the forward search's units
+    being slower there.
+  - **On one thread without threads** (`focus::turns`, the fallback when
+    the feature is off or the thread cannot start; `FIRST_TURN`,
+    `TURN_GROWTH`, `Stop::Turn`): round `i` gives the forward search
+    `FIRST_TURN · 4^i` units and the backward one twice that, each
+    turn from the search's start; a search that ended undecided takes
+    no further turn, and the other then runs without one. `Statistics`
+    adds up every turn (the memo's entries are the most of one turn).
+    The turns that end early are a geometric series, so the run takes
+    less than `5 W` whichever search decides after `W` (its own cut
+    turns, under a third of its last, and the other's up to that
+    round); a search that decides within its first turn costs what it
+    costs alone, plus one first turn of the forward search when it is
+    the backward one. This scheme was the first built and measured: on
+    the LLTP sample it decided what the alternating one does, at three
+    times the time of the better rule in the sum and up to twenty times
+    on single nets, and it lost eight of the 1 890 LLTP rows the first
+    baseline decided to the 5 s limit, which is why threads are used
+    where they exist.
+  - **On a pool** (`focus::parallel::search_goal`, `search::parallel::
+    race`, `Rule::search_on`) the two searches run side by side, each
+    with its own shared memo and arena, the forward one on a pool of
+    `jobs / 2` threads and the backward one on a pool of the rest, and
+    a decided result raises the other's root flag. Two pools and not
+    one, because a pool thread that waits at a scope runs stolen tasks:
+    on one pool a thread of the search that has just decided can be
+    deep inside a task of the other, which nothing stops, and the
+    verdict waits for it. A pool of one thread runs the sequential
+    engine (`Rule::search_on` leaves `runtime` unset). The merge
+    (`merged`, shared with `alternate`): a verdict of either; else
+    `Stopped` when either was stopped, which without a verdict can only
+    be the caller's stop; else the backward search's reason.
 - **The spec's affine prune is wrong and is not implemented.** It prunes a
   stable sequent that *contains* an ancestor as a multiset, arguing that
   weakening shortens the proof; but weakening turns a proof of the smaller
@@ -1158,7 +1306,10 @@ has no or-choices worth sharing out). What the code relies on:
 - **One pool per search, no global.** `Runtime::new(jobs, stack_size)`
   builds a rayon pool of `jobs` threads with stacks of
   `Options::stack_size()` (the engine recurses on the worker's stack as
-  it does on the caller's), which `prove_goal` drops with the outcome;
+  it does on the caller's), which the search drops with the outcome
+  (the net engine's in `prove_goal`, the focused engine's in
+  `focus::parallel::search_goal`, which builds two for the two searches
+  of the default bias with exponentials and splits `jobs` between them);
   `Error::ThreadPool` when the threads cannot start. Never touch rayon's
   global pool: a library must not size or seed it, and `RAYON_NUM_THREADS`
   is read only when a builder's thread count is zero, which ours never
@@ -1301,7 +1452,11 @@ has no or-choices worth sharing out). What the code relies on:
   copies within their classes, so workers below the levels explore in
   different orders; the first alternative of every choice keeps the
   spawning engine's order. It is off by default: the table in the step
-  report shows no consistent gain on the families measured.
+  report shows no consistent gain on the families measured. The two
+  searches of the default bias are the portfolio that does pay, two
+  orders that differ in the one choice that changes the search, so this
+  option has no use left that a measurement supports; it stays until
+  the second baseline has measured it once more, and should go then.
 - **Statistics** add every worker's counters (`Statistics::add`, the
   memo's read off the shared table once), so a parallel `nodes` is the
   work done, not the work one thread would have done, and the CLI's

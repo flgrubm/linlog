@@ -508,7 +508,8 @@ impl Options {
 
     /// Sets the most stable sequents the memo holds at once; when the memo
     /// is full it is emptied, which costs time but not correctness. Zero
-    /// switches the memo off.
+    /// switches the memo off. The two searches that [`Bias::Auto`] runs
+    /// on a sequent with exponentials hold a memo of this size each.
     pub fn memo_limit(self, limit: usize) -> Self {
         Self {
             memo_limit: limit,
@@ -698,7 +699,8 @@ pub struct Statistics {
     pub nodes: u64,
     /// The visits answered from the memo.
     pub memo_hits: u64,
-    /// The most stable sequents the memo held at once.
+    /// The most stable sequents the memo held at once; of two searches
+    /// that ran together, the two memos' together.
     pub memo_entries: usize,
     /// The context splits examined for `⊗` and Mix, most of them rejected by
     /// the counts.

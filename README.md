@@ -47,8 +47,8 @@ everything else the *focus engine* runs a focused sequent search over
 bitsets (on repeated literals its count-based pruning beats the linking
 search by orders of magnitude). `--mix`, `--affine` and `--intuitionistic`
 choose the logic, `--fragment` and `--engine focus|net|two-sided|additive`
-override what detection picks, `--timeout 10s`
-and `--copies N` bound the search, `--quiet` prints the verdict line only
+override what detection picks, `--timeout 10s`,
+`--copies N` and `--forward-copies N` bound the search, `--quiet` prints the verdict line only
 and `--stats` what the search cost, in the counters of the engine that
 ran:
 
@@ -128,8 +128,8 @@ exhaustively without ever hitting it, and "unknown" when every bound up to
 `--copies` was hit:
 
 ```console
-$ linlog prove -q --copies 1 "!A, !(A -o B), !(B -o C) |- C"
-unknown (MELL, classical, focus engine): the copy bound of 1 was reached; raise it with --copies
+$ linlog prove -q --copies 1 "!(A & B) |- A * B"
+unknown (LL, classical, focus engine): the copy bound of 1 was reached; raise it with --copies
 $ linlog prove -q "A |- !A"
 unprovable (MELL, classical, focus engine): the search was exhaustive
 $ linlog prove -q "!(A -o A * A), A |- ?B"
@@ -154,33 +154,45 @@ unknown (MELL, classical affine, focus engine): the copy bound of 3 was reached;
 
 The focused engines treat one literal of every atom as positive, which
 decides where a proof keeps its focus and never what is provable; `--bias`
-names the rule. The default, `auto`, makes the literal positive that is
-more often a direct factor of a `⊗` (`factors`: such a `⊗` needs no search
-for its split) when the sequent has no exponential, and the rarer literal
-(`rarer`) when it has one or under `--affine`. On Horn-like hypotheses under `!`, a Petri net
-for one, `factors` chains forward from the facts and is often faster by
-orders of magnitude, but its proofs take one copy per step on a single
-branch, so it wants `--copies` raised to the number of steps:
+names the rule. `factors` makes the literal positive that is more often a
+direct factor of a `⊗` (such a `⊗` needs no search for its split), `rarer`
+the one with fewer occurrences. Without exponentials the default, `auto`,
+is `factors`, and under `--affine` it is `rarer`. With exponentials
+neither wins: on Horn clauses under `!`, a Petri net for one, `factors`
+chains forward from the facts and is often faster by orders of magnitude,
+but a forward chain takes one copy per step on a single branch, where
+`rarer` chains backward from the goal within a few. So on a sequent with
+exponentials `auto` runs both searches and answers with the first that
+decides: alternating in slices of work on one core, so that the run stays
+a function of the input, and side by side on several. The backward search is
+bounded by `--copies`; so is the forward one, except where every formula
+under a `!` or `?` is a Horn clause such as `!(a * b -o c * d)`, where it
+runs within `--forward-copies` (30 by default), a bound in steps of the
+chain:
 
 ```console
 $ linlog prove -q --deterministic --stats "!(a * a -o b), !(b * b -o c), !(c * c -o d), a, a, a, a, a, a, a, a |- d"
 provable (MELL, classical, focus engine)
+stable sequents visited: 47 (5 from the memo)
+memo entries at most: 9
+splits examined: 151
+time: 66.19µs
+$ linlog prove -q --deterministic --stats --bias rarer "!(a * a -o b), !(b * b -o c), !(c * c -o d), a, a, a, a, a, a, a, a |- d"
+provable (MELL, classical, focus engine)
 stable sequents visited: 14228 (13935 from the memo)
 memo entries at most: 190
 splits examined: 42105
-time: 2.08ms
+time: 2.11ms
 $ linlog prove -q --deterministic --stats --bias factors "!(a * a -o b), !(b * b -o c), !(c * c -o d), a, a, a, a, a, a, a, a |- d"
 unknown (MELL, classical, focus engine): the copy bound of 3 was reached; raise it with --copies
 stable sequents visited: 11 (0 from the memo)
 memo entries at most: 5
 splits examined: 31
-time: 20.01µs
-$ linlog prove -q --deterministic --stats --bias factors --copies 7 "!(a * a -o b), !(b * b -o c), !(c * c -o d), a, a, a, a, a, a, a, a |- d"
+time: 31.60µs
+$ linlog prove -q --copies 1 "!A, !(A -o B), !(B -o C) |- C"
 provable (MELL, classical, focus engine)
-stable sequents visited: 47 (5 from the memo)
-memo entries at most: 9
-splits examined: 151
-time: 45.69µs
+$ linlog prove -q --copies 1 --forward-copies 1 "!A, !(A -o B), !(B -o C) |- C"
+unknown (MELL, classical, focus engine): the copy bound of 1 was reached; raise it with --copies
 ```
 
 The search runs on every core by default: `--jobs N` (`-j`) sets the
@@ -500,8 +512,9 @@ $ linlog-bench summary runs.csv
 | partition-no/4 | 146 µs ✗ | 303 µs ✗ | > 10 s | > 10 s |
 ```
 
-`run --bias rarer|factors` runs the focused engines under that bias, and
-the rows say which. `bench/targets.sh LABEL` runs the target set of the
+`run --bias rarer|factors` runs the focused engines under that bias and
+`run --forward-copies N` the default's forward search within that bound,
+and the rows say which. `bench/targets.sh LABEL` runs the target set of the
 focused engine's performance work, the instances the first baseline
 showed it losing on (the hard families at the sizes that took minutes or
 did not finish, and a fixed sample of 113 LLTP problems), on two pinned
@@ -555,7 +568,8 @@ Built:
   engine over dyadic sequents of occurrence bitsets with a memo, counts
   that prune sequents and direct the search for the split of a `⊗`
   (contexts of any width), one representative for formulas that occur
-  several times, an atom bias chosen from the sequent or by `--bias`, a
+  several times, an atom bias chosen from the sequent or by `--bias`
+  (with exponentials a forward and a backward search together), a
   per-branch bound on the copies of `?` formulas that deepens
   iteratively, and a loop check, one-sided or two-sided; for
   MLL without units a proof-net engine that searches the axiom linkings
