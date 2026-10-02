@@ -171,12 +171,16 @@ not cross in the cyclic order of literals), no exchange in the derivation
 view and exports, and the Lambek restrictions (no empty antecedent, the two
 divisions). Fable 5.1, xhigh.
 
-## Second certificate kernels: a fork of NanoYalla that adds and does not edit
+## Second certificate kernels: a Rocq library of linlog's own, NanoYalla kept for compatibility
 
-Left open by step 12 (`plan/reports/12-certificates.md`, "Open questions")
-and recommended in this form by the planning session on 2026-10-02, on
-the author's question whether to fork NanoYalla; the author asked for it
-to be a candidate. Today a certificate exists for classical proofs only:
+Left open by step 12 (`plan/reports/12-certificates.md`, "Open questions").
+The shape is the author's, of 2026-10-02: keep the NanoYalla export as it
+is, for compatibility, with its refusals, and write everything new as a
+library of linlog's own, idiomatic and by current practice, rather than
+growing a development of 2021. (The planning session had first
+recommended a fork of NanoYalla that adds kernels beside the unmodified
+one; it stays below as the smaller alternative.) Today a certificate
+exists for classical proofs only:
 Mix and affine weakening are refused, and an intuitionistic proof is
 certified as the classical proof of its one-sided sequent, not as
 `Γ ⊢ A`.
@@ -197,61 +201,96 @@ lacks is a positional layer. Full Yalla has a general Mix rule
 provability of `?(⊥⊗⊥), Γ` (`ll_fragments.v`); no nano kernel has Mix.
 Nothing in Yalla has general weakening.
 
-The candidate: a small Rocq development that linlog's certificates import,
-built from upstream's files verbatim and pinned (`nanoll.v`, `macroll.v`,
-`nanoill.v`) with new files beside them, never a change to an existing
-inductive:
-- a positional layer for `nanoill` (the analogue of `macroll.v`), and in
-  the exporter the two-sided statement from the reading with the ILL
-  rule names of `two_sided_derivation()` (the statement then carries
+The candidate has two parts.
+
+**The NanoYalla export stays as it is** (`--format rocq`): classical
+proofs against the unmodified kernel that a Click & coLLecT user has
+installed, with today's trusted base and today's three refusals. It is
+the compatibility target and is not grown. The one thing worth adding
+there, if wanted, is an unfinished proof with its open goals as
+hypotheses of the lemma, which is how Click & coLLecT's own exporter
+writes one (`Goal H1 -> H2 -> conclusion`).
+
+**A Rocq library of linlog's own**, written from nothing, in which every
+mode has a statement and a certificate:
+- formulas in negation normal form over a type of atoms with decidable
+  equality, and the calculi as plain inductives that a reader checks
+  against a textbook: one-sided LL with Mix and general weakening as
+  parameters, and two-sided ILL with its affine variant over the
+  connectives of the reading (the two-sided statement then carries
   step 8's `⊤`/`0` ambiguity, see the intuitionistic follow-ups below);
-- a Mix kernel and an affine kernel, each the nano inductive with one
-  more rule, with their positional layers, and their intuitionistic
-  affine counterpart;
-- for Mix an anchoring theorem inside the development, that a proof of
-  `Γ` in the Mix kernel gives a proof of `?(⊥⊗⊥), Γ` in the unmodified
-  kernel (sketched on paper without cut: `⊥` on both premises, `⊗`,
-  dereliction, two contractions; not machine-checked), so that Mix
-  certificates rest on the standard definition; for affine no such
-  reduction is known, the weakening rule is the definition, and those
-  certificates rest on our reading of it;
-- a `kernel` field of `rocq::Options` (D15) that the mode chooses by
-  default, and the nix check extended to every kernel.
+- the certificate as data rather than a tactic script (the planning
+  session's proposal for what "idiomatic" should mean for proofs a
+  program emits; for step 17 and the author to confirm): linlog's proof
+  term (D6) as a Rocq datatype, a checker written as a function, and one
+  theorem that a term the checker accepts yields a derivation. A
+  certificate is then the sequent, the term and `check … = true` by
+  computation: no exchange bookkeeping, no dependence on how tactics
+  unify lists across Rocq versions, size and checking time linear in the
+  proof, and the algorithm of the Rust checker verified once. The
+  plainer alternative keeps tactic scripts with positional lemmas, as
+  the NanoYalla export has, against the new inductives; it is less work
+  and scales worse;
+- bridge modules, optional and not needed to check a certificate, that
+  import the pinned NanoYalla and Yalla's standalone `nanoill.v` and
+  prove that our classical calculus and theirs derive the same sequents,
+  and likewise for ILL, so that the new kernel is ours and provably the
+  standard one; for Mix the theorem that a derivation of `Γ` with Mix
+  gives one of `?(⊥⊗⊥), Γ` without (sketched on paper without cut: `⊥`
+  on both premises, `⊗`, dereliction, two contractions; not
+  machine-checked); for affine no such reduction is known, and the
+  weakening rule is the definition;
+- the standard library only, so that nixpkgs' Rocq builds it, and the
+  conventions of the day, which the step reads from the Rocq reference
+  manual and packaging documentation rather than from memory (`From
+  Stdlib`, a `_RocqProject` or a dune theory, explicit locality
+  attributes, `rocqdoc` comments, an opam file);
+- in the exporter a second kernel behind `rocq::Options` (D15), chosen
+  by the mode where the user did not choose, and in the flake a check
+  that builds the library and compiles the certificates of both kernels;
+- in this repository under linlog's licence, since nothing in it derives
+  from LGPL text: the bridges only import the pinned kernels when they
+  are checked.
 
-What must hold: a classical certificate still checks against the
-unmodified NanoYalla that a Click & coLLecT user has installed, with the
-trusted base it has today; only a certificate in a mode upstream lacks
-needs our files. No `Admitted`, no axiom.
+What must hold: NanoYalla certificates exactly as today; no `Admitted`
+and no axiom anywhere; the lemma a user reads states the sequent over
+the plain inductive, with the checker only in its proof.
 
-For the author to decide: where the development lives. It derives from
-LGPL files, so it is LGPL; step 12 kept LGPL text out of the EUPL tree by
-pinning the kernel as a flake input, and the form that keeps that is a
-small repository of its own which linlog pins the same way. In-tree with
-its own licence file is the alternative. Offering the positional ILL
-layer and a nano Mix kernel to Yalla's `microyalla/` is a courtesy, not a
-dependency (the README invites requests for extensions).
+Size and risk: the checker's soundness over the dyadic exponentials (the
+least unrestricted zone, the absorbing `⊤`), the one-succedent condition
+and Mix is real proof engineering. Three to four sessions, in stages that
+each leave something usable: the definitions and the checker with its
+soundness for classical LL; Mix, affine and the two-sided statement; the
+bridges. Fable 5.1, `xhigh` for the checker and its proof, `high` for
+the rest. With tactic scripts instead of the checker, about two.
 
-Not part of it, and why: anchoring the Mix kernel to full Yalla's Mix
+The smaller alternative, should step 17 find this too much: a fork of
+NanoYalla that adds and does not edit (upstream's `nanoll.v`,
+`macroll.v` and `nanoill.v` verbatim and pinned; beside them a
+positional layer for `nanoill`, a Mix and an affine kernel with one more
+rule each, in a namespace of our own over upstream's `formula` and `ll`,
+so that Click & coLLecT's exports compile next to it unchanged). About
+two sessions; it derives from LGPL files and would live in a repository
+of its own, pinned as the kernel is today.
+
+For the author to decide: the library's name, and whether it is
+published on its own (opam) or only built by the flake.
+
+Not part of it, and why: anchoring the Mix calculus to full Yalla's Mix
 fragment (it needs Yalla and OLlibs built from source at a pinned Rocq
 minor version, about a session, for a link the theorem above gives more
 cheaply); affine logic in Yalla proper (a new parameter of its central
 inductive and the meta-theory over it, the maintainer's project); a
-checker for linlog's own proof terms written and proved sound in Rocq, so
-that a certificate is the term and one computation (two to four sessions
-at the engines' effort, with risk; worth it only if certificates turn out
-too slow at scale, which nothing has measured beyond the test sequents,
-or for a publication); a direct certificate for nets (a Rocq development
-of unit-free MLL nets with sequentialization exists, RemiDiG/proofnet_mll,
-and nets are certified through sequentialization already); a Lean 4
-target once FormalizedFormalLogic/LinearLogic has units and a release.
+direct certificate for nets (a Rocq development of unit-free MLL nets
+with sequentialization exists, RemiDiG/proofnet_mll, and nets are
+certified through sequentialization already); a Lean 4 target once
+FormalizedFormalLogic/LinearLogic has units and a release.
 
-Small things for whoever takes it: open goals could be hypotheses of the
-lemma rather than a refusal; `ex_perm_r` makes Rocq compute
-`permL_of_perm`, whose cost grows with the sequent's width (a chain of
-`ex_t_r` swaps if a wide sequent turns out slow); identifier escaping
-writes non-ASCII as code points where Rocq would accept many Unicode
-letters. About two sessions, the ILL layer first; Fable 5.1, high, as
-step 12 was.
+Small things in the NanoYalla export, unchanged by this: `ex_perm_r`
+makes Rocq compute `permL_of_perm`, whose cost grows with the sequent's
+width (a chain of `ex_t_r` swaps if a wide sequent turns out slow), and
+identifier escaping writes non-ASCII as code points where Rocq would
+accept many Unicode letters.
 
 ## MALL proof nets
 
