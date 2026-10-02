@@ -9,13 +9,16 @@
 # latest baseline's. Every family sequentially with its default engine and
 # with every engine that applies, the net engine's test period, the
 # intuitionistic mode of the families that have one, the whole LLTP
-# library in both modes; the largest sizes with 20 minutes each, the LLTP
+# library in both modes, and the intuitionistic library again under each
+# atom bias alone; the largest sizes with 20 minutes each, the LLTP
 # problems that ended at the copy bound or the recursion limit with those
 # raised; then the thread counts 2, 4, 8 and every core on the hard
 # families, and every core with and without the portfolio on the LLTP
 # problems not decided at once; last, the runs of those that more room lets
-# finish. About ten and a half hours on sixteen cores, on an otherwise idle
-# machine (stages 1 to 3 took 9 h 21 min on 2026-09-30).
+# finish. The LLTP problems of the later stages are those of the first
+# baseline (`reference'), so that every row of it has its counterpart.
+# About ten hours on sixteen cores, on an otherwise idle machine (stages 1
+# to 3 of the first baseline took 9 h 21 min on 2026-09-30).
 #
 #   nix build .#lltp -o bench/lltp          # once: the LLTP library
 #   bench/baseline.sh --arm --fresh          # from the devshell
@@ -72,7 +75,11 @@ lltp=bench/lltp
 results=bench/results
 cores=(1 0 2 3)
 slot=20:00-07:00
-estimate=$((10 * 3600 + 30 * 60))
+estimate=$((10 * 3600))
+# The first baseline, whose intuitionistic LLTP pass chooses the problems
+# that the later stages run again: chosen from each baseline's own pass,
+# the sets would differ between baselines and no row would compare.
+reference=$results/2026-09-30
 
 # The user slices a detached run keeps off the performance cores, and the
 # file listing the user timers it stopped for its duration.
@@ -391,58 +398,69 @@ run() {
 }
 
 repeat=(--repeat 3 --repeat-under 2)
-mll=(--family "partition-yes=4,5,6" --family "partition-no=3,4" --family 3-partition-mll-yes
-  --family 3-partition-mll-no --family wide-m1 --family wide-m2 --family "wide-m3=12,24,30"
-  --family "wide-m4=12,24,28")
+mll=(--family "partition-yes=4,5,6,12,20" --family "partition-no=3,4,9,12" --family 3-partition-mll-yes
+  --family 3-partition-mll-no --family wide-m1 --family wide-m2 --family "wide-m3=12,24,30,256,2048"
+  --family "wide-m4=12,24,28,256,2048")
 
 # Stage 1, sequential, four streams: every family, the engines against each
 # other, the net engine's test period, the intuitionistic mode, the whole
-# LLTP library in both modes. About an hour and three quarters.
+# LLTP library in both modes, and the intuitionistic library under each
+# atom bias alone: the backward search (the rarer literal positive) and the
+# forward one (its factors positive) within the forward bound of the
+# default, which runs the two on a sequent with exponentials. The two
+# passes under one bias are the longest and have a stream each; the others
+# share theirs, the families after one library pass and the engines after
+# the other. About three and a half hours.
 streams=()
-run "${cores[0]}" families --all-families --timeout 300 "${repeat[@]}" &
+run "${cores[0]}" lltp-rarer --lltp "$lltp/ILL" --bias rarer --timeout 5 &
+streams+=($!)
+run "${cores[1]}" lltp-forward --lltp "$lltp/ILL" --bias factors --copies 30 --timeout 5 &
 streams+=($!)
 (
-  run "${cores[1]}" engines "${mll[@]}" --family additive --problems bench/problems/slow-tests.txt \
+  run "${cores[2]}" lltp-intuitionistic --lltp "$lltp/ILL" --timeout 5
+  run "${cores[2]}" families --all-families --timeout 300 "${repeat[@]}"
+) &
+streams+=($!)
+(
+  # In reverse, so that this pass loads the library's largest files (up to
+  # 103 MB each) at other times than the three in order.
+  run "${cores[3]}" lltp-classical --lltp "$lltp/CLL" --lltp "$lltp/ILL" --modes classical \
+    --reverse --timeout 5
+  run "${cores[3]}" engines "${mll[@]}" --family additive --problems bench/problems/slow-tests.txt \
     --engines focus,net --timeout 60 "${repeat[@]}"
   for period in 1 2 8 16; do
-    run "${cores[1]}" period-$period --family wide-m1=256,2048 --family wide-m2=256,2048 \
+    run "${cores[3]}" period-$period --family wide-m1=256,2048 --family wide-m2=256,2048 \
       --family 3-partition-mll-no=4,5 --family partition-yes=4 --family partition-no=3,4 \
       --engines net --test-period $period --timeout 60 "${repeat[@]}"
   done
-  run "${cores[1]}" intuitionistic --family counter --family counter-over --family chain \
+  run "${cores[3]}" intuitionistic --family counter --family counter-over --family chain \
     --family 3-partition-yes --family 3-partition-no=4 --modes intuitionistic --timeout 300 \
     "${repeat[@]}"
 ) &
 streams+=($!)
-run "${cores[2]}" lltp-intuitionistic --lltp "$lltp/ILL" --timeout 5 &
-streams+=($!)
-# In reverse, so that the two passes load the library's largest files (up
-# to 103 MB each) at different times.
-run "${cores[3]}" lltp-classical --lltp "$lltp/CLL" --lltp "$lltp/ILL" --modes classical \
-  --reverse --timeout 5 &
-streams+=($!)
 wait "${streams[@]}"
 
-# The intuitionistic LLTP problems whose first pass ended with the reason
-# given (or, for `slow', timed out, was killed or took 50 ms or more), as a
-# list for --only: the problems a knob can change.
+# The intuitionistic LLTP problems whose pass in the first baseline ended
+# with the reason given (or, for `slow', timed out, was killed or took
+# 50 ms or more), as a list for --only: the problems a knob can change.
 ended() {
   awk -F, -v reason="$1" 'NR > 1 && ($16 == reason || (reason == "slow" &&
     ($16 ~ /^(timeout|killed)$/ || ($15 ~ /proved|unprovable/ && $22 >= 50)))) { print $5 }' \
-    "$out/lltp-intuitionistic.csv" | sort -u | paste -sd,
+    "$reference/lltp-intuitionistic.csv" | sort -u | paste -sd,
 }
 
 # Stage 2, sequential, four streams: the largest instances that time out at
-# 300 s, once each with 20 minutes, for the times the performance pass has
-# to beat; and the LLTP problems that ended at the copy bound or at the
-# recursion limit, again with a bound of 10 and a limit of 16384. About an
-# hour.
+# 300 s, once each with 20 minutes, for the times a performance pass has
+# to beat (the first baseline's, decided in milliseconds since, and the
+# sizes added after it); and the LLTP problems that ended at the copy bound
+# or at the recursion limit, again with a bound of 10 and a limit of 16384.
+# About an hour.
 streams=()
-run "${cores[0]}" long-1 --family 3-partition-no=5 --family partition-no=5 --family partition-yes=7 \
-  --family counter=16 --timeout 1200 &
+run "${cores[0]}" long-1 --family 3-partition-no=5 --family partition-no=5,15 \
+  --family partition-yes=7,28 --family counter=16,64 --timeout 1200 &
 streams+=($!)
 run "${cores[1]}" long-2 --family mix=11 --family wide-m3=36 --family wide-m4=36 \
-  --family qbf=24 --only "qbf/24#0,mix,wide" --timeout 1200 &
+  --family qbf=24,48 --only "qbf/24#0,qbf/48#0,mix,wide" --timeout 1200 &
 streams+=($!)
 run "${cores[2]}" lltp-copies-10 --lltp "$lltp/ILL" --only "$(ended copy_bound)" --copies 10 \
   --timeout 5 &
@@ -456,9 +474,9 @@ wait "${streams[@]}"
 # baseline, taken alone like the rest), 2, 4, 8 and every core, the net
 # engine on the same thread counts, and the LLTP problems that are not decided at once on
 # every core, with and without the portfolio (every core is the command's
-# default). About six and three-quarter hours.
-run - parallel --family 3-partition-yes --family 3-partition-no --family partition-yes=5,6,7 \
-  --family partition-no=4,5 --family qbf=16,20,24 --family mix=8,9,10,11 --family counter \
+# default). About three and a half hours.
+run - parallel --family 3-partition-yes --family 3-partition-no --family partition-yes=5,6,7,20,24 \
+  --family partition-no=4,5,12,14 --family qbf=16,20,24,40,44 --family mix=8,9,10,11 --family counter \
   --family counter-over --family wide-m3=24,30,36 --family wide-m4=28,32,36 \
   --jobs 1,2,4,8,all --timeout 120 "${repeat[@]}"
 # Two runs, since --only would drop the family.
@@ -477,7 +495,8 @@ run - lltp-portfolio --lltp "$lltp/ILL" --only "$slow" --jobs all --portfolio --
 # 16 GiB a process: the library's largest files take up to 16 s to load,
 # and a search that misses its stop inside a long split enumeration stops
 # when the enumeration ends. On every core, alone, a minute's grace and 32
-# GiB: loading again, and a pool's memory. About an hour, at most three.
+# GiB: loading again, and a pool's memory. Minutes where every search
+# stops at its limit, up to three hours where none does.
 reruns() {
   awk -v file="$1" '$1 == file { print $2 }' bench/reruns.txt | paste -sd,
 }
