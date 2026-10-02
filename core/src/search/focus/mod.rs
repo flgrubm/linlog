@@ -1119,13 +1119,17 @@ impl<'a> Engine<'a> {
     }
 
     /// The factor of `F = A ⊗ B` that forces its split, with what it
-    /// forces, the other factor, and whether the forcing one is the left:
-    /// the left factor when both force.
+    /// forces, the other factor, and whether the forcing one is the left.
+    /// When both force, one that is closed in place (a literal, a unit)
+    /// before a tensor of literals, which takes a focus of its own: a
+    /// tensor of a thousand literals, nested to the left as it is read,
+    /// must not pay a level of recursion per link; otherwise the left one.
     fn forced_factor(&self, f: OccId) -> Option<(Forced, OccId, OccId, bool)> {
         let (a, b) = (self.forest.left(f).unwrap(), self.forest.right(f).unwrap());
         [(a, b, true), (b, a, false)]
             .into_iter()
-            .find_map(|(x, y, left)| Some((self.forced_side(x)?, x, y, left)))
+            .filter_map(|(x, y, left)| Some((self.forced_side(x)?, x, y, left)))
+            .min_by_key(|&(forced, ..)| forced == Forced::Duals)
     }
 
     /// The `⊗` rule on `F = A ⊗ B` with context `Γ`: the forced split when
@@ -1929,6 +1933,26 @@ mod tests {
         let many = format!("|- 1, {}", hypotheses.join(", "));
         let (verdict, _) = run(&many, Mode::CLASSICAL, &Options::default());
         assert!(verdict.proof().is_some());
+
+        // Nor does a link of a tensor of literals, nested to the left as
+        // it is read: every split is forced by the literal on the right.
+        // On a thread with the stack a front end gives the search, since
+        // the parser and the checker recurse to the formula's depth.
+        let chain = format!(
+            "|- {}, {}",
+            vec!["a"; 2500].join(" * "),
+            vec!["~a"; 2500].join(", ")
+        );
+        let proved = std::thread::Builder::new()
+            .stack_size(Options::default().stack_size())
+            .spawn(move || {
+                let (verdict, _) = run(&chain, Mode::CLASSICAL, &Options::default());
+                verdict.proof().is_some()
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        assert!(proved);
 
         // A free split over 126 formulas, in MALL so that the count
         // equation does not refute it first: no width is too much, and the
