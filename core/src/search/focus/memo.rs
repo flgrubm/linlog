@@ -126,6 +126,13 @@ impl Memo {
             return;
         }
         if let Some(old) = self.map.get_mut(key) {
+            debug_assert!(
+                !matches!(
+                    (*old, entry),
+                    (Entry::Proved(_), Entry::Failed(Failure::Complete))
+                ),
+                "a complete failure of a proved sequent"
+            );
             match (*old, entry) {
                 (
                     Entry::Failed(Failure::Exhausted(then)),
@@ -342,12 +349,17 @@ mod tests {
             Some(Entry::Failed(Failure::Complete)),
             "a complete failure stays"
         );
+        let mut other = Key {
+            theta: OccSet::empty(8),
+            gamma: Context::empty(8),
+        };
+        other.gamma.insert(OccId::new(2));
         let proved = Entry::Proved(NodeId::new(7));
-        memo.insert(&key, proved);
-        assert_eq!(memo.get(&key, 0), Some(proved));
-        memo.insert(&key, Entry::Failed(Failure::Complete));
-        assert_eq!(memo.get(&key, 0), Some(proved), "a proof stays");
+        memo.insert(&other, proved);
+        assert_eq!(memo.get(&other, 0), Some(proved));
+        memo.insert(&other, Entry::Failed(Failure::Exhausted(9)));
+        assert_eq!(memo.get(&other, 0), Some(proved), "a proof stays");
         assert_eq!(memo.hits(), 8);
-        assert_eq!(memo.peak(), 1);
+        assert_eq!(memo.peak(), 2);
     }
 }
