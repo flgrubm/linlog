@@ -7,6 +7,7 @@
 //! provable sequent, computed once per forest and summed per sequent.
 
 use crate::occurrences::{Forest, OccId};
+use crate::proofs::Side;
 use crate::sequents::{Atom, Kind};
 
 /// What a formula occurrence can contribute to the per-atom balance of a
@@ -212,6 +213,39 @@ impl Counts {
         self.absorbs_from_copies
     }
 
+    /// Returns the first atom of the occurrence's row, as an index, or
+    /// `u32::MAX` when the row is empty: members of a context sorted by it
+    /// have every atom's members next to each other.
+    pub(crate) fn first_atom(&self, o: OccId) -> u32 {
+        let (start, end) = (self.row_start[o.index()], self.row_start[o.index() + 1]);
+        if start == end {
+            u32::MAX
+        } else {
+            self.atom[start as usize].index() as u32
+        }
+    }
+
+    /// Returns the number of atoms in the occurrence's row.
+    pub(crate) fn row_len(&self, o: OccId) -> u32 {
+        self.row_start[o.index() + 1] - self.row_start[o.index()]
+    }
+
+    /// Returns the counts of a split with no member yet.
+    pub(crate) fn split(&self) -> Split {
+        Split {
+            lo: [vec![0; self.num_atoms], vec![0; self.num_atoms]],
+            hi: [vec![0; self.num_atoms], vec![0; self.num_atoms]],
+            below: vec![0; self.num_atoms],
+            above: vec![0; self.num_atoms],
+            bad: [0; 2],
+            absorbers: [0; 2],
+            open_absorbers: 0,
+            slack: [-2; 2],
+            slack_below: 0,
+            slack_above: 0,
+        }
+    }
+
     /// Returns an empty tally of this forest's width.
     pub(crate) fn tally(&self) -> Tally {
         Tally {
@@ -352,6 +386,158 @@ impl Tally {
     /// Returns the number of members.
     pub(crate) fn len(&self) -> u32 {
         self.len
+    }
+}
+
+/// The counts of a split of a context in the making: the sums of the
+/// members each side has so far, and what the members not yet assigned to
+/// a side can still add to either. A side whose sums no assignment of the
+/// open members can bring to pass the interval check or the count equation
+/// makes the partial split infeasible, so a search over the members cuts
+/// it there; with no member open, [`feasible`](Self::feasible) is the test
+/// of a whole split: both sides pass the interval check and the equation.
+///
+/// The bounds are per atom and per side, each on its own: an open member
+/// can lower a side's least balance of an atom by the negative part of its
+/// own, and raise the greatest by the positive part of its own. They are
+/// necessary conditions, never sufficient.
+#[derive(Clone, Debug)]
+pub(crate) struct Split {
+    /// Per side and atom, the summed least balance of the side's members.
+    lo: [Vec<i32>; 2],
+    /// Per side and atom, the summed greatest balance of the side's members.
+    hi: [Vec<i32>; 2],
+    /// Per atom, the sum of the negative least balances of the open
+    /// members: the most they can lower a side's least balance.
+    below: Vec<i32>,
+    /// Per atom, the sum of the positive greatest balances of the open
+    /// members: the most they can raise a side's greatest balance.
+    above: Vec<i32>,
+    /// Per side, the number of atoms whose interval excludes zero whatever
+    /// the open members do.
+    bad: [u32; 2],
+    /// Per side, the number of members that absorb.
+    absorbers: [u32; 2],
+    /// The number of open members that absorb.
+    open_absorbers: u32,
+    /// Per side, `c − (t − p − u + b) − 2` over its members, which the
+    /// count equation wants zero, or at least zero with Mix.
+    slack: [i64; 2],
+    /// The sum of the negative contributions of the open members to a
+    /// side's slack.
+    slack_below: i64,
+    /// The sum of their positive contributions.
+    slack_above: i64,
+}
+
+impl Split {
+    /// Removes every member.
+    pub(crate) fn clear(&mut self) {
+        for side in 0..2 {
+            self.lo[side].fill(0);
+            self.hi[side].fill(0);
+        }
+        self.below.fill(0);
+        self.above.fill(0);
+        self.bad = [0; 2];
+        self.absorbers = [0; 2];
+        self.open_absorbers = 0;
+        self.slack = [-2; 2];
+        self.slack_below = 0;
+        self.slack_above = 0;
+    }
+
+    /// Whether no assignment of the open members can bring the side's
+    /// interval of the atom to contain zero.
+    fn excludes(&self, side: usize, atom: usize) -> bool {
+        self.lo[side][atom] + self.below[atom] > 0 || self.hi[side][atom] + self.above[atom] < 0
+    }
+
+    /// Applies `change` to the sums of every atom of the occurrence's row
+    /// and brings the sides' counts of excluded atoms up to date.
+    fn update(&mut self, counts: &Counts, o: OccId, change: impl Fn(&mut Self, usize, Entry)) {
+        for e in counts.row(o) {
+            let a = e.atom.index();
+            let was = [self.excludes(0, a), self.excludes(1, a)];
+            change(self, a, e);
+            for (side, was) in was.into_iter().enumerate() {
+                match (was, self.excludes(side, a)) {
+                    (false, true) => self.bad[side] += 1,
+                    (true, false) => self.bad[side] -= 1,
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// Adds (`sign` 1) or removes (`sign` −1) a member of a side.
+    fn settle(&mut self, counts: &Counts, o: OccId, side: Side, sign: i32) {
+        let side = side as usize;
+        self.update(counts, o, |split, a, e| {
+            split.lo[side][a] += sign * e.lo;
+            split.hi[side][a] += sign * e.hi;
+        });
+        if counts.absorbs(o) {
+            self.absorbers[side] = self.absorbers[side].wrapping_add_signed(sign);
+        }
+        self.slack[side] += i64::from(sign) * (1 - i64::from(counts.weight(o)));
+    }
+
+    /// Adds (`sign` 1) or removes (`sign` −1) an open member.
+    fn leave_open(&mut self, counts: &Counts, o: OccId, sign: i32) {
+        self.update(counts, o, |split, a, e| {
+            split.below[a] += sign * e.lo.min(0);
+            split.above[a] += sign * e.hi.max(0);
+        });
+        if counts.absorbs(o) {
+            self.open_absorbers = self.open_absorbers.wrapping_add_signed(sign);
+        }
+        let slack = 1 - i64::from(counts.weight(o));
+        self.slack_below += i64::from(sign) * slack.min(0);
+        self.slack_above += i64::from(sign) * slack.max(0);
+    }
+
+    /// Adds a member to a side for good: a subformula of the `⊗`, or a
+    /// member the search does not move.
+    pub(crate) fn place(&mut self, counts: &Counts, o: OccId, side: Side) {
+        self.settle(counts, o, side, 1);
+    }
+
+    /// Adds a member that a search will assign to a side.
+    pub(crate) fn open(&mut self, counts: &Counts, o: OccId) {
+        self.leave_open(counts, o, 1);
+    }
+
+    /// Assigns an open member to a side.
+    pub(crate) fn assign(&mut self, counts: &Counts, o: OccId, side: Side) {
+        self.leave_open(counts, o, -1);
+        self.settle(counts, o, side, 1);
+    }
+
+    /// Takes an assigned member back from its side: it is open again.
+    pub(crate) fn unassign(&mut self, counts: &Counts, o: OccId, side: Side) {
+        self.settle(counts, o, side, -1);
+        self.leave_open(counts, o, 1);
+    }
+
+    /// Returns whether some assignment of the open members may still pass
+    /// the prunes in force on both sides: the interval check (a side
+    /// passes with an absorbing member, which each open one can give to
+    /// one side only) and the count equation, `≥` with Mix. With no open
+    /// member, whether the split passes them.
+    pub(crate) fn feasible(&self, intervals: bool, equation: bool, mix: bool) -> bool {
+        if intervals {
+            let needy = (0..2)
+                .filter(|&side| self.absorbers[side] == 0 && self.bad[side] > 0)
+                .count();
+            if needy > self.open_absorbers as usize {
+                return false;
+            }
+        }
+        !equation
+            || self.slack.iter().all(|slack| {
+                slack + self.slack_above >= 0 && (mix || slack + self.slack_below <= 0)
+            })
     }
 }
 

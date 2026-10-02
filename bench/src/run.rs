@@ -457,7 +457,6 @@ fn tail(args: &OneArgs) -> String {
                 Reason::Stopped => "timeout",
                 Reason::CopyBound(_) => "copy_bound",
                 Reason::RecursionLimit => "recursion_limit",
-                Reason::ContextTooWide(_) => "context_too_wide",
                 _ => "other",
             };
             ("unknown", reason, String::new())

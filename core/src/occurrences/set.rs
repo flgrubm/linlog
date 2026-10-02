@@ -268,66 +268,6 @@ impl Forest {
     }
 }
 
-/// One step of a submask enumeration: the submask reached and the position
-/// that changed to reach it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Flip {
-    /// The submask, as a bit per position of the member list.
-    pub mask: u64,
-    /// The position whose membership changed since the previous submask.
-    pub position: u32,
-}
-
-/// Returns every non-empty submask of a list of `len` members, `len < 64`,
-/// in Gray-code order: each differs from the one before in exactly one
-/// position, which the [`Flip`] names, so a set and its complement in the
-/// list are kept up to date by toggling one occurrence per step. The
-/// enumeration starts from the empty submask, which is not returned.
-pub fn submasks(len: usize) -> Submasks {
-    assert!(
-        len < 64,
-        "a member list to enumerate has at most 63 members"
-    );
-    Submasks {
-        next: 1,
-        end: 1 << len,
-    }
-}
-
-/// The submasks of a member list in Gray-code order, see [`submasks`].
-#[derive(Clone, Debug)]
-pub struct Submasks {
-    /// The index of the next submask in the Gray sequence.
-    next: u64,
-    /// One past the index of the last submask.
-    end: u64,
-}
-
-impl Iterator for Submasks {
-    type Item = Flip;
-
-    /// Returns the next submask.
-    fn next(&mut self) -> Option<Flip> {
-        if self.next == self.end {
-            return None;
-        }
-        let i = self.next;
-        self.next += 1;
-        Some(Flip {
-            mask: i ^ (i >> 1),
-            position: i.trailing_zeros(),
-        })
-    }
-
-    /// The exact number of submasks left.
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let n = (self.end - self.next) as usize;
-        (n, Some(n))
-    }
-}
-
-impl ExactSizeIterator for Submasks {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,51 +355,5 @@ mod tests {
         assert_eq!(f.empty_set().capacity(), 64);
         assert!(f.empty_set().is_empty());
         assert_eq!(f.root_set().iter().collect::<Vec<_>>(), f.roots());
-    }
-
-    /// Every submask of a list shows up exactly once, and each step flips
-    /// exactly the position it names.
-    #[test]
-    fn gray_submasks() {
-        for len in 0..6 {
-            let mut seen = vec![false; 1 << len];
-            seen[0] = true;
-            let mut previous = 0u64;
-            let steps = submasks(len);
-            assert_eq!(steps.len(), (1 << len) - 1);
-            for flip in steps {
-                assert_eq!(
-                    previous ^ flip.mask,
-                    1 << flip.position,
-                    "one flip per step"
-                );
-                assert!(!seen[flip.mask as usize], "each submask once");
-                seen[flip.mask as usize] = true;
-                previous = flip.mask;
-            }
-            assert!(seen.iter().all(|&s| s), "every submask");
-        }
-    }
-
-    /// Toggling the named member keeps a set and its complement in step
-    /// with the mask.
-    #[test]
-    fn gray_split() {
-        let members = [o(2), o(7), o(9), o(70)];
-        let all = OccSet::of(80, members);
-        let mut left = OccSet::empty(80);
-        let mut right = all.clone();
-        for flip in submasks(members.len()) {
-            let m = members[flip.position as usize];
-            left.toggle(m);
-            right.toggle(m);
-            let expected: Vec<OccId> = (0..members.len())
-                .filter(|&i| flip.mask >> i & 1 == 1)
-                .map(|i| members[i])
-                .collect();
-            assert_eq!(left.iter().collect::<Vec<_>>(), expected);
-            assert_eq!(&left | &right, all);
-            assert!(left.is_disjoint(&right));
-        }
     }
 }

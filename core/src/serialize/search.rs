@@ -68,8 +68,8 @@ impl<'a> Deserialize<'a> for Mode {
     }
 }
 
-/// The serialized form of a reason: a tag, with the width for a context
-/// too wide to split.
+/// The serialized form of a reason: a tag, with the bound for the copy
+/// bound.
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 enum Why {
@@ -77,8 +77,6 @@ enum Why {
     Stopped,
     /// The recursion limit was reached.
     RecursionLimit,
-    /// A context of this many formulas was too wide to split.
-    ContextTooWide(usize),
     /// Every level up to this copy bound hit it.
     CopyBound(u32),
 }
@@ -89,7 +87,6 @@ impl From<Reason> for Why {
         match r {
             Reason::Stopped => Why::Stopped,
             Reason::RecursionLimit => Why::RecursionLimit,
-            Reason::ContextTooWide(n) => Why::ContextTooWide(n),
             Reason::CopyBound(n) => Why::CopyBound(n),
         }
     }

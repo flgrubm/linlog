@@ -604,9 +604,6 @@ pub enum Reason {
     Stopped,
     /// The nesting of engine calls reached [`Options::recursion_limit`].
     RecursionLimit,
-    /// A `⊗` or Mix had to split a context of this many formulas, more than
-    /// the split enumeration handles (63).
-    ContextTooWide(usize),
     /// Every level up to [`Options::copies`], which is this value, hit its
     /// bound on some branch, so a proof with more copies of a `?` formula
     /// per branch may exist.
@@ -619,9 +616,6 @@ impl Display for Reason {
         match self {
             Reason::Stopped => f.write_str("the search was stopped"),
             Reason::RecursionLimit => f.write_str("the recursion limit was reached"),
-            Reason::ContextTooWide(n) => {
-                write!(f, "a context of {n} formulas is too wide to split")
-            }
             Reason::CopyBound(n) => {
                 write!(f, "the copy bound of {n} was reached")
             }

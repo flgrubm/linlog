@@ -7,7 +7,7 @@ pub mod reading;
 pub mod set;
 
 pub use reading::{DescribedShape, IllFormula, Position, Reading, ShapeError};
-pub use set::{Flip, OccSet, Submasks, submasks};
+pub use set::OccSet;
 
 use crate::Error;
 use crate::sequents::{Atom, Formula, Kind, Sequent, TermId};

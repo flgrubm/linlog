@@ -142,10 +142,7 @@ at creation (`Forest::empty_set`, `root_set`, `OccSet::empty(len)`).
 Word-wise operations debug-assert equal widths; combining sets of different
 forests is a bug the release build will not catch. `Hash` is over the words,
 through the crate's `hash::HashMap` (foldhash with a fixed seed: reproducible
-runs, no OS randomness, works on wasm). `submasks(len)` enumerates the
-submasks of a compacted member list (at most 63 members) in Gray-code order,
-yielding the flipped position so the two sides of a split are updated by one
-`toggle` each; the empty submask is the starting state, not an item.
+runs, no OS randomness, works on wasm).
 
 ## Proofs are terms over occurrence ids
 
@@ -463,10 +460,10 @@ the net engine's, and the others stay zero.
 - The crate has no clock (D11): a time limit is a closure the caller gives
   `prove_until`, polled once per node (a stable sequent, or a literal
   chosen) and, in the focused engine, once every `SPLITS_PER_POLL` (4096)
-  splits of a `⊗` or Mix enumeration (`poll_splits`): one stable sequent
-  of a 20-token Petri net enumerates tens of millions of splits whose
-  premises fail in focus, and without that poll a 2 s limit ran past five
-  minutes. It answers `Unknown (Reason::Stopped)`. The crate docs in
+  steps of its searches for the splits of a `⊗` or a Mix (`poll_splits`,
+  on a counter of its own, `Engine::steps`): a split search whose splits
+  fail in focus visits no stable sequent and can run for minutes. It
+  answers `Unknown (Reason::Stopped)`. The crate docs in
   `lib.rs` show the common path (parse, fragment, prove, derivation, JSON)
   as a doc test; keep it the shortest correct program when the API moves.
   The focused engine recurses on the caller's stack, bounded by
@@ -492,9 +489,9 @@ relies on:
   and so on), and starting from one output-shaped root every rule keeps
   exactly one output on each premise by itself, except the split of a
   hypothesis `A ⊸ B`, where the goal must go with the consequent `B⊥`.
-  So `split`, in its free enumeration, fixes the one output member of `Γ`
-  on the consequent's side (`Reading::implication`) and enumerates the
-  rest; the forced splits need no change (the dual of an output positive
+  So `split`, in its search for the free splits, fixes the one output
+  member of `Γ` on the consequent's side (`Reading::implication`) and
+  assigns the rest; the forced splits need no change (the dual of an output positive
   literal is a hypothesis in `Γ` or `Θ`, the dual of an input positive
   literal is the goal itself or nothing, `1` and `!` are output-only, a
   `0` factor fails), `Θ` holds only input occurrences, a leaf's `weakened`
@@ -515,8 +512,8 @@ relies on:
   occurrences present more than once, empty until a copy repeats an
   occurrence (a copied `~a ⅋ ~a` releases the same `~a` twice), which is
   the one allocation on the hot path. Member lists (`gamma.iter()`) carry
-  repeats, and a split enumerates positions, so its Gray-code toggling
-  uses the mask bit, never `contains`.
+  repeats, and a split search assigns positions, so it reads a member's
+  side off its own trail, never off `contains`.
 - **Stable sequents only.** The asynchronous phase runs to completion (`⅋`
   opens, `⊥` drops, `⊤` closes with a `Top` node and the pending `⅋`/`⊥`
   nodes wrapped around it, `&` branches on copies of the state, `?` moves
@@ -651,8 +648,9 @@ relies on:
   trying) is only sound without additives, additive units or
   exponentials and without weakening, and `Rules::equation` switches it on
   for exactly those cases; `⊢ a ⊕ b, ~a` is the counterexample the spec
-  names. A `Tally` keeps a set's sums incrementally, so a split moves one
-  row per flip.
+  names. A `Tally` keeps a set's sums incrementally; a `Split` keeps those
+  of the two sides of a split in the making and what the members not yet
+  assigned can still add (below).
 - **Focus candidates.** Every `⊗` and `⊕` of a stable sequent; `1` and `!`
   only when alone (they need an empty context; any, in affine mode); never
   a literal (a positive literal in focus succeeds only in the initial
@@ -668,19 +666,53 @@ relies on:
   sequent. `⊤`, `⊥` and negative literals force nothing: `⊢ ⊥ ⊗ b, a, ~a,
   ~b` needs `{a, ~a}` on the `⊥` side.
 - **`split_passes`** is the count test of a split as a function (the
-  engine's `Rules::new` and two tallies), for the interactive state's
-  helper; keep it equal to `sides_pass`.
-- **Free splits** enumerate the submasks of the compacted members in
-  Gray-code order (`submasks`), the empty submask first, two tallies moved
-  per flip, and both sides must pass the counts before either premise is
-  searched. More than 63 members (copies counted) is
-  `Reason::ContextTooWide` for the whole search, never a silent failure;
-  the spec's lazy contexts or a branch-and-bound over the
-  members are the ways past it.
+  engine's `Rules::new` and a `Split` with every member placed), for the
+  interactive state's helper. It is `Split::feasible`, the very test the
+  engine's search ends on, so the two cannot drift apart.
+- **Free splits are searched, not enumerated** (`search_splits`, for `⊗`
+  and Mix alike, `Join` saying which). The statement: the splits whose
+  premises are searched are exactly those whose two sides pass the counts
+  (the interval check, and the equation where it is on), each once; a
+  split that fails the counts is never visited, and no other is skipped.
+  The members are assigned one at a time, in a fixed order, to the right
+  first and then to the left (a depth-first search with an explicit
+  trail, so a context of any width costs no recursion and no mask: there
+  is no width limit, and `Reason::ContextTooWide` is gone). A partial
+  assignment is cut when `Split::feasible` fails, which is a necessary
+  condition for some completion to pass, per side and per atom on its
+  own: with `lo`/`hi` the side's sums so far and `below`/`above` the sums
+  of the negative parts of the open members' `lo` and of the positive
+  parts of their `hi`, a side without an absorbing member needs
+  `lo + below ≤ 0 ≤ hi + above` for every atom (any completion adds a
+  subset of the open rows, and a subset's sum is bounded by those parts),
+  unless an open member absorbs and can still join it, each open
+  absorber serving one side (`needy ≤ open_absorbers`); the equation
+  likewise with the slack `c − weight − 2` of a side and the open
+  members' contributions `1 − weight`. With no member open the bounds
+  are the sides' own sums, so the test at a leaf is the old `sides_pass`
+  exactly; the argument for the cut is that it only removes subtrees
+  whose every leaf fails that test. `Split::bad` counts the excluded
+  atoms incrementally (`update` compares before and after, both sides,
+  on the atoms of the member's row), so a step costs the member's row.
+  The order (`Engine::open`): longer rows first (a compound member
+  bears on several atoms; once the compounds are placed the literals of
+  an atom are settled by its counts), then by the row's first atom, so
+  that an atom's literals are neighbours, then descending id, so that
+  the lowest ids change sides fastest, as they did in the Gray-code
+  enumeration this replaces; members without a row (units, exponential
+  atoms only) last, where only the equation can cut. The order changes
+  which proof is found first and nothing else. `Statistics::splits`
+  counts the steps of these searches (one feasibility test each) and the
+  forced splits. Measured on the first baseline's instances: Partition
+  with six items 946 564 520 splits before and 3 337 after at the same
+  94 stable sequents, the unsolvable one with four items 8 192 777 and
+  6 845, QBF over 12 variables 9 389 062 and 37 980.
 - **Mix** is tried last on a stable sequent, after the copies, with the
   first member fixed on the left so each partition comes up once, the
-  trivial partition skipped, and each part decided by `prove` with the same
-  `Θ` and budget, so the memo shares parts between partitions. Refuting a
+  trivial partition skipped (a leaf with an empty right side), the
+  partitions searched by `search_splits` like the splits of a `⊗`, and
+  each part decided by `prove` with the same `Θ` and budget, so the memo
+  shares parts between partitions. Refuting a
   wide sequent with Mix costs about `3^k` stable sequents for `k` members.
 - **Recursion.** `prove`, `focus` and `asynchronous` count one level each
   (at most three per occurrence, plus one per `?` and per copy);
@@ -938,18 +970,16 @@ has no or-choices worth sharing out). What the code relies on:
   `Stop::Flags`; the sequential engines poll the closure through
   `Stop::Closure`. rayon tasks cannot be killed, so a place that stops
   polling is a place cancellation does not reach.
-- **Such places exist, in the split enumeration.** On one thread, 90 of
-  the baseline's LLTP runs on files under 2 MB ran past the harness's
-  kill at 10.5 s under a 5 s limit; one of them, the Petri net
-  `AutoFlight_afcs_05_a_1_1`, examines 1.8 billion splits at a single
-  stable sequent and stops only after 242 s, so the poll every
-  `SPLITS_PER_POLL` splits does not stop that enumeration. At 16
-  threads, 166 other small Petri nets, which one thread stops at 5 s,
-  ran past the kill as well (`bench/results/2026-09-30/`, rows with
-  `reason` `killed`). Given 600 s before the kill, such one-thread runs
-  stop 10 s to 506 s after their start, and two Petri nets are proved
-  after their limit (`TokenRing-20-unfolded_1_1` at 552 s under 5 s; the
-  `*-generous.csv` rows). No test catches it.
+- **The split searches poll too** (`poll_splits`, every
+  `SPLITS_PER_POLL` steps, through the same `Stop`): before, the poll
+  there was tied to `Statistics::splits` being a multiple of 4 096, and a
+  loop that adds two to the counter per round (its own split and a forced
+  one below) from an odd value never hit one. That is how 90 one-thread
+  LLTP runs of the first baseline ran past their kill, 166 more at 16
+  threads, and two Petri nets were proved minutes after their limit.
+  `focus::tests::stops_inside_a_split_search` and the second half of
+  `focus::parallel::tests::stops` pin it on a sequent whose 2⁴² splits
+  all fail in focus (affine mode, so no count cuts them).
 - **Cube-and-conquer is nested fork-join at the first `LEVELS` (2)
   choices of a branch**, not a static enumeration: at a choice among
   alternatives (`decide_with`'s candidates and copies together, the two

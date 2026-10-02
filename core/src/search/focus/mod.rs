@@ -51,24 +51,21 @@ mod memo;
 pub(crate) mod parallel;
 
 use self::context::Context;
-use self::counts::{Counts, Tally};
+use self::counts::{Counts, Split, Tally};
 use self::memo::{Entry, Failure, Key, Memo, Table};
 use super::{Options, Reason, Statistics, Stop, Verdict};
 use crate::fragment::{Fragment, Mode};
-use crate::occurrences::{Forest, OccId, OccSet, Polarity, Position, Reading, submasks};
+use crate::occurrences::{Forest, OccId, OccSet, Polarity, Position, Reading};
 use crate::proofs::{Node, NodeId, Proof, Side};
 use crate::sequents::Kind;
 use std::sync::Mutex;
-
-/// The most members a context can have for its splits to be enumerated.
-const MAX_SPLIT: usize = 63;
 
 /// The stack depth that stands for "no pruned sequent depends on an
 /// ancestor".
 const NO_DEPENDENCY: u32 = u32::MAX;
 
-/// How many splits of a `⊗` or a Mix the engine examines between two polls
-/// of the stop condition inside one enumeration.
+/// How many steps of its searches for the splits of a `⊗` or a Mix the
+/// engine takes between two polls of the stop condition.
 const SPLITS_PER_POLL: u64 = 4096;
 
 /// Runs the focused engine on the forest of a sequent of `fragment` under
@@ -159,16 +156,13 @@ pub(crate) fn split_passes(
 ) -> bool {
     let counts = Counts::new(forest);
     let rules = Rules::new(fragment, mode, &counts);
-    let tally = |members: &[OccId]| {
-        let mut tally = counts.tally();
+    let mut split = counts.split();
+    for (members, side) in [(left, Side::Left), (right, Side::Right)] {
         for &m in members {
-            tally.add(&counts, m);
+            split.place(&counts, m, side);
         }
-        tally
-    };
-    let (left, right) = (tally(left), tally(right));
-    (!rules.intervals || (left.balanced() && right.balanced()))
-        && (!rules.equation || (left.equation(rules.mix) && right.equation(rules.mix)))
+    }
+    split.feasible(rules.intervals, rules.equation, rules.mix)
 }
 
 /// The rules in force beyond the core ones, switched by fragment and mode.
@@ -328,6 +322,9 @@ struct Engine<'a> {
     memoizes: bool,
     /// The counters.
     statistics: Statistics,
+    /// The steps of split searches since the stop condition was last
+    /// polled there.
+    steps: u64,
     /// The nesting of engine calls right now.
     depth: u32,
     /// The deepest nesting allowed.
@@ -372,6 +369,10 @@ struct Engine<'a> {
     lists: Vec<Vec<OccId>>,
     /// Spare tallies of the forest's atoms.
     tallies: Vec<Tally>,
+    /// Spare counts of splits.
+    splits: Vec<Split>,
+    /// Spare trails of split searches.
+    trails: Vec<Vec<Side>>,
 }
 
 impl<'a> Engine<'a> {
@@ -397,6 +398,7 @@ impl<'a> Engine<'a> {
             nodes,
             memoizes: options.memo_limit != 0,
             statistics: Statistics::default(),
+            steps: 0,
             depth: 0,
             recursion_limit: options.recursion_limit,
             copies: options.copies,
@@ -415,6 +417,8 @@ impl<'a> Engine<'a> {
             keys: Vec::new(),
             lists: Vec::new(),
             tallies: Vec::new(),
+            splits: Vec::new(),
+            trails: Vec::new(),
         }
     }
 
@@ -1050,9 +1054,8 @@ impl<'a> Engine<'a> {
     }
 
     /// The `⊗` rule on `F = A ⊗ B` with context `Γ`: the forced split when
-    /// a factor allows only one, else every submask of `Γ` for the left
-    /// premise in Gray-code order, each side checked by the counts before
-    /// either premise is searched.
+    /// a factor allows only one, else a search over the members of `Γ` for
+    /// the splits whose two sides pass the counts.
     fn split(&mut self, theta: &OccSet, gamma: &Context, f: OccId, budget: u32) -> Search {
         let (a, b) = (self.forest.left(f).unwrap(), self.forest.right(f).unwrap());
         for (x, y, x_is_left) in [(a, b, true), (b, a, false)] {
@@ -1114,9 +1117,11 @@ impl<'a> Engine<'a> {
         let mut left = self.take_context();
         let mut right = self.take_context();
         right.clone_from(gamma);
+        let mut split = self.take_split();
+        split.place(self.counts, a, Side::Left);
+        split.place(self.counts, b, Side::Right);
         // Two-sided, on a hypothesis `A ⊸ B`: the goal stays with `B`, so it
-        // is fixed on the consequent's side and left out of the enumeration.
-        let mut fixed_left = None;
+        // is fixed on the consequent's side and left out of the search.
         if let Some(reading) = self.reading
             && let Some((_, consequent)) = reading.implication(f)
             && let Some(at) = members
@@ -1127,127 +1132,150 @@ impl<'a> Engine<'a> {
             if consequent == a {
                 right.remove(goal);
                 left.insert(goal);
-                fixed_left = Some(goal);
+                split.place(self.counts, goal, Side::Left);
+            } else {
+                split.place(self.counts, goal, Side::Right);
             }
         }
-        if members.len() > MAX_SPLIT {
-            return Err(Reason::ContextTooWide(members.len()));
-        }
-        let mut left_tally = self.take_tally();
-        left_tally.add(self.counts, a);
-        if let Some(goal) = fixed_left {
-            left_tally.add(self.counts, goal);
-        }
-        let mut right_tally = self.take_tally();
-        right_tally.add(self.counts, b);
-        for m in right.iter() {
-            right_tally.add(self.counts, m);
-        }
+        self.open(&mut members, &mut split);
+        let join = Join::Tensor(f, a, b);
 
         #[cfg(feature = "parallel")]
         let result = if self.cubes() && members.len() >= 2 {
-            self.split_parallel(
-                theta,
-                &members,
-                (&left, &right),
-                (&left_tally, &right_tally),
-                (f, a, b),
-                budget,
-            )
+            self.split_parallel(theta, &members, (&left, &right), &split, join, budget)
         } else {
-            self.enumerate_split(
+            self.search_splits(
                 theta,
                 &members,
                 0,
                 (&mut left, &mut right),
-                (&mut left_tally, &mut right_tally),
-                (f, a, b),
+                &mut split,
+                join,
                 budget,
             )
         };
         #[cfg(not(feature = "parallel"))]
-        let result = self.enumerate_split(
+        let result = self.search_splits(
             theta,
             &members,
             0,
             (&mut left, &mut right),
-            (&mut left_tally, &mut right_tally),
-            (f, a, b),
+            &mut split,
+            join,
             budget,
         );
         self.give_list(members);
         self.give_context(left);
         self.give_context(right);
-        self.give_tally(left_tally);
-        self.give_tally(right_tally);
+        self.give_split(split);
         result
     }
 
-    /// Searches the splits of the context into the premises of `F = A ⊗ B`
-    /// (`(f, a, b)`), starting from the sides given: those sides as they
-    /// are first, then every submask of the members from `start` on in
-    /// Gray-code order, one member moved and the two tallies updated per
-    /// flip, both sides having to pass the counts before either premise
-    /// is searched. Returns the `⊗` node of the first split proved.
+    /// Puts the members a split search assigns in the order it decides
+    /// them in, by the first atom of their rows, so that the members that
+    /// bear on an atom are decided one after the other and its counts are
+    /// settled early (those without a row last), and opens them in the
+    /// split's counts.
+    fn open(&self, members: &mut [OccId], split: &mut Split) {
+        members.sort_unstable_by_key(|&m| {
+            (
+                std::cmp::Reverse(self.counts.row_len(m)),
+                self.counts.first_atom(m),
+                std::cmp::Reverse(m),
+            )
+        });
+        for &m in members.iter() {
+            split.open(self.counts, m);
+        }
+    }
+
+    /// Searches the splits of a context into two sides that pass the
+    /// counts: the premises of a `⊗` or the parts of a Mix, as `join`
+    /// says. The members from `start` on are assigned one by one, in their
+    /// order, each to the right first and then to the left, and a partial
+    /// assignment is given up as soon as the counts show that no way of
+    /// assigning the rest lets both sides pass; so every split that passes
+    /// the counts is reached, each once, and none that fails them. `left`
+    /// and `right` are the sides with every member to assign on the right,
+    /// `split` their counts with those members open. Returns the node of
+    /// the first split whose two sides are proved.
     #[allow(clippy::too_many_arguments)]
-    fn enumerate_split(
+    fn search_splits(
         &mut self,
         theta: &OccSet,
         members: &[OccId],
         start: usize,
         (left, right): (&mut Context, &mut Context),
-        (left_tally, right_tally): (&mut Tally, &mut Tally),
-        (f, a, b): (OccId, OccId, OccId),
+        split: &mut Split,
+        join: Join,
         budget: u32,
     ) -> Search {
-        self.statistics.splits += 1;
-        if self.sides_pass(left_tally, right_tally)
-            && let Some(node) = self.premises(theta, left, right, f, a, b, budget)?
-        {
-            return Ok(Some(node));
-        }
-        for flip in submasks(members.len() - start) {
-            let m = members[start + flip.position as usize];
+        let rules = self.rules;
+        let mut trail = self.take_trail();
+        trail.resize(members.len(), Side::Right);
+        // The members before `next` are assigned, as the trail says.
+        let mut next = start;
+        let found = 'search: loop {
             self.statistics.splits += 1;
             self.poll_splits()?;
-            if flip.mask >> flip.position & 1 == 1 {
-                right.remove(m);
-                left.insert(m);
-                right_tally.remove(self.counts, m);
-                left_tally.add(self.counts, m);
-            } else {
+            if split.feasible(rules.intervals, rules.equation, rules.mix) {
+                if next < members.len() {
+                    split.assign(self.counts, members[next], Side::Right);
+                    trail[next] = Side::Right;
+                    next += 1;
+                    continue;
+                }
+                let joined = match join {
+                    Join::Tensor(f, a, b) => self.premises(theta, left, right, f, a, b, budget)?,
+                    // A Mix needs two parts.
+                    Join::Mix if right.is_empty() => None,
+                    Join::Mix => self.parts(theta, left, right, budget)?,
+                };
+                if joined.is_some() {
+                    break joined;
+                }
+            }
+            // Back to the last member assigned to the right, which goes to
+            // the left; those after it are open again.
+            loop {
+                if next == start {
+                    break 'search None;
+                }
+                next -= 1;
+                let m = members[next];
+                if trail[next] == Side::Right {
+                    split.unassign(self.counts, m, Side::Right);
+                    split.assign(self.counts, m, Side::Left);
+                    right.remove(m);
+                    left.insert(m);
+                    trail[next] = Side::Left;
+                    next += 1;
+                    continue 'search;
+                }
+                split.unassign(self.counts, m, Side::Left);
                 left.remove(m);
                 right.insert(m);
-                left_tally.remove(self.counts, m);
-                right_tally.add(self.counts, m);
             }
-            if !self.sides_pass(left_tally, right_tally) {
-                continue;
-            }
-            if let Some(node) = self.premises(theta, left, right, f, a, b, budget)? {
-                return Ok(Some(node));
-            }
-        }
-        Ok(None)
+        };
+        self.give_trail(trail);
+        Ok(found)
     }
 
-    /// Polls the stop condition once every [`SPLITS_PER_POLL`] splits: an
-    /// enumeration whose splits the counts reject, or whose premises fail
-    /// in focus, visits no stable sequent, where the condition is polled
-    /// otherwise, and may run for minutes.
+    /// Polls the stop condition once every [`SPLITS_PER_POLL`] steps of
+    /// the split searches: a search whose splits fail in focus visits no
+    /// stable sequent, where the condition is polled otherwise, and may
+    /// run for minutes.
     fn poll_splits(&mut self) -> Result<(), Reason> {
-        if self.statistics.splits.is_multiple_of(SPLITS_PER_POLL) && self.stop.fired() {
+        self.steps += 1;
+        if self.steps < SPLITS_PER_POLL {
+            return Ok(());
+        }
+        self.steps = 0;
+        if self.stop.fired() {
             Err(Reason::Stopped)
         } else {
             Ok(())
         }
-    }
-
-    /// Whether both sides of a split pass the counts.
-    fn sides_pass(&self, left: &Tally, right: &Tally) -> bool {
-        (!self.rules.intervals || (left.balanced() && right.balanced()))
-            && (!self.rules.equation
-                || (left.equation(self.rules.mix) && right.equation(self.rules.mix)))
     }
 
     /// Both premises of `F = A ⊗ B` for one split of the context, and the
@@ -1275,7 +1303,7 @@ impl<'a> Engine<'a> {
     }
 
     /// The Mix rule on a stable sequent no focus proves: a split into two
-    /// non-empty provable parts, enumerated over the members after the
+    /// non-empty provable parts, searched over the members after the
     /// first, which stays on the left, so that each unordered partition
     /// comes up once. In the multiplicative fragments only when the count
     /// equation admits a Mix.
@@ -1290,57 +1318,30 @@ impl<'a> Engine<'a> {
         if members.len() < 2 || (self.rules.equation && !tally.admits_mix()) {
             return Ok(None);
         }
-        let rest = &members[1..];
-        if rest.len() > MAX_SPLIT {
-            return Err(Reason::ContextTooWide(members.len()));
-        }
         let mut left = self.take_context();
         left.insert(members[0]);
         let mut right = self.take_context();
         right.clone_from(gamma);
         right.remove(members[0]);
-        let mut left_tally = self.take_tally();
-        left_tally.add(self.counts, members[0]);
-        let mut right_tally = self.take_tally();
-        for &m in rest {
-            right_tally.add(self.counts, m);
-        }
-        let everything = (1u64 << rest.len()) - 1;
-        // The first member alone is the starting state of the enumeration.
-        self.statistics.splits += 1;
-        let mut result = if self.sides_pass(&left_tally, &right_tally) {
-            self.parts(theta, &left, &right, budget)?
-        } else {
-            None
-        };
-        for flip in submasks(rest.len()) {
-            if result.is_some() {
-                break;
-            }
-            let m = rest[flip.position as usize];
-            self.statistics.splits += 1;
-            self.poll_splits()?;
-            if flip.mask >> flip.position & 1 == 1 {
-                right.remove(m);
-                left.insert(m);
-                right_tally.remove(self.counts, m);
-                left_tally.add(self.counts, m);
-            } else {
-                left.remove(m);
-                right.insert(m);
-                left_tally.remove(self.counts, m);
-                right_tally.add(self.counts, m);
-            }
-            if flip.mask == everything || !self.sides_pass(&left_tally, &right_tally) {
-                continue;
-            }
-            result = self.parts(theta, &left, &right, budget)?;
-        }
+        let mut split = self.take_split();
+        split.place(self.counts, members[0], Side::Left);
+        let mut rest = self.take_list();
+        rest.extend_from_slice(&members[1..]);
+        self.open(&mut rest, &mut split);
+        let result = self.search_splits(
+            theta,
+            &rest,
+            0,
+            (&mut left, &mut right),
+            &mut split,
+            Join::Mix,
+            budget,
+        );
+        self.give_list(rest);
         self.give_context(left);
         self.give_context(right);
-        self.give_tally(left_tally);
-        self.give_tally(right_tally);
-        Ok(result)
+        self.give_split(split);
+        result
     }
 
     /// Both parts of a Mix, and the Mix node if both are provable.
@@ -1449,6 +1450,44 @@ impl<'a> Engine<'a> {
     fn give_tally(&mut self, tally: Tally) {
         self.tallies.push(tally);
     }
+
+    /// Takes the counts of a split with no member from the pool.
+    fn take_split(&mut self) -> Split {
+        match self.splits.pop() {
+            Some(mut split) => {
+                split.clear();
+                split
+            }
+            None => self.counts.split(),
+        }
+    }
+
+    /// Returns the counts of a split to the pool.
+    fn give_split(&mut self, split: Split) {
+        self.splits.push(split);
+    }
+
+    /// Takes an empty trail from the pool.
+    fn take_trail(&mut self) -> Vec<Side> {
+        let mut trail = self.trails.pop().unwrap_or_default();
+        trail.clear();
+        trail
+    }
+
+    /// Returns a trail to the pool.
+    fn give_trail(&mut self, trail: Vec<Side>) {
+        self.trails.push(trail);
+    }
+}
+
+/// What joins the two sides of a split of a context.
+#[derive(Clone, Copy, Debug)]
+enum Join {
+    /// The `⊗` rule on this formula, with its left and right subformula:
+    /// the sides are its premises' contexts.
+    Tensor(OccId, OccId, OccId),
+    /// The Mix rule: the sides are its parts.
+    Mix,
 }
 
 /// What a factor of a `⊗` forces on its side of the split.
@@ -1491,6 +1530,12 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{input:?}: the proof is wrong: {e}"));
         }
         (verdict, statistics)
+    }
+
+    /// Forty literals over atoms of their own, as the rest of a sequent.
+    pub(crate) fn wide_context() -> String {
+        let literals: Vec<String> = (0..40).map(|i| format!("x{i}")).collect();
+        literals.join(", ")
     }
 
     /// Whether `input` is provable under `mode`, panicking on `Unknown`.
@@ -1696,16 +1741,40 @@ mod tests {
         assert!(verdict.proof().is_some());
 
         // A free split over 126 formulas, in MALL so that the count
-        // equation does not refute it first.
+        // equation does not refute it first: no width is too much, and the
+        // counts of `b` refute every split at once.
         let wide = format!(
             "|- ((a & a) par b) * (~a par ~b), {}",
             (0..63).map(|_| "~a, a").collect::<Vec<_>>().join(", ")
         );
         let (verdict, _) = run(&wide, Mode::CLASSICAL, &Options::default());
-        assert!(matches!(
-            verdict,
-            Verdict::Unknown(Reason::ContextTooWide(126))
-        ));
+        assert!(matches!(verdict, Verdict::Unprovable));
+    }
+
+    /// A split search whose splits all fail in focus visits no stable
+    /// sequent and still stops when asked: with weakening no count cuts
+    /// the 2⁴² splits of this context, and each fails at once, since no
+    /// member is the `~p` its left side wants.
+    #[test]
+    fn stops_inside_a_split_search() {
+        let input = format!("|- p * q, 0 * (~p * ~p), 0 * (~q * ~q), {}", wide_context());
+        let s: Sequent = input.parse().unwrap();
+        let forest = Forest::new(&s).unwrap();
+        let mut polls = 0;
+        let (verdict, statistics) = search(
+            &forest,
+            s.fragment(),
+            Mode::CLASSICAL.affine(),
+            None,
+            &Options::default(),
+            &mut || {
+                polls += 1;
+                polls > 3
+            },
+        );
+        assert!(matches!(verdict, Verdict::Unknown(Reason::Stopped)));
+        assert_eq!(statistics.nodes, 1);
+        assert!(statistics.splits <= 4 * SPLITS_PER_POLL, "{statistics:?}");
     }
 
     /// Intuitionistic mode: the textbook sequents of ILL, the pitfalls of

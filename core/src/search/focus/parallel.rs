@@ -23,9 +23,9 @@
 //! read.
 
 use super::context::Context;
-use super::counts::{Counts, Tally};
+use super::counts::{Counts, Split};
 use super::memo::{Key, Shared, Table};
-use super::{Arena, Engine, Kept, NO_DEPENDENCY, Rules, Search};
+use super::{Arena, Engine, Join, Kept, NO_DEPENDENCY, Rules, Search};
 use crate::fragment::{Fragment, Mode};
 use crate::occurrences::{Forest, OccId, OccSet, Reading};
 use crate::proofs::{Node, NodeId, Side};
@@ -137,6 +137,7 @@ impl<'s> Spawn<'s> {
             nodes: Arena::new(Kept::Shared(self.arena)),
             memoizes: self.memoizes,
             statistics: Statistics::default(),
+            steps: 0,
             depth: self.depth,
             recursion_limit: self.recursion_limit,
             copies: self.copies,
@@ -154,6 +155,8 @@ impl<'s> Spawn<'s> {
             keys: Vec::new(),
             lists: Vec::new(),
             tallies: Vec::new(),
+            splits: Vec::new(),
+            trails: Vec::new(),
         };
         if self.portfolio && index != 0 {
             // A seed per worker, never zero.
@@ -172,13 +175,13 @@ enum Alternative<'m> {
     Copy(OccId),
     /// A side of a `⊕` in focus, with the subformula on that side.
     Side(OccId, Side, OccId),
-    /// The free splits of `F = A ⊗ B` (`formula`) that assign the first
-    /// `fixed` members as the bits of `pattern` say, one for the left
-    /// premise, from the sides and tallies before any member moved.
+    /// The free splits of a `⊗` that assign the first `fixed` members as
+    /// the bits of `pattern` say, one for the left premise, from the sides
+    /// and counts before any member moved.
     Splits {
-        /// The `⊗` and its two subformulas.
-        formula: (OccId, OccId, OccId),
-        /// The members of the context that the enumeration moves.
+        /// The `⊗` rule the sides are the premises of.
+        join: Join,
+        /// The members of the context that the search assigns.
         members: &'m [OccId],
         /// How many of them the pattern assigns.
         fixed: usize,
@@ -186,8 +189,8 @@ enum Alternative<'m> {
         pattern: u64,
         /// The sides before any member moved.
         sides: (&'m Context, &'m Context),
-        /// Their tallies.
-        tallies: (&'m Tally, &'m Tally),
+        /// Their counts, the members open.
+        split: &'m Split,
     },
 }
 
@@ -339,42 +342,40 @@ impl<'a> Engine<'a> {
                 .focus(theta, gamma, sub, budget)?
                 .map(|node| self.push(Node::Plus(f, side, node)))),
             Alternative::Splits {
-                formula,
+                join,
                 members,
                 fixed,
                 pattern,
                 sides,
-                tallies,
+                split,
             } => {
                 let mut left = self.take_context();
                 left.clone_from(sides.0);
                 let mut right = self.take_context();
                 right.clone_from(sides.1);
-                let mut left_tally = self.take_tally();
-                left_tally.clone_from(tallies.0);
-                let mut right_tally = self.take_tally();
-                right_tally.clone_from(tallies.1);
+                let mut counts = self.take_split();
+                counts.clone_from(split);
                 for (i, &m) in members.iter().enumerate().take(fixed) {
                     if pattern >> i & 1 == 1 {
                         right.remove(m);
                         left.insert(m);
-                        right_tally.remove(self.counts, m);
-                        left_tally.add(self.counts, m);
+                        counts.assign(self.counts, m, Side::Left);
+                    } else {
+                        counts.assign(self.counts, m, Side::Right);
                     }
                 }
-                let result = self.enumerate_split(
+                let result = self.search_splits(
                     theta,
                     members,
                     fixed,
                     (&mut left, &mut right),
-                    (&mut left_tally, &mut right_tally),
-                    formula,
+                    &mut counts,
+                    join,
                     budget,
                 );
                 self.give_context(left);
                 self.give_context(right);
-                self.give_tally(left_tally);
-                self.give_tally(right_tally);
+                self.give_split(counts);
                 result
             }
         }
@@ -475,15 +476,15 @@ impl<'a> Engine<'a> {
     /// The free splits of `F = A ⊗ B` on the pool: the assignments of the
     /// first few members of the context, as many as give the pool twice
     /// its threads in tasks (at most [`MAX_FIXED`]), as alternatives, each
-    /// enumerating the rest. The sides and tallies given are the state
-    /// before any member moved.
+    /// searching the assignments of the rest. The sides and counts given
+    /// are the state before any member moved.
     pub(super) fn split_parallel(
         &mut self,
         theta: &OccSet,
         members: &[OccId],
         sides: (&Context, &Context),
-        tallies: (&Tally, &Tally),
-        formula: (OccId, OccId, OccId),
+        split: &Split,
+        join: Join,
         budget: u32,
     ) -> Search {
         let threads = self.runtime.map_or(1, Runtime::threads);
@@ -491,12 +492,12 @@ impl<'a> Engine<'a> {
         let fixed = bits.clamp(1, MAX_FIXED).min(members.len());
         let alternatives: Vec<Alternative<'_>> = (0..1u64 << fixed)
             .map(|pattern| Alternative::Splits {
-                formula,
+                join,
                 members,
                 fixed,
                 pattern,
                 sides,
-                tallies,
+                split,
             })
             .collect();
         self.choose_parallel(theta, sides.1, &alternatives, budget)
@@ -687,7 +688,7 @@ mod tests {
 
     /// A 3-Partition instance without a solution, whose refutation takes
     /// seconds: the caller's stop condition, polled on the calling thread,
-    /// stops every worker.
+    /// stops every worker, inside a search for splits too.
     #[test]
     fn stops() {
         let sequent = crate::families::three_partition(&[1, 1, 1, 3, 1, 1], 2, 4);
@@ -704,5 +705,23 @@ mod tests {
             outcome.verdict
         );
         assert!(outcome.statistics.nodes > 0);
+
+        // A split search that visits no stable sequent stops as well.
+        let input = format!(
+            "|- p * q, 0 * (~p * ~p), 0 * (~q * ~q), {}",
+            crate::search::focus::tests::wide_context()
+        );
+        let sequent: Sequent = input.parse().unwrap();
+        let mut polls = 0;
+        let outcome = prove_until(&sequent, Mode::CLASSICAL.affine(), &options, || {
+            polls += 1;
+            polls > 20
+        })
+        .unwrap();
+        assert!(
+            matches!(outcome.verdict, Verdict::Unknown(Reason::Stopped)),
+            "{:?}",
+            outcome.verdict
+        );
     }
 }
