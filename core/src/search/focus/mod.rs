@@ -314,10 +314,10 @@ impl Rule {
 /// first, under the factor rule, and the backward search, under the rarer
 /// literal within [`Options::copies`], which is the one `Auto` ran alone
 /// before; they share nothing, and the first to decide answers. The
-/// forward search runs within `Options::copies` too, and where every
-/// formula under a `?` is a Horn clause ([`chains`]) within the larger of
-/// that and [`Options::forward_copies`]: there a copy is a step of a
-/// forward chain, of which one branch takes as many as the chain is long.
+/// forward search runs within `Options::copies` too, and where the
+/// sequent is a Horn program ([`chains`]) within the larger of that and
+/// [`Options::forward_copies`]: there a copy is a step of a forward
+/// chain, of which one branch takes as many as the chain is long.
 /// Not under Mix, where every sequent of a chain that grows is tried in
 /// every partition.
 /// When the two rules give every atom the same literal the forward search
@@ -357,35 +357,52 @@ pub(crate) fn plan(
     (forward, (!same).then_some(backward))
 }
 
-/// Whether every formula under a `?` of the forest is a Horn clause: a
-/// tensor of literals of which at most one factor is a `⅋` of literals
-/// instead, which is what `!(a ⊗ b ⊸ c ⊗ d)` is on the right of `⊢`, as
-/// are a tensor of literals, a `⅋` of literals and a literal alone; a `1`
-/// may stand for an empty body and a `⊥` for an empty head. The
-/// transitions of a Petri net are such clauses, and a copy of one rewrites
-/// the linear zone and opens no branch that another copy could deepen.
+/// Whether the sequent is a Horn program: every root under a `?` a
+/// clause, every other root a marking or a goal. With the atoms of the
+/// bodies written `a` (or all of them `~a`), a clause is a tensor of body
+/// literals of which at most one factor is a head instead, a literal of
+/// the other sign or a `⅋` of such, which is what `!(a ⊗ b ⊸ c ⊗ d)` is
+/// on the right of `⊢`; a marking is a `⅋` of head literals, a goal a
+/// tensor of body literals; `1` stands for an empty body or goal and `⊥`
+/// for an empty head. A Petri net with a marking to reach is such a
+/// program. There a copy of a clause rewrites the linear zone, so a
+/// search within `n` copies visits the markings within `n` steps and
+/// nothing else, which is what makes a bound of its own affordable.
 fn chains(forest: &Forest) -> bool {
-    let head = |kind| matches!(kind, Kind::Par | Kind::Bot);
-    forest
-        .ids()
-        .filter(|&q| forest.kind(q) == Kind::Quest)
-        .all(|q| {
-            let mut heads = 0;
-            forest.subtree(forest.left(q).unwrap()).all(|x| {
+    use crate::occurrences::Sign;
+    [Sign::Var, Sign::DualVar].into_iter().any(|body| {
+        // A tree of one connective and its unit over literals of one sign.
+        let tree = |o: OccId, connective: Kind, unit: Kind, sign: Sign| {
+            forest.subtree(o).all(|x| {
                 let kind = forest.kind(x);
-                if !head(kind) {
-                    return forest.is_literal(x) || matches!(kind, Kind::Tensor | Kind::One);
-                }
-                // The top of a head; what lies below it is looked at
-                // with it.
-                let top = forest.parent(x).is_none_or(|p| forest.kind(p) != Kind::Par);
-                heads += u32::from(top);
-                heads <= 1
-                    && forest
-                        .subtree(x)
-                        .all(|y| forest.is_literal(y) || head(forest.kind(y)))
+                kind == connective || kind == unit || forest.sign(x) == Some(sign)
             })
+        };
+        let head = |o: OccId| tree(o, Kind::Par, Kind::Bot, !body);
+        let mut factors = Vec::new();
+        forest.roots().iter().all(|&root| {
+            if forest.kind(root) != Kind::Quest {
+                return head(root) || tree(root, Kind::Tensor, Kind::One, body);
+            }
+            let mut heads = 0;
+            factors.clear();
+            factors.push(forest.left(root).unwrap());
+            while let Some(x) = factors.pop() {
+                match forest.kind(x) {
+                    Kind::Tensor => factors.extend(forest.children(x)),
+                    Kind::One => {}
+                    _ if forest.sign(x) == Some(body) => {}
+                    _ => {
+                        heads += 1;
+                        if heads > 1 || !head(x) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            true
         })
+    })
 }
 
 /// The reason a search of the options gives up with, given the reason one

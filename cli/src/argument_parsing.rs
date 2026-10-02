@@ -112,11 +112,11 @@ pub struct ProveArgs {
     /// How often `?` formulas may be copied on one branch of the forward
     /// search that `--bias auto` runs
     ///
-    /// It applies where every formula under a `!` or `?` is a Horn clause
-    /// such as `!(a * b -o c * d)`: there a copy is one step of a chain,
-    /// and a chain of n steps needs n of them. The forward search never
-    /// runs within less than `--copies`; elsewhere, and under Mix, it runs
-    /// within `--copies`.
+    /// It applies to a Horn program: clauses such as `!(a * b -o c * d)`,
+    /// a marking and a goal of atoms, as a Petri net is. There a copy is
+    /// one step of a chain, and a chain of n steps needs n of them. The
+    /// forward search never runs within less than `--copies`; on any other
+    /// sequent, and under Mix, it runs within `--copies`.
     #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_FORWARD_COPIES)]
     pub forward_copies: u32,
     /// Give up after this long, such as 500ms, 10s, 2m or 1h
@@ -465,8 +465,8 @@ impl From<EngineArg> for Option<Engine> {
 /// The rules `--bias` names.
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BiasArg {
-    /// `factors` without exponentials, `rarer` with them or with
-    /// weakening
+    /// `factors` without exponentials, `rarer` with weakening, and with
+    /// exponentials both, each in a search of its own
     Auto,
     /// The literal with fewer occurrences is positive
     Rarer,

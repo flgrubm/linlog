@@ -475,9 +475,11 @@ impl Options {
     pub const DEFAULT_COPIES: u32 = 3;
 
     /// The forward search's copy bound of the default options: thirty
-    /// steps of a forward chain. An undecided search to that depth costs
-    /// milliseconds on a small Horn program, and a deeper one decided
-    /// nothing more within seconds on Petri nets from practice.
+    /// steps of a forward chain. A deeper bound decided nothing more
+    /// within seconds on Petri nets from practice, and the price of the
+    /// bound is what an undecided search to that depth costs: mostly
+    /// milliseconds on a small Horn program, a second and more on one
+    /// whose markings grow in several places at once.
     pub const DEFAULT_FORWARD_COPIES: u32 = 30;
 
     /// Sets the most copies of `?` formulas one branch of a proof may take.
@@ -584,12 +586,13 @@ impl Options {
 
     /// Sets the most copies of `?` formulas one branch may take in the
     /// forward search that [`Bias::Auto`] runs beside the backward one on
-    /// a sequent with exponentials: a forward chain takes a copy per step,
-    /// all on one branch, so it wants a larger bound than
+    /// a Horn program: clauses `!(a ⊗ b ⊸ c ⊗ d)`, a marking and a goal
+    /// of atoms, as a Petri net is. A forward chain takes a copy per
+    /// step, all on one branch, so it wants a larger bound than
     /// [`copies`](Self::copies), which this is when it is the larger of
     /// the two; the forward search never runs within less than `copies`.
-    /// Under any other bias, without exponentials and under weakening it
-    /// has no effect.
+    /// On any other sequent, under another bias, under Mix and under
+    /// weakening it has no effect.
     pub fn forward_copies(self, copies: u32) -> Self {
         Self {
             forward_copies: copies,
@@ -700,7 +703,8 @@ pub struct Statistics {
     /// The visits answered from the memo.
     pub memo_hits: u64,
     /// The most stable sequents the memo held at once; of two searches
-    /// that ran together, the two memos' together.
+    /// that ran together, the two memos' together, and of two that took
+    /// turns from their start, the most of one turn.
     pub memo_entries: usize,
     /// The context splits examined for `⊗` and Mix, most of them rejected by
     /// the counts.
