@@ -30,7 +30,7 @@ amended (see "Review protocol"). `notes/` holds research the prompts rely on.
 | 12 | Rocq certificates | `12-certificates.md` | Fable 5.1 | high | 10 |
 | 13 | Parallel search | `13-parallel.md` | Fable 5.1 | xhigh | 9 |
 | 14 | Benchmarks, LLTP input, hard families, and the baseline (taken on the night of 2026-09-30, completed by a supplement on the night of 2026-10-01) | `14-benchmarks.md` | Opus 5.5 | xhigh | 13 |
-| 15 | Performance pass on the focused engine, driven by 14's baseline, measured by day through the engines' counters | `15-performance.md` | Fable 5.1 | xhigh | 14 |
+| 15 | Performance pass on the focused engine, driven by 14's baseline, measured by day through the engines' counters, with a bounded profile-driven pass on constant factors at its end | `15-performance.md` | Fable 5.1 | xhigh | 14 |
 | 16 | The baseline again, after the pass, and the comparison of the two | `16-baseline.md` | Opus 5.5 | xhigh | 15 |
 | 17 | Assessment and planning: the state of the repository, the two baselines, every candidate in `later.md`; the author's decisions; then the prompts for the steps from 18 | `17-assessment.md` | Fable 5.1 | xhigh | 16 |
 | 18– | Planned by step 17 from the candidates in `later.md` (configurable output, a code audit and refactoring, net-engine pruning and routing, MELL nets with boxes, essential nets, the inverse method, Petri nets, Lambek, second certificate kernels, MALL nets, the web front end) | written by step 17 | – | – | 17 |
@@ -876,3 +876,16 @@ into an option or names it as a follow-up.
   first, propose a slot that holds all of it with a margin and arm with
   `--slot`, a second night being the fallback only if no slot the author
   can give is long enough.
+- 2026-10-02, constant factors in step 15: the author asked whether the
+  performance pass also changes data structures. As written it did so
+  only where an item needed it, and nothing in the plan scheduled the
+  small-set specialisation that D3 names as the optimisation that pays
+  (`OccSet` is a boxed slice at every size) or any profile. On the
+  planning session's recommendation, accepted by the author, prompt 15
+  gains item 7: after the algorithmic items, one profile of the targets
+  still time-bound and at most three changes of representation, each
+  local, leaving every sequential counter bit-identical (the proof that
+  behaviour is unchanged) and gaining a tenth of pinned CPU time; no new
+  type parameters (D2, D3); what is not taken becomes a ranked list for
+  the code-audit candidate. The target set gets a third label so that
+  step 16 can attribute the gains.

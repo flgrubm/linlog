@@ -130,7 +130,9 @@ benchmarks showed it losing on, without changing a single verdict: fewer
 `⊗` splits examined, fewer stable sequents visited, no limit on the width
 of a context it can split. Every change is measured before and after on a
 fixed target set, keeps every proof passing the checker, and is argued
-sound in `.claude/rules/core.md`.
+sound in `.claude/rules/core.md`. Last, and within a stated bound, the
+cost of a unit of search: a few changes of representation that a profile
+points at and the counters prove behaviour-neutral (item 7).
 
 ## What to build
 
@@ -171,7 +173,8 @@ sound in `.claude/rules/core.md`.
    (`enumerate_split`, `submasks`) and tests the counts after every flip;
    one stable sequent of a Petri net examined 60 million splits, and a
    context of more than 63 members is refused (`MAX_SPLIT`,
-   `Reason::ContextTooWide`, which stops 651 LLTP problems). Replace the
+   `Reason::ContextTooWide`, which stops 845 LLTP problems, and 401 more
+   once the recursion limit is raised). Replace the
    enumeration by a search over the members that prunes on the running
    tallies: decide the members in an order that fixes an atom's count
    early, and cut a partial assignment as soon as the interval check or
@@ -228,12 +231,47 @@ sound in `.claude/rules/core.md`.
    unbounded (8 GB at depth 16 of the `additive` family): give it the cap
    the focused memo has (`Options::memo_limit`) or drop entries in a way
    you can argue, and measure that depth 16 still decides. The recursion
-   limit of 2 048 stops 895 Petri nets whose markings are long tensor
-   chains: find out on the sample what depth they need, whether the
+   limit of 2 048 stops 983 LLTP problems, Petri nets whose markings are
+   long tensor chains (a limit of 16 384 decides 56 of them, leaves 154
+   at the limit and sends 401 to the width limit of item 2): find out on
+   the sample what depth they need, whether the
    engine can avoid a level of recursion per link of a `⅋` or `⊗` chain,
    and otherwise whether the default should rise (the stack grows with
    it, `Options::stack_size`); decide from the numbers.
-7. **Documentation**: `.claude/rules/core.md` gets, for every prune and
+7. **Constant factors, last and bounded.** Everything above changes how
+   much the engine searches; this item is about what a unit of search
+   costs, and it is deliberately small. When items 2 to 6 are committed
+   and measured, profile the targets that still take a second or more: a
+   sampling profiler on a release build with debug symbols, set through
+   the environment for that build (`CARGO_PROFILE_RELEASE_DEBUG=true`),
+   not in `Cargo.toml`. None is installed, so take one from the flake's
+   nixpkgs for the session (`nix shell --inputs-from . nixpkgs#…`),
+   capped and pinned like every other measurement. Then take at most
+   three changes of representation, each only if all of this holds:
+   - it is local, behind the API of a type that exists, with no new type
+     parameter through the engines (D2 and D3 removed those on purpose);
+   - it leaves `nodes`, `splits`, `memo_hits` and `memo_entries` of
+     every sequential target bit-identical, which is the whole proof
+     that it changed no behaviour and the reason such a change needs no
+     reviewer;
+   - it lowers the pinned CPU time of the targets it concerns by a tenth
+     or more, median of three runs.
+
+   The first candidate is the one D3 names and nobody built: `OccSet` is
+   a `Box<[u64]>` at every size, so every set over a forest of at most
+   64 occurrences is a heap allocation and an indirection where one word
+   inline would do. Others a profile may show: the memo key's layout and
+   hashing, allocation in the split search of item 2, and the release
+   profile itself (`lto`, `codegen-units`), which costs build time in
+   every check, so say what it costs. A candidate that fails a condition
+   is not taken. What the profile shows and you do not take goes into
+   the report as a ranked list (the hot spot, its share of the samples,
+   the change it suggests), which the code-audit candidate of
+   `plan/later.md` starts from. Here CPU time is the evidence and the
+   identical counters the guard, the reverse of the items above. Do not
+   let this item grow: it is the last thing the step does and not a
+   refactoring pass.
+8. **Documentation**: `.claude/rules/core.md` gets, for every prune and
    every canonical choice you add, the statement and the argument, and
    the stale numbers there are replaced; `.claude/rules/bench.md` the
    target set; README only where behaviour a user sees changed (a limit
@@ -279,10 +317,15 @@ helped and the candidates that did not pay.
 - Thematic jj commits, one per optimisation, each naming what it does
   ("Search the splits of a tensor by their counts", "Choose among equal
   members canonically", "Key memo failures up to renaming", "Pick the
-  atom bias from the sequent's shape", "Cap the additive memo", …), each
-  building and passing its tests alone.
+  atom bias from the sequent's shape", "Cap the additive memo", "Keep
+  small occurrence sets inline", …), each building and passing its tests
+  alone.
+- The target set under three labels: before, after items 2 to 6, and
+  after item 7, so that step 16 can tell what the search changes gained
+  from what the representation did.
 - `plan/reports/15-performance.md`: the before and after table
   (counters first, CPU time second), what each change contributed, the
+  profile of item 7 with its ranked list of what was not taken, the
   soundness argument of each in a paragraph with a pointer to the rules
   file, what did not pay, which targets remain undecided and why, which rows
   of the baseline step 16 should look at first, and what is left for the

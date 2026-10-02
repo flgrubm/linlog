@@ -15,7 +15,10 @@ Requested by the author on 2026-09-30. Sixteen steps by separate sessions
 built the code, each reviewed for its own correctness and none for the
 whole: read the workspace as one maintainer would and put it in order,
 changing no behaviour. The audit first, as a ranked list of findings, then
-the refactorings the list justifies, each a commit of its own.
+the refactorings the list justifies, each a commit of its own. Step 15
+leaves it a second list to start from: the hot spots its profile showed
+and it did not take (`plan/reports/15-performance.md`), which are
+changes of representation with a measured share of the time behind them.
 
 What to look for: modules grown past what a reader holds (the focused
 engine's `mod.rs` is over 2 000 lines, the interactive state 1 500, the
