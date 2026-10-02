@@ -293,6 +293,7 @@ impl Counts {
             slack_below: 0,
             slack_above: 0,
             inert: false,
+            touched: Vec::new(),
         }
     }
 
@@ -308,6 +309,7 @@ impl Counts {
         Tally {
             lo: vec![0; self.num_atoms],
             hi: vec![0; self.num_atoms],
+            touched: Vec::new(),
             bad: 0,
             absorbers: 0,
             len: 0,
@@ -359,6 +361,10 @@ pub(crate) struct Tally {
     lo: Vec<i32>,
     /// Per atom, the summed greatest balance.
     hi: Vec<i32>,
+    /// The atoms of the rows added or removed since the tally was last
+    /// cleared, some more than once: the only atoms whose sums can be other
+    /// than zero.
+    touched: Vec<u32>,
     /// The number of atoms whose summed interval excludes zero.
     bad: u32,
     /// The number of members that absorb.
@@ -370,10 +376,13 @@ pub(crate) struct Tally {
 }
 
 impl Tally {
-    /// Removes every member.
+    /// Removes every member, at the cost of the rows that came in since the
+    /// last time and not of the sequent's atoms.
     pub(crate) fn clear(&mut self) {
-        self.lo.fill(0);
-        self.hi.fill(0);
+        for a in self.touched.drain(..) {
+            self.lo[a as usize] = 0;
+            self.hi[a as usize] = 0;
+        }
         self.bad = 0;
         self.absorbers = 0;
         self.len = 0;
@@ -395,6 +404,7 @@ impl Tally {
     fn apply(&mut self, counts: &Counts, o: OccId, sign: i32) {
         for e in counts.row(o) {
             let a = e.atom.index();
+            self.touched.push(a as u32);
             let was_bad = self.lo[a] > 0 || self.hi[a] < 0;
             self.lo[a] += sign * e.lo;
             self.hi[a] += sign * e.hi;
@@ -487,17 +497,26 @@ pub(crate) struct Split {
     /// Whether no prune can cut any assignment of these members, so that
     /// the counts need not follow the search.
     inert: bool,
+    /// The atoms of the rows of every member placed or opened since the
+    /// counts were last cleared, some more than once: the only atoms whose
+    /// sums can be other than zero.
+    touched: Vec<u32>,
 }
 
 impl Split {
-    /// Removes every member.
+    /// Removes every member, at the cost of the rows that came in since the
+    /// last time and not of the sequent's atoms: a Petri net has thousands
+    /// of atoms and a split touches a few.
     pub(crate) fn clear(&mut self) {
-        for side in 0..2 {
-            self.lo[side].fill(0);
-            self.hi[side].fill(0);
+        for a in self.touched.drain(..) {
+            let a = a as usize;
+            for side in 0..2 {
+                self.lo[side][a] = 0;
+                self.hi[side][a] = 0;
+            }
+            self.below[a] = 0;
+            self.above[a] = 0;
         }
-        self.below.fill(0);
-        self.above.fill(0);
         self.bad = [0; 2];
         self.absorbers = [0; 2];
         self.open_absorbers = 0;
@@ -555,11 +574,15 @@ impl Split {
     /// Adds a member to a side for good: a subformula of the `⊗`, or a
     /// member the search does not move.
     pub(crate) fn place(&mut self, counts: &Counts, o: OccId, side: Side) {
+        self.touched
+            .extend(counts.row(o).map(|e| e.atom.index() as u32));
         self.shift(counts, o, side, 1, 0);
     }
 
     /// Adds a member that a search will assign to a side.
     pub(crate) fn open(&mut self, counts: &Counts, o: OccId) {
+        self.touched
+            .extend(counts.row(o).map(|e| e.atom.index() as u32));
         self.shift(counts, o, Side::Left, 0, 1);
     }
 
