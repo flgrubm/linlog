@@ -17,12 +17,17 @@ every item, the verification table, no pushing. Read before you start:
 
 ## What step 15 left you
 
-`plan/reports/15-performance.md`, above all "For step 16". The focused
-engine now searches its splits by their counts, chooses among equal
-members canonically, shares complete failures among interchangeable
-sequents, picks its atom bias from the sequent's shape and has an option
-for it (`Options::bias`; `linlog-bench run --bias rarer|factors`, a
-`bias` column at the end of the rows). For this step that means:
+`plan/reports/15-performance.md`, above all "The default bias" and "For
+step 16". The focused engine now searches its splits by their counts,
+chooses among equal members canonically, shares complete failures among
+interchangeable sequents and picks its atom bias from the sequent's
+shape; on a sequent with exponentials the default runs two searches, a
+backward one (the rarer-literal rule) and a forward one (the factor
+rule, on a Horn program within a copy bound of its own, 30), and
+answers with the first that decides. The options are `Options::bias`
+and `Options::forward_copies` (`linlog-bench run --bias
+rarer|factors`, `--forward-copies`; columns `bias` and `forward_copies`
+at the end of the rows). For this step that means:
 
 - **The counters changed their meaning.** `splits` counts steps of the
   split searches where it counted submasks, and `memo_hits` counts a
@@ -31,16 +36,20 @@ for it (`Options::bias`; `linlog-bench run --bias rarer|factors`, a
   baseline. What replaces them as the check on your set-up:
   `bench/targets.sh LABEL` by day (two pinned cores, about twenty
   minutes; named here, so it is a run you may make) must reproduce the
-  decided rows of `bench/targets/after.csv` exactly at the commit you
-  measure.
+  decided rows of `bench/targets/after-bias.csv` exactly at the commit
+  you measure.
 - **The limits moved, and the night grows with them.** In the first
   baseline's intuitionistic pass 845 problems stopped at the width limit
   and 983 at the recursion limit, within milliseconds. The width limit
   is gone and the recursion limit rarely binds, and by step 15's sample
-  most of those problems now run into their 5 s (21 of 24 and 15 of 24).
-  Expect about 2 300 timeouts in a sequential pass over the library
-  where there were 984, so three and a half hours for a pass that took
-  97 minutes.
+  most of those problems ran into their 5 s under the rarer-literal
+  rule alone (21 of 24 and 15 of 24): about 2 300 timeouts in a
+  sequential pass over the library where there were 984, three and a
+  half hours for a pass that took 97 minutes. That is what the pass
+  under `--bias rarer` will cost. Under the default the forward search
+  decides many of those nets (on the sample 38 of 113 end at the time
+  limit where 69 did), so expect something over a thousand timeouts and
+  about two hours for each default pass.
 - **The reruns take the first baseline's problems.** The script derives
   the problems of `lltp-copies-10`, `lltp-recursion`, `lltp-all-cores`
   and `lltp-portfolio` from the pass it has just run (`ended`). In a
@@ -52,28 +61,47 @@ for it (`Options::bias`; `linlog-bench run --bias rarer|factors`, a
   (`bench/results/2026-09-30/lltp-intuitionistic.csv`), so that every
   row has its counterpart and the stages keep their length; what is
   slow only now is in the sequential passes already.
-- **One loss is known.** The planning session ran the new engine on
-  every LLTP row the first baseline decided (1 890 rows of its three
-  sequential passes, 5 s): no verdict contradicts, and one problem is
-  lost at the limit, the Petri net `IBM5964_1_1` (proved in 1.8 s and
-  14 million stable sequents before, 42 s and 256 million now, in both
-  modes; 0.08 ms under `--bias factors`). Your comparison lists every
-  row decided before and not now; this one should be among them, and a
-  long list would be news.
-- **The default bias was settled in a second session of step 15**, so
-  that the night measures the engine users get: with exponentials
-  `Bias::Auto` uses both rules (the report's section "The default
-  bias"; before it, the default proved 11 of 109 sampled LLTP problems
-  where `--bias factors` proved 23, and 48 with `--copies 10`). The
-  default passes of the night measure that default. Beside them, as the
-  record of its two components and the answer to what the combination
-  costs and gains, add the sequential passes over the intuitionistic
-  library that the report's "For step 16" names (as the plan stands:
-  `--bias rarer`, `--bias factors`, and `--bias factors --copies 10`,
-  into files of their own); they fit into stage 1's four streams, two
-  of which are free after the first hour. They have no counterpart in
-  the first baseline and are compared with the second's own default
-  pass and its `lltp-copies-10`.
+- **No loss is expected.** The planning session ran the engine on every
+  LLTP row the first baseline decided (1 890 rows of its three
+  sequential passes, 5 s): no verdict contradicts, and on an idle core
+  none is lost. (Before the default ran both searches one was, the
+  Petri net `IBM5964_1_1`: 1.8 s in the first baseline, 42 s under the
+  backward search alone, 0.2 ms now; it will show in the `rarer` pass.)
+  Your comparison lists every row decided before and not now, and any
+  entry in that list is news.
+- **The night measures the default users get, and its two components
+  beside it.** The script's default passes are the combined default as
+  they stand. Add two sequential passes over the intuitionistic library
+  as the record of what the combination is made of: `--bias rarer`
+  (`lltp-rarer.csv`: the backward search alone, which is the engine the
+  first baseline's pass compares with row by row, and what the default
+  gains over it) and `--bias factors --copies 30` (`lltp-forward.csv`:
+  the forward search alone at the default's forward bound, and what the
+  alternation costs on the rows it decides; 1.7 times the better rule
+  in the median on the sample). They fit into stage 1's four streams,
+  two of which are free after the first hour. On the sample the default
+  proves 50 of 109 where the backward search alone proves 11; the
+  contract the night checks at scale is that the default decides
+  everything the `rarer` pass decides, short of the time limit.
+- **Where the default is closest to its limit.** With no stop the
+  default never decides less than the backward search; under a time
+  limit it can lose what that search decides in more than two thirds of
+  the limit. Of the rows the first baseline decided none is lost at
+  5 s on an idle core, but the margin is thin on a few: the
+  `NeighborGrid_z_2d_3n_1m_t_1_2_*` nets take 3.9 s (1.4 s in the first
+  baseline, 2.2 s under `--bias rarer`), and on a loaded machine the
+  planning session saw one of them at 5.2 s. In four streams with a
+  throttling package they are the first rows to go; if they do, say so
+  as a loss at the limit and give their `rarer` rows beside them.
+- **`lltp-copies-10` bears on the default copy bound.** Its rows that
+  are not Petri nets are what a bound of 3 still leaves undecided under
+  either bias (five of the sample); report how many a bound of 10
+  decides, for step 17's question whether `--copies` should rise.
+- **The portfolio is measured once more** (`lltp-portfolio`), beside a
+  default that already runs two searches side by side on a pool; step
+  15 recommends removing the option if it shows no gain again. On every
+  core the two searches get half the threads each, which nobody has
+  measured: say what `lltp-all-cores` shows against one thread.
 - **The families got easy.** Every size the first baseline timed out
   on is decided in milliseconds now, except `mix` at eleven pairs. The
   old sizes stay, for their counterparts; add larger ones until the
@@ -182,14 +210,13 @@ on this step" below apply.
    looked at: a decided verdict that changed is a bug in step 15 and is
    reported as such, at the top. A row decided before and not now is
    not a wrong verdict but a loss, and every one is listed with both
-   rows and with what the passes under an explicit bias make of the
-   same problem (`IBM5964_1_1` was the one known before the default
-   changed, and should be decided again). The bias gets a table of its
-   own: per LLTP collection, the problems the default decides, those
-   each explicit bias decides at the default bound and `factors` at a
-   bound of 10, and the overlaps: it says whether the combined default
-   keeps its contract (never less than `rarer`) and what it leaves on
-   the table. The
+   rows and with what the two passes under an explicit bias make of the
+   same problem. The bias gets a table of its own: per LLTP collection,
+   the problems the default decides, those the backward search alone
+   and the forward search alone decide, and the overlaps: it says
+   whether the combined default keeps its contract at scale (never less
+   than `rarer`, short of the limit), what the alternation costs on the
+   rows both decide, and what it leaves on the table. The
    rows that were `killed` or
    `crash` on the first night (a search that missed its stop inside a
    split enumeration, a proof arena that outgrew its cap; the first

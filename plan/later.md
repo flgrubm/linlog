@@ -388,6 +388,18 @@ from the frontier.
   - *On a pool the threads are split evenly* between the two searches;
     not measured (it needs the machine), and the split is a candidate
     for a measurement in the second baseline's all-core stage.
+  - *The Horn test reads the forest's roots, not the goal* (`chains`,
+    found by the planning session's review): for a goal off the roots,
+    as `prove_goal` and the interactive `close` hand one over, the
+    forward bound follows the shape of the whole sequent. It decides a
+    bound and no verdict, and the closes tried by hand behaved; the
+    test belongs on the goal's members.
+  - *The rows the backward search decides slowly pay most*: the
+    `NeighborGrid_z_2d_3n_1m_t_1_2_*` nets take 2.2 s under `--bias
+    rarer` and 3.9 s under the default (1.4 s in the first baseline),
+    1.8 times, where the scheme's own figure is 1.5; under a 5 s limit
+    on a loaded machine one of them was lost. They are what a better
+    unit of work is measured on.
 - **Mix costs `3^n` memo lookups** for `n` members that no prune
   separates (the `mix` family: 14.3 million stable sequents at eight
   pairs, eleven pairs not within 300 s), since every part enumerates its

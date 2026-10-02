@@ -39,7 +39,13 @@ others, the step table, the models and efforts.
 The project is its author's tool for research and teaching in linear
 logic. Judge value by that: what a logician proving sequents, drawing
 nets, checking proofs and showing them to students gains, and what a
-reader of a paper that cites the tool would expect of it.
+reader of a paper that cites the tool would expect of it. And it is
+meant to be used in practice, which is what its efficiency is for (the
+author, 2026-10-02): weigh what a user without flags or a time limit
+meets, where an undecided sequent must not be slow, and problems that
+people bring over generated families (`plan/later.md`, "Problems from
+practice", lists sets that are neither fetched nor licence-checked yet;
+assess them as a candidate).
 
 ## Part one: the assessment
 

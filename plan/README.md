@@ -30,7 +30,7 @@ amended (see "Review protocol"). `notes/` holds research the prompts rely on.
 | 12 | Rocq certificates | `12-certificates.md` | Fable 5.1 | high | 10 |
 | 13 | Parallel search | `13-parallel.md` | Fable 5.1 | xhigh | 9 |
 | 14 | Benchmarks, LLTP input, hard families, and the baseline (taken on the night of 2026-09-30, completed by a supplement on the night of 2026-10-01) | `14-benchmarks.md` | Opus 5.5 | xhigh | 13 |
-| 15 | Performance pass on the focused engine, driven by 14's baseline, measured by day through the engines' counters, with a bounded profile-driven pass on constant factors at its end (done; run again for the default atom bias with exponentials) | `15-performance.md` | Fable 5.1 | xhigh | 14 |
+| 15 | Performance pass on the focused engine, driven by 14's baseline, measured by day through the engines' counters, with a bounded profile-driven pass on constant factors at its end, and in a second session the default atom bias with exponentials | `15-performance.md` | Fable 5.1 | xhigh | 14 |
 | 16 | The baseline again, after the pass, and the comparison of the two | `16-baseline.md` | Opus 5.5 | xhigh | 15 |
 | 17 | Assessment and planning: the state of the repository, the two baselines, every candidate in `later.md`; the author's decisions; then the prompts for the steps from 18 | `17-assessment.md` | Fable 5.1 | xhigh | 16 |
 | 18– | Planned by step 17 from the candidates in `later.md` (configurable output, a code audit and refactoring, net-engine pruning and routing, MELL nets with boxes, essential nets, the inverse method, Petri nets, Lambek, second certificate kernels, MALL nets, the web front end) | written by step 17 | – | – | 17 |
@@ -324,10 +324,13 @@ of its own is a question of the `engines` runs (the net engine still
 alone proves a sequent of thousands of distinct literal pairs at the
 default recursion limit). And the focused rows have a parameter, the
 atom bias (`Options::bias`): `Auto` takes the factor rule without
-exponentials and the rarer-literal rule with them or in affine mode,
-while on Petri nets the factor rule with a raised copy bound proves
-several times as many problems; which bias and bound a sequent gets by
-default is part of the dispatch.
+exponentials and the rarer-literal rule in affine mode, and with
+exponentials in linear mode it runs a search under each rule and
+answers with the first that decides, the forward one within a copy
+bound of its own (`Options::forward_copies`, 30) where the sequent is a
+Horn program. That default never decides less than the rarer-literal
+search alone when no limit ends it; what it costs under a time limit,
+and whether the bounds are the right ones, the second baseline says.
 
 **D9. Outcomes are three-valued.** `Proved(proof)`, `Unprovable` (only when
 the search was exhaustive) and `Unknown` (bound or time limit hit, with the
@@ -1003,3 +1006,60 @@ into an option or names it as a follow-up.
   bias become the record of the default's components, and its exact
   list is settled at the review of that session; prompt 17 assesses the
   combination instead of choosing a default.
+- 2026-10-02 (evening): the second session of step 15 reviewed and
+  accepted. Eleven commits, "Decide a sequent with exponentials under
+  both biases" to "Report the review of the default bias and what it led
+  to"; all checks pass (clippy, the tests with 122 in core, deny, `nix
+  flake check`). On a sequent with exponentials in linear mode
+  `Bias::Auto` now runs two searches of the unchanged engine, the
+  backward one (rarer literal, within `Options::copies`) and the forward
+  one (factor rule; on a Horn program without Mix within the larger of
+  that and the new `Options::forward_copies`, 30), each with a memo and
+  an arena of its own, and answers with the first that decides. They
+  share nothing, which makes the contract an identity rather than an
+  argument per prune: with no stop the default decides whatever either
+  explicit search decides. On one core they alternate in slices of
+  counted work on two threads of which one runs at a time (nothing is
+  restarted, the run is a function of the input); without the
+  `parallel` feature they take turns from their start on growing
+  budgets; on a pool they run side by side on a pool each. The numbers:
+  50 of the 109 sampled LLTP problems proved at 5 s where the old
+  default proved 11, the counter with 16 tokens in 404 stable sequents
+  (473 232), the unreachable counter refuted; the 34 target rows
+  without exponentials keep their counters. The session's reviewer
+  compared start and head on millions of runs (no contradiction; the
+  default never less than either explicit search; stops, panics and
+  pools) and found two defects that were fixed: a forward bound applied
+  to sequents that are no Horn programs made "unknown" slow (44 s for
+  one that took 0.02 s), and a time limit was honoured late once the
+  forward search had ended. The planning session read the scheme (the
+  plan of the two searches, the Horn test, the baton, the merge) and
+  checked by hand: every LLTP row the first baseline decided, 1 890 at
+  5 s on one core, keeps its verdict, the lost net `IBM5964_1_1` proved
+  in 0.2 ms (one row of the rerun, a `NeighborGrid` net, ended at 5.2 s
+  while the machine was loaded and takes 3.9 s alone: the default costs
+  the rows the backward search decides slowly 1.8 times, and those are
+  the ones nearest the limit); the target file against the last; the
+  options and messages of the CLI; a 300 ms limit on a hard net ending
+  after 0.37 s on one thread and 0.34 s on four; the interactive
+  `close` under the default; the two tests of the default without
+  threads. Accepted with their reasons: `--copies` no longer bounds
+  the forward search on a Horn program (`--copies 0 "!A |- A"` is
+  proved; `--forward-copies` is the knob); a second thread under
+  `--jobs 1` where threads exist; the bound's price, a slower "unknown"
+  on Horn programs whose markings grow (45 of a reviewer's 2 000 random
+  ones over a second, against 471 newly decided), which the author's
+  word on practical use during the session weighs on and `later.md`
+  keeps open; the contract holding only without a stop. Six measuring
+  runs the prompt did not name were made without asking and are named
+  in the report. One fix here: CLAUDE.md's verification row named the
+  old target file. A follow-up found here: the Horn test reads the
+  forest's roots, not the goal handed to `prove_goal`. The author also
+  said during the session that the tool is meant for practical use,
+  which is what the efficiency is for; `later.md` has "Problems from
+  practice" (benchmark sets from practice, unchecked so far) and prompt
+  17 weighs by it. Prompt 16 is final: the default passes, a `--bias
+  rarer` pass and a `--bias factors --copies 30` pass over the library
+  as the record of the two components, the rows nearest the limit
+  named, `lltp-copies-10` for the question of the default copy bound,
+  the portfolio measured once more before step 17 decides its removal.
