@@ -468,11 +468,19 @@ the net engine's, and the others stay zero.
   more, by one to four orders of magnitude) and on equal literals inside
   one pure `⊗` or `⅋` tree (a sequent of five blocks `x ⊗ x ⊗ x ⊗ x`
   against `~x ⅋ ~x ⅋ ~x ⅋ ~x` with one defect: over 10 s against 20 ms at
-  multiplicity 4), and wins by up to five orders on literals repeated
-  three or four times across different conclusions (`wide-m3`,
-  `wide-m4`). No threshold serves both; the feature that separates them
-  is equal literals under one pure tree, which the leaf symmetry break
-  below would take from the net engine's weaknesses. Every other
+  multiplicity 4). Its wins were measured against the focused engine
+  that enumerated its splits (five orders of magnitude on literals
+  repeated three or four times across different conclusions, `wide-m3`
+  and `wide-m4`); since the focused engine searches its splits by their
+  counts it proves `wide-m3` at 30 and `wide-m4` at 28 in 0.15 ms, as
+  fast as the net engine (0.23 and 0.38 ms), and `wide-m1` at 256 in
+  7 ms against 11 ms. What still needs the net engine is width at the
+  default recursion limit: a free split costs the focused engine a
+  level per link, so `wide-m1` at 2 048 ends at the limit where the net
+  engine proves it in 0.8 s. Whether `net` stays the default anywhere
+  else is for the second baseline's `engines` runs to say; the feature
+  that hurts it is equal literals under one pure tree, which the leaf
+  symmetry break below would take from its weaknesses. Every other
   classical input, exponentials included, and everything in affine mode
   goes to `focus`.
   Before both: exactly two roots in the additive fragment with at least
@@ -1530,7 +1538,7 @@ same test file:
 - `Mode` is `{"intuitionistic": …, "affine": …, "mix": …}`.
 - `Outcome` serializes only (it is output): `verdict` (`proved`,
   `unprovable`, `unknown`), `reason` for `unknown` (a snake_case tag,
-  `{"context_too_wide": n}`), `fragment`, `mode`, `engine`, `statistics`,
+  `{"copy_bound": n}`), `fragment`, `mode`, `engine`, `statistics`,
   and for `proved` the proof's own `sequent` and `proof` keys, flattened, so
   that the whole outcome deserializes as a `Proof` (serde ignores the other
   keys) and `linlog check` reads the output of `linlog prove --format json`.
