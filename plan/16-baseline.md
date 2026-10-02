@@ -24,9 +24,21 @@ it left as it was.
 
 ## The slot
 
-The machine is the benchmark's from 20:00 to 07:00 on the night the
-author names. Outside that slot it is shared, and the rules in "How to
-work on this step" below apply.
+The author names the night and agrees the slot with you. The first
+baseline had 20:00 to 07:00; this time the author expects to be able to
+give the machine earlier in the evening, and the end is negotiable (the
+author, 2026-10-02). So the slot follows from the run, not the run from
+the slot: once your estimate is ready (item 1), tell the author how long
+the whole run needs, propose a start and an end with a margin of half an
+hour or so, and arm with what the author agrees to
+(`bench/baseline.sh --arm --fresh --slot=HH:MM-HH:MM`). One slot that
+holds the whole run is worth more than a tidy hour: a baseline finished
+in one night has one start on one commit under one set of conditions.
+An earlier start does not hurt the comparison, since the unit waits for
+an idle machine on mains either way and the first baseline started at
+21:23; what must hold is that the machine is the benchmark's for the
+whole slot. Outside the slot it is shared, and the rules in "How to work
+on this step" below apply.
 
 ## What to do
 
@@ -66,12 +78,13 @@ work on this step" below apply.
    in both passes and again on every core with and without the
    portfolio. Estimate the night by day from step 15's target rows and
    the first baseline's (arithmetic, not a run), set `estimate` from
-   it, and tell the author before the night whether one night is
-   enough. If it is not, do not drop rows the first baseline has: the
-   stages are ordered so that the stop at 07:00 cuts the parallel ones,
-   and the script run again without `--fresh` finishes the baseline on
-   a second night.
-2. **The night.** Arm the unattended start as step 14 did, give the
+   it, and ask the author for a slot that holds it ("The slot" above).
+   Only if no slot the author can give holds the run: do not drop rows
+   the first baseline has, since the stages are ordered so that the
+   stop cuts the parallel ones, and the script run again without
+   `--fresh` finishes the baseline on a second night.
+2. **The night.** Arm the unattended start as step 14 did, with the
+   slot agreed, give the
    author the two blocks to paste (before leaving, and in the morning),
    the time the run should end, and the word to come back with
    ("continue"), and end your turn. Do not poll overnight. The timers

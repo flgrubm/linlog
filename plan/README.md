@@ -870,3 +870,9 @@ into an option or names it as a follow-up.
   and net-engine candidates' numbers, the parallel follow-ups with the
   CLI's default thread count and the portfolio's removal as questions
   for step 17, the benchmark follow-ups brought up to date).
+- 2026-10-02, the slot of step 16: the author expects to be able to give
+  the machine earlier than 20:00 on that night, and the end is
+  negotiable. Prompt 16 therefore has the session estimate the run
+  first, propose a slot that holds all of it with a margin and arm with
+  `--slot`, a second night being the fallback only if no slot the author
+  can give is long enough.

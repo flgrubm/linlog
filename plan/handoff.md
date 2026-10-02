@@ -81,9 +81,11 @@ claude --model claude-fable-5-1 --effort xhigh --name step-15 ((open --raw plan/
 ```
 
 The order is 15 (by day), 16 (a second night, after 15 is reviewed),
-17 (assessment, the author's answers, then the plan from 18). The author
-gives the machine to the benchmarks from 20:00 to 07:00 on baseline
-nights; by day it is shared.
+17 (assessment, the author's answers, then the plan from 18). By day the
+machine is shared; a baseline night's slot is agreed with the author
+(20:00 to 07:00 for the first baseline; for step 16 the author can start
+earlier and the end is negotiable, so its prompt has the session propose
+a slot from its estimate).
 
 ## What a review is
 
