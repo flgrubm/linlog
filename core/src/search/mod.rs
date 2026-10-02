@@ -462,8 +462,11 @@ impl Options {
     /// bound llprover searches with by default.
     pub const DEFAULT_COPIES: u32 = 3;
 
-    /// The forward search's copy bound of the default options.
-    pub const DEFAULT_FORWARD_COPIES: u32 = 10;
+    /// The forward search's copy bound of the default options: thirty
+    /// steps of a forward chain. An undecided search to that depth costs
+    /// milliseconds on a small Horn program, and a deeper one decided
+    /// nothing more within seconds on Petri nets from practice.
+    pub const DEFAULT_FORWARD_COPIES: u32 = 30;
 
     /// Sets the most copies of `?` formulas one branch of a proof may take.
     /// The search deepens the bound from zero up to this value; a sequent
