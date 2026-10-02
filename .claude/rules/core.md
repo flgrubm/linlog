@@ -141,9 +141,21 @@ of terms. Invariants the code relies on:
   chains forward and needs `n − 1` copies on its one branch where the
   rarer-literal rule needs `log₂ n`, so within the family's bound
   `Proved` became `CopyBound` (measured), which a default must not do.
-  At a bound of `n − 1` the same rule would decide the counter with 16
-  tokens in 19 stable sequents instead of 392 160: a bias option for
-  exponential problems is a follow-up. Rules tried on the
+  At a bound of `n − 1` the same rule decides the counter with 16
+  tokens in 19 stable sequents instead of 392 160, which is what
+  `Options::bias` is for: `Bias::Auto` is the rule above, `Bias::Rarer`
+  and `Bias::Factors` name its two halves for any sequent
+  (`Forest::bias_under`; the engine reads its polarities off
+  `Counts::positive`, never off `Forest::polarity`, so that the option
+  reaches every place a literal's polarity matters, `literal_tensor`
+  included). On the LLTP sample of the target set (109 intuitionistic
+  problems, 5 s, the default bound of 3), `Factors` proves 19 where
+  `Rarer` proves 9 and answers 45 more at the copy bound within
+  milliseconds where `Rarer` runs into the time limit, and it loses 3
+  of the 9 (two to the copy bound, one to the recursion limit): no rule
+  wins everywhere, hence the option and its harness axis. Running
+  `Factors` first and `Rarer` after it when the first answers
+  `Unknown` would keep every verdict and is a follow-up. Rules tried on the
   exponential-free targets and not taken: `Var` always (as good on the
   families written two-sided, where it is forward chaining, but it
   depends on how the atoms happen to be written and loses the gains on
@@ -427,7 +439,8 @@ level that never hit the copy bound, `Unknown(Reason)`, with
 the `Mode`, the `Engine` that ran, the `Statistics`, and `net`, the
 `ProofStructure` the net engine found (`None` from the focused engine).
 `Options` has private fields and setters (`memo_limit`, `recursion_limit`,
-`engine`, `fragment`, `test_period`, `copies`, `jobs`, `portfolio`), the
+`engine`, `fragment`, `test_period`, `copies`, `jobs`, `portfolio`,
+`bias`), the
 constants `DEFAULT_MEMO_LIMIT`, `DEFAULT_RECURSION_LIMIT` and
 `DEFAULT_COPIES`, which the CLI shows as its defaults, and `stack_size()`,
 the stack a thread needs at the recursion limit, which sizes the CLI's

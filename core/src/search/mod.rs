@@ -22,7 +22,7 @@ mod parallel;
 use crate::Error;
 use crate::fragment::{Fragment, Mode};
 use crate::nets::ProofStructure;
-use crate::occurrences::{Forest, OccId, Reading};
+use crate::occurrences::{Bias, Forest, OccId, Reading};
 use crate::proofs::Proof;
 use crate::sequents::Sequent;
 use std::fmt::{Display, Formatter, Result as FmtResult};
@@ -415,6 +415,8 @@ pub struct Options {
     /// Whether the workers of a parallel search order the alternatives of
     /// their choices by seeds of their own rather than by id.
     portfolio: bool,
+    /// How the focused engine picks each atom's positive literal.
+    bias: Bias,
 }
 
 impl Default for Options {
@@ -434,6 +436,7 @@ impl Default for Options {
             copies: Self::DEFAULT_COPIES,
             jobs: 1,
             portfolio: false,
+            bias: Bias::Auto,
         }
     }
 }
@@ -532,6 +535,19 @@ impl Options {
     /// the `parallel` feature, or on one thread, it has no effect.
     pub fn portfolio(self, portfolio: bool) -> Self {
         Self { portfolio, ..self }
+    }
+
+    /// Sets how the focused engine picks the positive literal of every
+    /// atom. No choice changes what is provable. The default,
+    /// [`Bias::Auto`], takes [`Bias::Factors`] without exponentials and
+    /// [`Bias::Rarer`] with them or in affine mode. On a sequent with exponentials whose
+    /// hypotheses are Horn clauses, a Petri net for one, `Factors` chains
+    /// forward and often decides in milliseconds what `Rarer` does not
+    /// decide at all, but a proof then takes one copy per step on one
+    /// branch, so it needs [`copies`](Self::copies) raised to the number
+    /// of steps and answers [`Reason::CopyBound`] below that.
+    pub fn bias(self, bias: Bias) -> Self {
+        Self { bias, ..self }
     }
 
     /// Returns the stack, in bytes, a thread needs to run the search at

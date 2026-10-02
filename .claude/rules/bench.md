@@ -52,7 +52,9 @@ beyond clap and anyhow, which the CLI already has.
 - **The CSV columns are the interface** (`run::HEADER`): `summary` reads
   them by name, and the committed `results/*/*.csv` are what a later change
   is compared with, so add columns at the end of the tail and never
-  rename one. Fields never contain commas (`clean` turns them into `;`),
+  rename one (`bias`, the last, came after the first baseline: a file
+  without it ran everything with `auto`, which is how `--resume` and
+  `summary` read it). Fields never contain commas (`clean` turns them into `;`),
   so the files are split on commas without quoting.
 - **`verdict` and `reason`**: `proved`, `unprovable`, `unknown` (reasons
   `timeout`, `copy_bound`, `context_too_wide`, `recursion_limit`,
@@ -209,5 +211,7 @@ beyond clap and anyhow, which the CLI already has.
 - **A problem source**: a function in `problems.rs` that lists
   `Reference`s and an arm of `load`.
 - **A configuration axis** (a new `Options` knob): a `RunArgs` flag, its
-  argument in `child`, a `OneArgs` field applied in `tail`, a column of
-  the parent's prefix, and the label in `summary`'s `config`.
+  argument in `child`, a `OneArgs` field applied in `tail`, a column at
+  the end of the tail (also filled in by `died` and by the error rows),
+  the key of `finished`, and the label in `summary`'s `config`; `--bias`
+  is the model.

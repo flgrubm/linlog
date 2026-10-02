@@ -13,7 +13,7 @@ use crate::{OneArgs, RunArgs};
 use anyhow::{Context, Result, anyhow};
 use clap::ValueEnum;
 use linlog::search::{Engine, Options, Reason, Verdict, prove_until};
-use linlog::{Atom, Error, Forest, Mode, Sign};
+use linlog::{Atom, Bias, Error, Forest, Mode, Sign};
 use std::collections::HashSet;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -25,10 +25,10 @@ use std::time::{Duration, Instant};
 pub const HEADER: &str = "source,family,size,index,problem,mode,engine_requested,jobs,portfolio,\
                           test_period,timeout_s,run,copies,expected,verdict,reason,checked,engine,\
                           fragment,occurrences,multiplicity,time_ms,nodes,memo_hits,memo_entries,\
-                          splits,links,tests,recursion_limit,cpu_ms,wait_ms";
+                          splits,links,tests,recursion_limit,cpu_ms,wait_ms,bias";
 
 /// The columns the child prints.
-const TAIL: usize = 19;
+const TAIL: usize = 20;
 
 /// Which mode to run a problem in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -55,6 +55,28 @@ impl ModeChoice {
                 mix: false,
                 ..given
             },
+        }
+    }
+}
+
+/// How the focused engines pick the positive literal of every atom.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum BiasChoice {
+    /// By tensor factors without exponentials, the rarer literal with them
+    Auto,
+    /// The rarer literal
+    Rarer,
+    /// By tensor factors
+    Factors,
+}
+
+impl BiasChoice {
+    /// Returns the rule of the library.
+    fn bias(self) -> Bias {
+        match self {
+            Self::Auto => Bias::Auto,
+            Self::Rarer => Bias::Rarer,
+            Self::Factors => Bias::Factors,
         }
     }
 }
@@ -170,6 +192,7 @@ pub fn run(args: &RunArgs) -> Result<()> {
                         &threads.to_string(),
                         &args.portfolio.to_string(),
                         &args.test_period.map_or(String::new(), |p| p.to_string()),
+                        &name(&args.bias),
                     ]
                     .join(",");
                     if done_before.contains(&key) {
@@ -221,8 +244,9 @@ pub fn run(args: &RunArgs) -> Result<()> {
 }
 
 /// The problems and configurations a CSV file has a row for, each as its
-/// source, family, problem, mode, requested engine, jobs, portfolio and
-/// test period joined by commas.
+/// source, family, problem, mode, requested engine, jobs, portfolio, test
+/// period and bias joined by commas; a file from before the bias had a
+/// column ran them all with `auto`.
 fn finished(path: &Path) -> Result<HashSet<String>> {
     let Ok(text) = std::fs::read_to_string(path) else {
         return Ok(HashSet::new());
@@ -244,11 +268,15 @@ fn finished(path: &Path) -> Result<HashSet<String>> {
     let Some(key) = key.into_iter().collect::<Option<Vec<usize>>>() else {
         anyhow::bail!("{} is not a CSV file of `run`", path.display());
     };
+    let bias = at("bias");
     Ok(lines
         .map(|line| {
             let fields: Vec<&str> = line.split(',').collect();
+            let field = |i: usize| fields.get(i).copied().unwrap_or("");
+            let bias = bias.map(field).filter(|b| !b.is_empty()).unwrap_or("auto");
             key.iter()
-                .map(|&i| fields.get(i).copied().unwrap_or(""))
+                .map(|&i| field(i))
+                .chain([bias])
                 .collect::<Vec<_>>()
                 .join(",")
         })
@@ -281,6 +309,7 @@ fn child(
     if let Some(copies) = args.copies {
         command.args(["--copies", &copies.to_string()]);
     }
+    command.args(["--bias", &name(&args.bias)]);
     if let Some(limit) = args.recursion_limit {
         command.args(["--recursion-limit", &limit.to_string()]);
     }
@@ -324,6 +353,7 @@ fn child(
         let mut fields = vec![String::new(); TAIL];
         fields[2] = "unknown".to_owned();
         fields[3] = reason;
+        fields[19] = name(&args.bias);
         fields[9] = format!("{:.3}", start.elapsed().as_secs_f64() * 1000.0);
         fields.join(",")
     };
@@ -395,6 +425,7 @@ fn tail(args: &OneArgs) -> String {
         .jobs(args.jobs)
         .portfolio(args.portfolio)
         .copies(copies)
+        .bias(args.bias.bias())
         .test_period(args.test_period)
         .recursion_limit(recursion);
 
@@ -440,6 +471,7 @@ fn tail(args: &OneArgs) -> String {
                 (7, &occurrences.to_string()),
                 (8, &multiplicity.to_string()),
                 (16, &recursion.to_string()),
+                (19, &name(&args.bias)),
             ]);
         }
     };
@@ -483,6 +515,7 @@ fn tail(args: &OneArgs) -> String {
         recursion.to_string(),
         cpu,
         wait,
+        name(&args.bias),
     ]
     .join(",")
 }

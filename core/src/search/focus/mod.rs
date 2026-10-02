@@ -58,7 +58,7 @@ use self::counts::{Counts, Split, Tally};
 use self::memo::{Entry, Failure, Key, Memo, Table};
 use super::{Options, Reason, Statistics, Stop, Verdict};
 use crate::fragment::{Fragment, Mode};
-use crate::occurrences::{Forest, OccId, OccSet, Polarity, Position, Reading};
+use crate::occurrences::{Bias, Forest, OccId, OccSet, Position, Reading};
 use crate::proofs::{Node, NodeId, Proof, Side};
 use crate::sequents::Kind;
 use std::hash::BuildHasher as _;
@@ -123,7 +123,7 @@ pub(crate) fn search_goal(
     options: &Options,
     stop: &mut dyn FnMut() -> bool,
 ) -> (Search, Vec<Node>, Statistics) {
-    let counts = Counts::new(forest);
+    let counts = Counts::new(forest, bias(options, mode));
     let classes = Classes::new(forest, reading);
     let rules = Rules::new(fragment, mode, &counts);
     let mut engine = Engine::new(
@@ -147,6 +147,17 @@ pub(crate) fn search_goal(
     (result, nodes, statistics)
 }
 
+/// The bias a search runs under: the one the options name, where `Auto`
+/// under weakening is the rarer literal, since nothing forces a split
+/// there and the factors have nothing to say.
+pub(crate) fn bias(options: &Options, mode: Mode) -> Bias {
+    if options.bias == Bias::Auto && mode.affine {
+        Bias::Rarer
+    } else {
+        options.bias
+    }
+}
+
 /// Whether a split of a goal into the two premises of a `⊗`, each given
 /// with its subformula of the `⊗`, or of a Mix passes the count prunes the
 /// engine applies to every split: the interval check per atom and, in the
@@ -159,7 +170,7 @@ pub(crate) fn split_passes(
     left: &[OccId],
     right: &[OccId],
 ) -> bool {
-    let counts = Counts::new(forest);
+    let counts = Counts::new(forest, Bias::Auto);
     let rules = Rules::new(fragment, mode, &counts);
     let mut split = counts.split();
     for (members, side) in [(left, Side::Left), (right, Side::Right)] {
@@ -1049,7 +1060,7 @@ impl<'a> Engine<'a> {
                 }))
             }
             Kind::Zero => Ok(None),
-            Kind::Var | Kind::DualVar if self.forest.polarity(f) == Polarity::Positive => {
+            Kind::Var | Kind::DualVar if self.counts.positive(self.forest, f) => {
                 // The initial rules: the context is the dual literal, or
                 // nothing and the dual lies in `Θ`.
                 let mut members = self.take_list();
@@ -1113,7 +1124,7 @@ impl<'a> Engine<'a> {
             Kind::Zero => Some(Forced::Nothing),
             _ if self.rules.affine => None,
             Kind::One | Kind::Bang => Some(Forced::Empty),
-            Kind::Var | Kind::DualVar if self.forest.polarity(factor) == Polarity::Positive => {
+            Kind::Var | Kind::DualVar if self.counts.positive(self.forest, factor) => {
                 Some(Forced::Dual)
             }
             Kind::Tensor if self.counts.literal_tensor(factor) => Some(Forced::Duals),
@@ -2011,6 +2022,37 @@ mod tests {
         // Here the relative is reached on another branch.
         let sibling = "!(!!(b -o c) -o !c), b |- (c * ((a -o a) * c))";
         assert!(!provable(sibling, Mode::INTUITIONISTIC));
+    }
+
+    /// The bias never changes what is provable, only what a copy bound
+    /// allows: the counter with eight tokens is proved within three copies
+    /// a branch chaining backward, and needs seven chaining forward, where
+    /// it visits a fraction of the stable sequents.
+    #[test]
+    fn bias_option() {
+        let (sequent, copies) = crate::families::counter(8, false);
+        let forest = Forest::new(&sequent).unwrap();
+        let run = |options: &Options| {
+            let fragment = sequent.fragment();
+            search(
+                &forest,
+                fragment,
+                Mode::CLASSICAL,
+                None,
+                options,
+                &mut || false,
+            )
+        };
+        let backward = Options::default().copies(copies);
+        let (verdict, slow) = run(&backward);
+        assert!(verdict.proof().is_some());
+        let forward = backward.bias(Bias::Factors);
+        let (verdict, _) = run(&forward);
+        assert!(matches!(verdict, Verdict::Unknown(Reason::CopyBound(_))));
+        let (verdict, fast) = run(&forward.copies(7));
+        let proof = verdict.proof().expect("seven steps on one branch");
+        assert_eq!(proof.check(Mode::CLASSICAL), Ok(()));
+        assert!(fast.nodes * 10 < slow.nodes, "{fast:?} against {slow:?}");
     }
 
     /// A split search whose splits all fail in focus visits no stable

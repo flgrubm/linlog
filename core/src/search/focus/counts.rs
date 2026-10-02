@@ -6,7 +6,7 @@
 //! the `MLL` count equation sums. Both are necessary conditions on a
 //! provable sequent, computed once per forest and summed per sequent.
 
-use crate::occurrences::{Forest, OccId, Polarity};
+use crate::occurrences::{Bias, Forest, OccId, Sign};
 use crate::proofs::Side;
 use crate::sequents::{Atom, Kind};
 
@@ -64,6 +64,8 @@ pub(crate) struct Counts {
     /// Per occurrence, whether it is a tensor of positive literals none of
     /// whose duals can lie in the unrestricted zone.
     literal_tensor: Box<[bool]>,
+    /// Per atom, the sign of its positive literal in this search.
+    positive: Box<[Sign]>,
 }
 
 /// One entry of a row: the atom and the interval of its balance.
@@ -78,8 +80,10 @@ pub(crate) struct Entry {
 }
 
 impl Counts {
-    /// Computes the rows and weights of every occurrence of a forest.
-    pub(crate) fn new(forest: &Forest) -> Self {
+    /// Computes the rows and weights of every occurrence of a forest, and
+    /// the literals that are positive under the bias given.
+    pub(crate) fn new(forest: &Forest, bias: Bias) -> Self {
+        let positive = forest.bias_under(bias);
         let n = forest.len();
         // An atom with a literal below a `?` or `!` anywhere in the problem
         // can be copied or discarded any number of times, so its balance
@@ -111,8 +115,7 @@ impl Counts {
         // A positive literal whose dual only ever lies in the linear zone.
         let linear = |o: OccId| match (forest.atom(o), forest.sign(o)) {
             (Some(atom), Some(sign)) => {
-                forest.polarity(o) == Polarity::Positive
-                    && !unrestricted[atom.index()][!sign as usize]
+                sign == positive[atom.index()] && !unrestricted[atom.index()][!sign as usize]
             }
             _ => false,
         };
@@ -206,6 +209,16 @@ impl Counts {
             num_atoms,
             absorbs_from_copies,
             literal_tensor: literal_tensor.into_boxed_slice(),
+            positive,
+        }
+    }
+
+    /// Returns whether the occurrence is a positive literal: the literal
+    /// of its atom that the bias of the search makes positive.
+    pub(crate) fn positive(&self, forest: &Forest, o: OccId) -> bool {
+        match (forest.atom(o), forest.sign(o)) {
+            (Some(atom), Some(sign)) => sign == self.positive[atom.index()],
+            _ => false,
         }
     }
 
@@ -597,7 +610,7 @@ mod tests {
     fn counts(input: &str) -> (Forest, Counts) {
         let s: Sequent = input.parse().unwrap_or_else(|e| panic!("{input:?}: {e}"));
         let f = Forest::new(&s).unwrap();
-        let c = Counts::new(&f);
+        let c = Counts::new(&f, Bias::Auto);
         (f, c)
     }
 

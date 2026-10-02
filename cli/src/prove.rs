@@ -204,6 +204,7 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         .engine(args.engine.into())
         .fragment(args.fragment.map(Into::into))
         .copies(args.copies)
+        .bias(args.bias.into())
         .jobs(if args.deterministic { 1 } else { args.jobs });
     let period = polls_per_clock(if args.deterministic { 1 } else { args.jobs });
     let format = args.output.format;

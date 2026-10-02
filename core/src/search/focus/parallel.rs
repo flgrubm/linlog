@@ -59,7 +59,7 @@ pub(crate) fn search_goal(
     runtime: &Runtime,
     stop: &mut dyn FnMut() -> bool,
 ) -> (Search, Vec<Node>, Statistics) {
-    let counts = Counts::new(forest);
+    let counts = Counts::new(forest, super::bias(options, mode));
     let classes = Classes::new(forest, reading);
     let rules = Rules::new(fragment, mode, &counts);
     let memo = Shared::new(options.memo_limit);

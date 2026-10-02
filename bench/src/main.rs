@@ -96,6 +96,10 @@ pub struct RunArgs {
     /// (default: the problem's, else 3)
     #[arg(long)]
     copies: Option<u32>,
+    /// How the focused engines pick the positive literal of every atom:
+    /// `auto`, `rarer` or `factors`
+    #[arg(long, default_value = "auto")]
+    bias: run::BiasChoice,
     /// The net engine's links between two exact acyclicity tests
     /// (default: every link up to 200 occurrences, every fourth above)
     #[arg(long)]
@@ -153,6 +157,9 @@ pub struct OneArgs {
     /// The copy bound, overriding the problem's
     #[arg(long)]
     copies: Option<u32>,
+    /// The bias
+    #[arg(long, default_value = "auto")]
+    bias: run::BiasChoice,
     /// The net engine's test period
     #[arg(long)]
     test_period: Option<u32>,

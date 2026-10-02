@@ -45,7 +45,10 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   the one-sided sequent. `--copies` (default
   `Options::DEFAULT_COPIES`) is the per-branch copy bound of the focused
   engine's iterative deepening; `unknown … the copy bound of N was reached`
-  is exit status 3 like every other unknown. `--format net` prints the net the
+  is exit status 3 like every other unknown. `--bias auto|rarer|factors`
+  (`BiasArg`, on `prove` and `interact`) is `Options::bias`: how the
+  focused engines pick each atom's positive literal, never what is
+  provable. `--format net` prints the net the
   net engine found (`Outcome::net`) and otherwise the net read off the
   proof; `--stats` prints the counters of the engine that ran
   (`statistics`, one arm per engine with its own counters). `--format

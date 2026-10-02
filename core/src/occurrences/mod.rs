@@ -62,11 +62,38 @@ impl Not for Sign {
     }
 }
 
+/// How the positive literal of every atom is chosen for focused proof
+/// search. Focusing is complete for every choice, so the rules differ in
+/// speed and, with exponentials, in the copies a branch of the proofs
+/// they lead to needs: never in what is provable.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Bias {
+    /// [`Factors`](Self::Factors) for a sequent without exponentials,
+    /// [`Rarer`](Self::Rarer) for one with a `!` or a `?`; a search with
+    /// weakening takes `Rarer` in either case.
+    #[default]
+    Auto,
+    /// The literal with fewer occurrences in the sequent is positive, `Var`
+    /// when both have the same number. With Horn-like hypotheses this
+    /// mostly chains backward from the goal, which keeps the copies per
+    /// branch low.
+    Rarer,
+    /// The literal that is more often a direct factor of a `⊗` is
+    /// positive, an occurrence counting half for every `&` or `⊕` above
+    /// it; the rarer literal on a tie. A `⊗` with a positive literal for a
+    /// factor takes exactly the dual literal for it, so its split needs no
+    /// search. With Horn-like hypotheses this chains forward from the
+    /// facts, one copy per step on a single branch: fast, and in need of a
+    /// copy bound as large as the number of steps.
+    Factors,
+}
+
 /// The polarity of a formula in focused proof search: positive connectives
 /// (`⊗ 1 ⊕ 0 !`) have non-invertible rules and are decomposed under focus,
 /// negative ones (`⅋ ⊥ & ⊤ ?`) have invertible rules and are decomposed
 /// eagerly. A literal's polarity is the bias its atom was given, see
-/// [`Forest::bias`].
+/// [`Forest::bias`] and [`Bias`].
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Polarity {
@@ -329,18 +356,86 @@ impl Forest {
         Some(a)
     }
 
-    /// Returns the sign of the positive literal of an atom; the literal of
-    /// the other sign is negative. Focused search is complete whatever the
-    /// choice, so it is made for speed, from the sequent alone. Without
-    /// exponentials, the literal that is more often a direct factor of a
-    /// `⊗` is positive, since such a `⊗` takes exactly the dual literal
-    /// for that factor and needs no search for its split; an occurrence
-    /// counts half for every `&` or `⊕` above it. With an exponential
-    /// anywhere in the sequent, or when the two literals count the same,
-    /// the literal with fewer occurrences is positive, `Var` when both
-    /// have the same number.
+    /// Returns the sign of the positive literal of an atom under
+    /// [`Bias::Auto`]; the literal of the other sign is negative. Focused
+    /// search is complete whatever the choice, so it is made for speed,
+    /// from the sequent alone.
     pub fn bias(&self, atom: Atom) -> Sign {
         self.bias[atom.index()]
+    }
+
+    /// Returns, per atom, the sign of its positive literal under the rule
+    /// given.
+    pub fn bias_under(&self, rule: Bias) -> Box<[Sign]> {
+        if rule == Bias::Auto {
+            return self.bias.clone();
+        }
+        let terms = self.sequent.terms();
+        Self::signs(
+            rule,
+            &self.kind,
+            &self.parent,
+            |o| terms[self.term[o].index()].atom().unwrap(),
+            |a| {
+                let count = |sign| self.literals(Atom::new(a as u32), sign).len() as u32;
+                (count(Sign::Var), count(Sign::DualVar))
+            },
+            self.bias.len(),
+        )
+    }
+
+    /// The sign of the positive literal of every atom under a rule, from
+    /// the kinds and parents of the occurrences, the atom of a literal
+    /// occurrence, and the number of `Var` and of `DualVar` literals of an
+    /// atom.
+    fn signs(
+        rule: Bias,
+        kind: &[Kind],
+        parent: &[u32],
+        atom: impl Fn(usize) -> Atom,
+        literals: impl Fn(usize) -> (u32, u32),
+        num_atoms: usize,
+    ) -> Box<[Sign]> {
+        // A `⊗` with a positive literal for a factor has its split forced,
+        // so the literal that is more often such a factor is the positive
+        // one; an occurrence counts half for every additive choice above
+        // it, of which a proof takes one side.
+        let by_factors = match rule {
+            Bias::Auto => !kind.iter().any(|k| matches!(k, Kind::Bang | Kind::Quest)),
+            Bias::Rarer => false,
+            Bias::Factors => true,
+        };
+        let mut factors = vec![0u64; 2 * num_atoms];
+        if by_factors {
+            /// The weight of an occurrence under no additive choice.
+            const WHOLE: u64 = 1 << 31;
+            let mut choices = vec![0u8; kind.len()];
+            for (o, k) in kind.iter().enumerate() {
+                if parent[o] == NONE {
+                    continue;
+                }
+                let p = parent[o] as usize;
+                let additive = matches!(kind[p], Kind::With | Kind::Plus);
+                choices[o] = choices[p].saturating_add(u8::from(additive));
+                if let Some(s) = k.sign()
+                    && kind[p] == Kind::Tensor
+                {
+                    factors[2 * atom(o).index() + s as usize] +=
+                        WHOLE.checked_shr(u32::from(choices[o])).unwrap_or(0);
+                }
+            }
+        }
+        (0..num_atoms)
+            .map(|a| {
+                let (vars, duals) = literals(a);
+                match factors[2 * a].cmp(&factors[2 * a + 1]) {
+                    Ordering::Greater => Sign::Var,
+                    Ordering::Less => Sign::DualVar,
+                    Ordering::Equal if duals < vars => Sign::DualVar,
+                    Ordering::Equal => Sign::Var,
+                }
+            })
+            .collect()
     }
 
     /// Returns the occurrences of one literal of an atom, `a` or `~a`, in
@@ -438,45 +533,14 @@ impl TryFrom<Sequent> for Forest {
                 literal_start[2 * a.index() + s as usize + 1] += 1;
             }
         }
-        // The bias. A `⊗` with a positive literal for a factor has its split
-        // forced, so the literal that is more often such a factor is the
-        // positive one; an occurrence counts half for every additive
-        // choice above it, of which a proof takes one side. Not with
-        // exponentials, where the choice decides how many copies a branch
-        // of the proof needs: there, and on a tie, the rarer literal.
-        let exponentials = kind.iter().any(|k| matches!(k, Kind::Bang | Kind::Quest));
-        let mut factors = vec![0u64; 2 * num_atoms];
-        if !exponentials {
-            /// The weight of an occurrence under no additive choice.
-            const WHOLE: u64 = 1 << 31;
-            let mut choices = vec![0u8; n];
-            for (o, k) in kind.iter().enumerate() {
-                if parent[o] == NONE {
-                    continue;
-                }
-                let p = parent[o] as usize;
-                let additive = matches!(kind[p], Kind::With | Kind::Plus);
-                choices[o] = choices[p].saturating_add(u8::from(additive));
-                if let Some(s) = k.sign()
-                    && kind[p] == Kind::Tensor
-                {
-                    let a = terms[term[o].index()].atom().unwrap();
-                    factors[2 * a.index() + s as usize] +=
-                        WHOLE.checked_shr(u32::from(choices[o])).unwrap_or(0);
-                }
-            }
-        }
-        let bias: Box<[Sign]> = (0..num_atoms)
-            .map(|a| {
-                let (vars, duals) = (literal_start[2 * a + 1], literal_start[2 * a + 2]);
-                match factors[2 * a].cmp(&factors[2 * a + 1]) {
-                    Ordering::Greater => Sign::Var,
-                    Ordering::Less => Sign::DualVar,
-                    Ordering::Equal if duals < vars => Sign::DualVar,
-                    Ordering::Equal => Sign::Var,
-                }
-            })
-            .collect();
+        let bias = Self::signs(
+            Bias::Auto,
+            &kind,
+            &parent,
+            |o| terms[term[o].index()].atom().unwrap(),
+            |a| (literal_start[2 * a + 1], literal_start[2 * a + 2]),
+            num_atoms,
+        );
         for g in 1..literal_start.len() {
             literal_start[g] += literal_start[g - 1];
         }
@@ -770,6 +834,14 @@ mod tests {
         assert_eq!(bias(choice, "D"), Sign::Var);
         let exponential = "|- ?~A, A * ~B, A * ~B, B";
         assert_eq!(bias(exponential, "A"), Sign::DualVar);
+        // The rules by name, whatever the sequent.
+        let under = |input: &str, rule: Bias| {
+            let f = forest(input);
+            f.bias_under(rule)[f.sequent().atom("A").unwrap().index()]
+        };
+        assert_eq!(under(exponential, Bias::Factors), Sign::Var);
+        assert_eq!(under(exponential, Bias::Auto), Sign::DualVar);
+        assert_eq!(under(horn, Bias::Rarer), Sign::DualVar);
     }
 
     /// Connectives have their fixed polarities.

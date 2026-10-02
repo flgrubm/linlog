@@ -3,7 +3,7 @@
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use linlog::search::{Engine, Options};
-use linlog::{Fragment, Mode};
+use linlog::{Bias, Fragment, Mode};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -90,6 +90,14 @@ pub struct ProveArgs {
     /// The engine to search with
     #[arg(long, value_enum, value_name = "ENGINE", default_value_t = EngineArg::Auto)]
     pub engine: EngineArg,
+    /// How the focused engines pick the positive literal of every atom
+    ///
+    /// No choice changes what is provable. `factors` chains forward on
+    /// Horn-like hypotheses with exponentials, such as Petri nets, where it
+    /// is often much faster but takes one copy per step on a single branch:
+    /// raise `--copies` with it.
+    #[arg(long, value_enum, value_name = "BIAS", default_value_t = BiasArg::Auto)]
+    pub bias: BiasArg,
     /// How often `?` formulas may be copied on one branch of the proof
     ///
     /// The search tries the bounds 0, 1, … up to this one. A sequent with
@@ -165,6 +173,10 @@ pub struct InteractArgs {
     /// closes a goal; see `prove --copies`
     #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_COPIES)]
     pub copies: u32,
+    /// How a `close` picks the positive literal of every atom; see
+    /// `prove --bias`
+    #[arg(long, value_enum, value_name = "BIAS", default_value_t = BiasArg::Auto)]
+    pub bias: BiasArg,
     /// Give up on a `close` after this long, such as 500ms, 10s, 2m or 1h
     #[arg(long, value_name = "DURATION", value_parser = parse_duration)]
     pub timeout: Option<Duration>,
@@ -429,6 +441,30 @@ impl From<EngineArg> for Option<Engine> {
             EngineArg::Net => Some(Engine::Net),
             EngineArg::TwoSided => Some(Engine::TwoSided),
             EngineArg::Additive => Some(Engine::Additive),
+        }
+    }
+}
+
+/// The rules `--bias` names.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BiasArg {
+    /// `factors` without exponentials, `rarer` with them or with
+    /// weakening
+    Auto,
+    /// The literal with fewer occurrences is positive
+    Rarer,
+    /// The literal that is more often a direct factor of a tensor is
+    /// positive, so that more splits are forced
+    Factors,
+}
+
+impl From<BiasArg> for Bias {
+    /// Returns the rule the name stands for.
+    fn from(b: BiasArg) -> Self {
+        match b {
+            BiasArg::Auto => Bias::Auto,
+            BiasArg::Rarer => Bias::Rarer,
+            BiasArg::Factors => Bias::Factors,
         }
     }
 }

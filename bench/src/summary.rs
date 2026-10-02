@@ -129,6 +129,9 @@ pub fn summary(files: &[PathBuf]) -> Result<()> {
         if !row.get("test_period").is_empty() {
             label.push_str(&format!(" period {}", row.get("test_period")));
         }
+        if !matches!(row.get("bias"), "" | "auto") {
+            label.push_str(&format!(" bias {}", row.get("bias")));
+        }
         label
     };
     let mut groups: Vec<Group> = Vec::new();
