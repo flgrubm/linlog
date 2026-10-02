@@ -819,11 +819,29 @@ relies on:
   each part decided by `prove` with the same `Θ` and budget, so the memo
   shares parts between partitions. Refuting a
   wide sequent with Mix costs about `3^k` stable sequents for `k` members.
-- **Recursion.** `prove`, `focus` and `asynchronous` count one level each
-  (at most three per occurrence, plus one per `?` and per copy);
-  `Options::recursion_limit` stops the search with `Reason::RecursionLimit`.
-  Measured stack per level: under 2 KiB in debug builds, under 512 bytes
-  in release, so the default of 2048 fits an 8 MiB main-thread stack.
+- **Recursion.** `prove`, `focus` and `asynchronous` count one level each;
+  `Options::recursion_limit` stops the search with
+  `Reason::RecursionLimit`. Two chains cost no level per link, since the
+  LLTP Petri nets have them by the thousand: the `?` rules of an
+  asynchronous phase are applied in `decompose`'s loop on a growing copy
+  of `Θ` (a net's transitions are `!` hypotheses, and one level per `?`
+  stopped every net with more than about two thousand of them before its
+  first stable sequent, which is what 929 of the first baseline's 983
+  recursion-limit rows were), and a chain of forced splits runs in
+  `forced_splits`' loop on one context that every forcing factor takes
+  its own from, the `⊗` nodes built afterwards from `links` in the order
+  the recursion pushed them (a marking is a tensor of thousands of
+  literals). A positive literal that forces a split is closed in place
+  (`Ax`, or `Ax` under `Copy` from `Θ`, exactly what `initial` does on
+  one or two members), and a dual literal is looked up through the
+  forest's list of that literal's occurrences (`dual_in`), in id order
+  as before, not by a pass over the zone. None of this changes a counter
+  on the sequential targets; what changes is which sequents reach the
+  limit. Free splits still cost a level per link. Measured stack per
+  level: under 2 KiB in debug builds, under 512 bytes in release, so the
+  default of 2048 fits an 8 MiB main-thread stack; it stays, since of
+  the 24 sampled problems that ended at the limit only two (ILLTP-SYJ
+  problems whose search is that deep) still do.
 - **No allocation per node once warm**: sets, contexts, keys, member lists
   and tallies come from pools on the engine (`take_*`/`give_*`); a leaked
   buffer on an error path only costs an allocation later. The memo insert

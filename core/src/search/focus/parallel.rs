@@ -162,6 +162,7 @@ impl<'s> Spawn<'s> {
             tallies: Vec::new(),
             splits: Vec::new(),
             trails: Vec::new(),
+            links: Vec::new(),
         };
         if self.portfolio && index != 0 {
             // A seed per worker, never zero.

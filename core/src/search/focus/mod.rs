@@ -379,6 +379,8 @@ struct Engine<'a> {
     splits: Vec<Split>,
     /// Spare trails of split searches.
     trails: Vec<Vec<Side>>,
+    /// Spare lists of the links of a chain of forced splits.
+    links: Vec<Vec<(OccId, NodeId, bool)>>,
 }
 
 impl<'a> Engine<'a> {
@@ -426,6 +428,7 @@ impl<'a> Engine<'a> {
             tallies: Vec::new(),
             splits: Vec::new(),
             trails: Vec::new(),
+            links: Vec::new(),
         }
     }
 
@@ -489,7 +492,10 @@ impl<'a> Engine<'a> {
         result
     }
 
-    /// The body of the asynchronous phase.
+    /// The body of the asynchronous phase. The `?` rules are applied in the
+    /// loop like `⅋` and `⊥`, on a copy of the unrestricted zone that
+    /// grows, so that a sequent of thousands of `?` formulas costs one
+    /// level of recursion and not one each.
     fn decompose(
         &mut self,
         theta: &OccSet,
@@ -497,12 +503,14 @@ impl<'a> Engine<'a> {
         list: &mut Vec<OccId>,
         budget: u32,
     ) -> Search {
-        // The `⅋` and `⊥` rules applied, to wrap around the proof of what
-        // remains; the first applied is the lowest.
+        // The `⅋`, `⊥` and `?` rules applied, to wrap around the proof of
+        // what remains; the first applied is the lowest.
         let mut applied = self.take_list();
+        // The unrestricted zone once a `?` added a formula to it.
+        let mut grown: Option<OccSet> = None;
         let result = loop {
             let Some(o) = list.pop() else {
-                break self.prove(theta, gamma, budget);
+                break self.prove(grown.as_ref().unwrap_or(theta), gamma, budget);
             };
             match self.forest.kind(o) {
                 Kind::Par => {
@@ -512,8 +520,23 @@ impl<'a> Engine<'a> {
                 }
                 Kind::Bot => applied.push(o),
                 Kind::Top => break Ok(Some(self.push(Node::Top(o)))),
-                Kind::With => break self.with(theta, gamma, list, o, budget),
-                Kind::Quest => break self.quest(theta, gamma, list, o, budget),
+                Kind::With => {
+                    break self.with(grown.as_ref().unwrap_or(theta), gamma, list, o, budget);
+                }
+                Kind::Quest => {
+                    // The subformula joins the unrestricted zone, which is
+                    // a set: a formula already there changes nothing.
+                    let a = self.forest.left(o).unwrap();
+                    if !grown.as_ref().unwrap_or(theta).contains(a) {
+                        if grown.is_none() {
+                            let mut larger = self.take_set();
+                            larger.clone_from(theta);
+                            grown = Some(larger);
+                        }
+                        grown.as_mut().unwrap().insert(a);
+                    }
+                    applied.push(o);
+                }
                 _ => {
                     // A positive formula or a literal: part of the stable
                     // sequent.
@@ -521,11 +544,15 @@ impl<'a> Engine<'a> {
                 }
             }
         };
+        if let Some(larger) = grown {
+            self.give_set(larger);
+        }
         let result = result.map(|proved| {
             proved.map(|mut node| {
                 for &o in applied.iter().rev() {
                     node = self.push(match self.forest.kind(o) {
                         Kind::Par => Node::Par(o, node),
+                        Kind::Quest => Node::Quest(o, node),
                         _ => Node::Bot(o, node),
                     });
                 }
@@ -569,30 +596,6 @@ impl<'a> Engine<'a> {
             return Ok(None);
         };
         Ok(Some(self.push(Node::With(o, left, right))))
-    }
-
-    /// The `?` rule: the subformula joins the unrestricted zone, which is a
-    /// set, so a formula already there changes nothing.
-    fn quest(
-        &mut self,
-        theta: &OccSet,
-        gamma: &mut Context,
-        list: &mut Vec<OccId>,
-        o: OccId,
-        budget: u32,
-    ) -> Search {
-        let a = self.forest.left(o).unwrap();
-        let result = if theta.contains(a) {
-            self.asynchronous(theta, gamma, list, budget)
-        } else {
-            let mut larger = self.take_set();
-            larger.clone_from(theta);
-            larger.insert(a);
-            let result = self.asynchronous(&larger, gamma, list, budget);
-            self.give_set(larger);
-            result
-        };
-        Ok(result?.map(|node| self.push(Node::Quest(o, node))))
     }
 
     /// `prove(Θ ; Γ)` for a stable `Γ`: the memo, the loop check and the
@@ -903,8 +906,8 @@ impl<'a> Engine<'a> {
             if !f.is_literal(p) || (!affine && members.len() > 2) {
                 continue;
             }
-            if let Some(&q) = members[i + 1..].iter().find(|&&q| dual(p, q))
-                && (affine || members.len() == 2)
+            if (affine || members.len() == 2)
+                && let Some(&q) = members[i + 1..].iter().find(|&&q| dual(p, q))
             {
                 let ax = self.push(Node::Ax(p, q));
                 if !affine {
@@ -918,8 +921,8 @@ impl<'a> Engine<'a> {
                 self.give_context(rest);
                 return Ok(Some(node));
             }
-            if let Some(d) = theta.iter().find(|&d| dual(p, d))
-                && (affine || members.len() == 1)
+            if (affine || members.len() == 1)
+                && let Some(d) = self.dual_in(p, |d| theta.contains(d))
             {
                 if budget == 0 {
                     // Another pair may still close the sequent without a
@@ -941,6 +944,15 @@ impl<'a> Engine<'a> {
             }
         }
         Ok(None)
+    }
+
+    /// The first occurrence of the literal dual to `literal` that is `within`
+    /// a zone, found through the forest's list of that literal's
+    /// occurrences rather than through the zone's members.
+    fn dual_in(&self, literal: OccId, within: impl Fn(OccId) -> bool) -> Option<OccId> {
+        let f = self.forest;
+        let (atom, sign) = (f.atom(literal)?, f.sign(literal)?);
+        f.literals(atom, !sign).iter().copied().find(|&d| within(d))
     }
 
     /// Whether a formula of `Θ` has a literal below it whose dual is a
@@ -1093,65 +1105,120 @@ impl<'a> Engine<'a> {
         }
     }
 
+    /// The factor of `F = A ⊗ B` that forces its split, with what it
+    /// forces, the other factor, and whether the forcing one is the left:
+    /// the left factor when both force.
+    fn forced_factor(&self, f: OccId) -> Option<(Forced, OccId, OccId, bool)> {
+        let (a, b) = (self.forest.left(f).unwrap(), self.forest.right(f).unwrap());
+        [(a, b, true), (b, a, false)]
+            .into_iter()
+            .find_map(|(x, y, left)| Some((self.forced_side(x)?, x, y, left)))
+    }
+
     /// The `⊗` rule on `F = A ⊗ B` with context `Γ`: the forced split when
     /// a factor allows only one, else a search over the members of `Γ` for
     /// the splits whose two sides pass the counts.
     fn split(&mut self, theta: &OccSet, gamma: &Context, f: OccId, budget: u32) -> Search {
-        let (a, b) = (self.forest.left(f).unwrap(), self.forest.right(f).unwrap());
-        for (x, y, x_is_left) in [(a, b, true), (b, a, false)] {
-            let Some(forced) = self.forced_side(x) else {
-                continue;
+        if self.forced_factor(f).is_none() {
+            return self.free_split(theta, gamma, f, budget);
+        }
+        let mark = self.nodes.mark();
+        let mut rest = self.take_context();
+        rest.clone_from(gamma);
+        let mut links = self.take_links();
+        let result = self.forced_splits(theta, &mut rest, f, &mut links, budget);
+        self.give_context(rest);
+        let result = match result {
+            Ok(Some(mut node)) => {
+                for &(f, x_node, x_is_left) in links.iter().rev() {
+                    let (left, right) = if x_is_left {
+                        (x_node, node)
+                    } else {
+                        (node, x_node)
+                    };
+                    node = self.push(Node::Tensor(f, left, right));
+                }
+                Ok(Some(node))
+            }
+            Ok(None) => {
+                self.nodes.release(mark);
+                Ok(None)
+            }
+            Err(reason) => Err(reason),
+        };
+        self.give_links(links);
+        result
+    }
+
+    /// The forced splits of `F` and, as long as the factor they leave is a
+    /// `⊗` with a forced split again, of that factor, in a loop: a tensor
+    /// of a thousand literals costs one level of recursion and one copy of
+    /// the context, not a thousand. `rest` is the context, from which
+    /// every forcing factor takes its own; `links` gets every `⊗` with the
+    /// proof of its forcing factor and whether that is the left one.
+    /// Returns the proof of the factor left at the end with what remains
+    /// of the context.
+    fn forced_splits(
+        &mut self,
+        theta: &OccSet,
+        rest: &mut Context,
+        mut f: OccId,
+        links: &mut Vec<(OccId, NodeId, bool)>,
+        budget: u32,
+    ) -> Search {
+        loop {
+            let Some((forced, x, y, x_is_left)) = self.forced_factor(f) else {
+                return self.focus(theta, rest, f, budget);
             };
             self.statistics.splits += 1;
-            if forced == Forced::Nothing {
-                return Ok(None);
-            }
-            let mut side = self.take_context();
-            let mut rest = self.take_context();
-            rest.clone_from(gamma);
-            if forced == Forced::Dual {
-                // The dual in `Γ` when there is one; otherwise the side
-                // stays empty and the initial rule looks in `Θ`. Taking the
-                // copy from `Γ` first loses nothing: the copies are the same
+            let x_node = match forced {
+                Forced::Nothing => return Ok(None),
+                Forced::Empty => {
+                    let empty = self.take_context();
+                    let node = self.focus(theta, &empty, x, budget);
+                    self.give_context(empty);
+                    node?
+                }
+                // The dual in `Γ` when there is one, and the axiom on the
+                // two; otherwise the side stays empty and the initial rule
+                // looks in `Θ`, at the price of a copy. Taking the copy
+                // from `Γ` first loses nothing: the copies are the same
                 // formula, so a proof that leaves this one for elsewhere
                 // and copies from `Θ` here is a proof with the roles
                 // swapped.
-                let dual = gamma.iter().find(|&m| {
-                    self.forest.atom(m) == self.forest.atom(x)
-                        && self.forest.sign(m) != self.forest.sign(x)
-                });
-                if let Some(dual) = dual {
-                    side.insert(dual);
-                    rest.remove(dual);
-                }
-            }
-            let mark = self.nodes.mark();
-            let mut nodes: Result<Option<(NodeId, NodeId)>, Reason> = Ok(None);
-            {
-                match self.focus(theta, &side, x, budget) {
-                    Ok(Some(x_node)) => {
-                        nodes = self
-                            .focus(theta, &rest, y, budget)
-                            .map(|y_node| y_node.map(|y_node| (x_node, y_node)));
+                Forced::Dual => {
+                    if let Some(dual) = self.dual_in(x, |m| rest.contains(m)) {
+                        rest.remove(dual);
+                        Some(self.push(Node::Ax(x, dual)))
+                    } else if let Some(d) = self.dual_in(x, |d| theta.contains(d)) {
+                        if budget == 0 {
+                            self.exhausted = true;
+                            None
+                        } else {
+                            let ax = self.push(Node::Ax(x, d));
+                            Some(self.push(Node::Copy(d, ax)))
+                        }
+                    } else {
+                        None
                     }
-                    Ok(None) => {}
-                    Err(reason) => nodes = Err(reason),
                 }
-            }
-            self.give_context(side);
-            self.give_context(rest);
-            let Some((x_node, y_node)) = nodes? else {
-                self.nodes.release(mark);
+            };
+            let Some(x_node) = x_node else {
                 return Ok(None);
             };
-            let (left, right) = if x_is_left {
-                (x_node, y_node)
-            } else {
-                (y_node, x_node)
-            };
-            return Ok(Some(self.push(Node::Tensor(f, left, right))));
+            links.push((f, x_node, x_is_left));
+            if self.forest.kind(y) != Kind::Tensor {
+                return self.focus(theta, rest, y, budget);
+            }
+            f = y;
         }
+    }
 
+    /// The `⊗` rule on a formula no factor of which forces its split: a
+    /// search over the members of `Γ` for the splits whose two sides pass
+    /// the counts.
+    fn free_split(&mut self, theta: &OccSet, gamma: &Context, f: OccId, budget: u32) -> Search {
+        let (a, b) = (self.forest.left(f).unwrap(), self.forest.right(f).unwrap());
         let mut members = self.take_list();
         members.extend(gamma.iter());
         let mut left = self.take_context();
@@ -1542,6 +1609,18 @@ impl<'a> Engine<'a> {
     fn give_trail(&mut self, trail: Vec<Side>) {
         self.trails.push(trail);
     }
+
+    /// Takes an empty list of links from the pool.
+    fn take_links(&mut self) -> Vec<(OccId, NodeId, bool)> {
+        let mut links = self.links.pop().unwrap_or_default();
+        links.clear();
+        links
+    }
+
+    /// Returns a list of links to the pool.
+    fn give_links(&mut self, links: Vec<(OccId, NodeId, bool)>) {
+        self.links.push(links);
+    }
 }
 
 /// What joins the two sides of a split of a context.
@@ -1802,6 +1881,13 @@ mod tests {
             Mode::CLASSICAL,
             &Options::default().recursion_limit(8),
         );
+        assert!(verdict.proof().is_some());
+
+        // A `?` costs no level of recursion: three thousand of them stay
+        // under the default limit.
+        let hypotheses: Vec<String> = (0..3000).map(|i| format!("?a{i}")).collect();
+        let many = format!("|- 1, {}", hypotheses.join(", "));
+        let (verdict, _) = run(&many, Mode::CLASSICAL, &Options::default());
         assert!(verdict.proof().is_some());
 
         // A free split over 126 formulas, in MALL so that the count
