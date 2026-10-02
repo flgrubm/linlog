@@ -243,7 +243,14 @@ even to read.** Every operation goes through `jj`, including lock updates:
   `jj st` after creating a file, before a `nix` command that must see it.
 - Subjects are short, imperative and capitalised, with no type prefix
   ("Fix bug in reachability analysis for exponentials"). Add a body only when
-  the why is not obvious. jj signs every commit.
+  the why is not obvious. jj signs every commit, and a snapshot of a
+  changed working copy is one: when the signing key's passphrase is no
+  longer cached and nobody answers the prompt, every jj command that
+  writes fails with a signing timeout, `jj st` included. The edits stay
+  on disk, `jj --ignore-working-copy …` still reads, and `nix flake
+  check` runs on the tree as it is; do not retry in a loop, finish what
+  needs no commit and ask the author to enter the passphrase. A long
+  session commits as it goes rather than at the end for that reason.
 - Lock bumps are changes of their own, "Cargo update" and "flake.lock: Update".
   `/update-deps` does both, verifying before it commits; the shell's `up` is
   the unverified shortcut.
