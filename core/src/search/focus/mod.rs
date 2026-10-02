@@ -1222,27 +1222,7 @@ impl<'a> Engine<'a> {
                 // One dual per literal, each the first left in `Γ`: every
                 // literal is proved by exactly its dual, and no dual lies in
                 // `Θ`, so no other context proves the factor.
-                Forced::Duals => {
-                    let mut side = self.take_context();
-                    let complete = self.forest.subtree(x).all(|leaf| {
-                        if !self.forest.is_literal(leaf) {
-                            return true;
-                        }
-                        let dual = self.dual_in(leaf, |m| rest.contains(m));
-                        dual.is_some_and(|dual| {
-                            rest.remove(dual);
-                            side.insert(dual);
-                            true
-                        })
-                    });
-                    let node = if complete {
-                        self.focus(theta, &side, x, budget)
-                    } else {
-                        Ok(None)
-                    };
-                    self.give_context(side);
-                    node?
-                }
+                Forced::Duals => self.literal_tensor(x, rest),
             };
             let Some(x_node) = x_node else {
                 return Ok(None);
@@ -1253,6 +1233,45 @@ impl<'a> Engine<'a> {
             }
             f = y;
         }
+    }
+
+    /// The proof of a tensor of positive literals from one dual per
+    /// literal, each the first left in `rest`, which loses them; `None`
+    /// when a dual is missing. Built in place, the axioms and the `⊗`
+    /// nodes from the last occurrence back, so a tensor of any depth costs
+    /// no recursion.
+    fn literal_tensor(&mut self, x: OccId, rest: &mut Context) -> Option<NodeId> {
+        let mut duals = self.take_list();
+        for leaf in self.forest.subtree(x) {
+            if !self.forest.is_literal(leaf) {
+                continue;
+            }
+            let Some(dual) = self.dual_in(leaf, |m| rest.contains(m)) else {
+                self.give_list(duals);
+                return None;
+            };
+            rest.remove(dual);
+            duals.push(dual);
+        }
+        // An occurrence's subtree follows it, so in reverse a `⊗` comes
+        // after both its subformulas, the left one's proof on top.
+        let mut built = self.take_links();
+        for o in self.forest.subtree(x).rev() {
+            let node = if self.forest.is_literal(o) {
+                let dual = duals.pop().expect("a dual per literal");
+                self.push(Node::Ax(o, dual))
+            } else {
+                self.statistics.splits += 1;
+                let (_, left, _) = built.pop().expect("the left subformula's proof");
+                let (_, right, _) = built.pop().expect("the right subformula's proof");
+                self.push(Node::Tensor(o, left, right))
+            };
+            built.push((o, node, true));
+        }
+        let (_, node, _) = built.pop().expect("the tensor's proof");
+        self.give_list(duals);
+        self.give_links(built);
+        Some(node)
     }
 
     /// The `⊗` rule on a formula no factor of which forces its split: a
@@ -1938,16 +1957,25 @@ mod tests {
         // it is read: every split is forced by the literal on the right.
         // On a thread with the stack a front end gives the search, since
         // the parser and the checker recurse to the formula's depth.
-        let chain = format!(
+        let literals = format!(
             "|- {}, {}",
             vec!["a"; 2500].join(" * "),
             vec!["~a"; 2500].join(", ")
         );
+        // The same for a tensor of tensors of literals, which is proved
+        // in place from the duals of all its literals.
+        let pairs = format!(
+            "|- {}, {}",
+            vec!["(a * b)"; 2500].join(" * "),
+            vec!["~a, ~b"; 2500].join(", ")
+        );
         let proved = std::thread::Builder::new()
             .stack_size(Options::default().stack_size())
             .spawn(move || {
-                let (verdict, _) = run(&chain, Mode::CLASSICAL, &Options::default());
-                verdict.proof().is_some()
+                [literals, pairs].iter().all(|chain| {
+                    let (verdict, _) = run(chain, Mode::CLASSICAL, &Options::default());
+                    verdict.proof().is_some()
+                })
             })
             .unwrap()
             .join()
