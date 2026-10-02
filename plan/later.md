@@ -171,21 +171,87 @@ not cross in the cyclic order of literals), no exchange in the derivation
 view and exports, and the Lambek restrictions (no empty antecedent, the two
 divisions). Fable 5.1, xhigh.
 
-## Second certificate kernels
+## Second certificate kernels: a fork of NanoYalla that adds and does not edit
 
-Left open by step 12 (`plan/reports/12-certificates.md`, "Open questions").
-Yalla's `ill` for intuitionistic certificates: a `kernel` field of
-`rocq::Options` (D15), full Yalla and OLlibs as flake inputs built at
-their Rocq version (nixpkgs packages neither), the two-sided statement
-from the reading (which carries step 8's `⊤`/`0` ambiguity into the statement, see the
-intuitionistic follow-ups below), and `Permutation_Type` witnesses for every exchange
-since `ill` has no `_ext` layer; the same kernel would take Mix through
-`mix2_r`. A Lean 4 target once FormalizedFormalLogic/LinearLogic has
-units and a release (its multiset sequents need no exchange at all). The
-exchange `ex_perm_r` makes Rocq compute `permL_of_perm`, whose cost grows
-with the sequent's width; a chain of `ex_t_r` swaps if a wide sequent
-turns out slow. Identifier escaping writes non-ASCII as code points where
-Rocq would accept many Unicode letters. Fable 5.1, high.
+Left open by step 12 (`plan/reports/12-certificates.md`, "Open questions")
+and recommended in this form by the planning session on 2026-10-02, on
+the author's question whether to fork NanoYalla; the author asked for it
+to be a candidate. Today a certificate exists for classical proofs only:
+Mix and affine weakening are refused, and an intuitionistic proof is
+certified as the classical proof of its one-sided sequent, not as
+`Γ ⊢ A`.
+
+The facts, read from the sources on 2026-10-02 (they correct step 12's
+report in one point). NanoYalla is Click & coLLecT's `nanoyalla/`
+(LGPL-2.1, unchanged since 2021): `nanoll.v`, 48 lines, the trusted
+definition of cut-free one-sided LL, and `macroll.v`, the proved
+positional layer (`_ext` rules, `ex_perm_r`). Yalla (olaure01/yalla,
+LGPL-3.0, active, on opam as `rocq-yalla`, not in nixpkgs, needs OLlibs)
+is the library of meta-theory behind it; its `microyalla/nanoll.v` is the
+same definition up to binder syntax, and its `microyalla/nanoill.v`, there
+since 2019, is a two-sided ILL kernel with exactly linlog's connectives
+and rules, exchange by adjacent transposition, and no imports: it needs
+neither full Yalla nor OLlibs, which step 12's report assumed. What it
+lacks is a positional layer. Full Yalla has a general Mix rule
+(`pmix`) and proves Mix-provability of `Γ` equivalent, with cut, to
+provability of `?(⊥⊗⊥), Γ` (`ll_fragments.v`); no nano kernel has Mix.
+Nothing in Yalla has general weakening.
+
+The candidate: a small Rocq development that linlog's certificates import,
+built from upstream's files verbatim and pinned (`nanoll.v`, `macroll.v`,
+`nanoill.v`) with new files beside them, never a change to an existing
+inductive:
+- a positional layer for `nanoill` (the analogue of `macroll.v`), and in
+  the exporter the two-sided statement from the reading with the ILL
+  rule names of `two_sided_derivation()` (the statement then carries
+  step 8's `⊤`/`0` ambiguity, see the intuitionistic follow-ups below);
+- a Mix kernel and an affine kernel, each the nano inductive with one
+  more rule, with their positional layers, and their intuitionistic
+  affine counterpart;
+- for Mix an anchoring theorem inside the development, that a proof of
+  `Γ` in the Mix kernel gives a proof of `?(⊥⊗⊥), Γ` in the unmodified
+  kernel (sketched on paper without cut: `⊥` on both premises, `⊗`,
+  dereliction, two contractions; not machine-checked), so that Mix
+  certificates rest on the standard definition; for affine no such
+  reduction is known, the weakening rule is the definition, and those
+  certificates rest on our reading of it;
+- a `kernel` field of `rocq::Options` (D15) that the mode chooses by
+  default, and the nix check extended to every kernel.
+
+What must hold: a classical certificate still checks against the
+unmodified NanoYalla that a Click & coLLecT user has installed, with the
+trusted base it has today; only a certificate in a mode upstream lacks
+needs our files. No `Admitted`, no axiom.
+
+For the author to decide: where the development lives. It derives from
+LGPL files, so it is LGPL; step 12 kept LGPL text out of the EUPL tree by
+pinning the kernel as a flake input, and the form that keeps that is a
+small repository of its own which linlog pins the same way. In-tree with
+its own licence file is the alternative. Offering the positional ILL
+layer and a nano Mix kernel to Yalla's `microyalla/` is a courtesy, not a
+dependency (the README invites requests for extensions).
+
+Not part of it, and why: anchoring the Mix kernel to full Yalla's Mix
+fragment (it needs Yalla and OLlibs built from source at a pinned Rocq
+minor version, about a session, for a link the theorem above gives more
+cheaply); affine logic in Yalla proper (a new parameter of its central
+inductive and the meta-theory over it, the maintainer's project); a
+checker for linlog's own proof terms written and proved sound in Rocq, so
+that a certificate is the term and one computation (two to four sessions
+at the engines' effort, with risk; worth it only if certificates turn out
+too slow at scale, which nothing has measured beyond the test sequents,
+or for a publication); a direct certificate for nets (a Rocq development
+of unit-free MLL nets with sequentialization exists, RemiDiG/proofnet_mll,
+and nets are certified through sequentialization already); a Lean 4
+target once FormalizedFormalLogic/LinearLogic has units and a release.
+
+Small things for whoever takes it: open goals could be hypotheses of the
+lemma rather than a refusal; `ex_perm_r` makes Rocq compute
+`permL_of_perm`, whose cost grows with the sequent's width (a chain of
+`ex_t_r` swaps if a wide sequent turns out slow); identifier escaping
+writes non-ASCII as code points where Rocq would accept many Unicode
+letters. About two sessions, the ILL layer first; Fable 5.1, high, as
+step 12 was.
 
 ## MALL proof nets
 
