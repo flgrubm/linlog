@@ -99,7 +99,10 @@ beyond clap and anyhow, which the CLI already has.
   cores back and starts again the user timers the unit stopped for the
   run, such as `obsidian-snapshot`, listed in
   `$XDG_RUNTIME_DIR/linlog-baseline-timers`; the inhibitor dies with the
-  unit). System timers and services need root: the author stops them. The unit waits for an
+  unit). The timers do not survive a reboot or the end of the user's
+  session manager: arm after the last reboot, and look at `systemctl
+  --user list-timers` before leaving the machine. System timers and
+  services need root: the author stops them. The unit waits for an
   idle machine (on mains, a load average of at most 1) until the slot's
   end minus `estimate` (10 h 30 min), then starts regardless and says so in
   `starts.txt`: a night not used is worse than rows marked as disturbed.
@@ -159,7 +162,10 @@ beyond clap and anyhow, which the CLI already has.
   directory, its header listing those lines, and copies it to
   `bench/RESULTS.md`, which is always the latest baseline's. Two
   baselines compare only under the same script, slot and settings, and a
-  resumed one only if every start names the same commit.
+  resumed one only if every start measured the same engines: the first
+  baseline's second start names a later commit, which differs from the
+  first in `plan/` and in the harness's kill and filter alone (`core/`,
+  `cli/`, the Cargo files and the toolchain are identical).
 - **The machine** (an Intel Core Ultra X9 388H laptop, host `wired`, its
   configuration in the author's system flake): 16 physical cores and no
   SMT, of three kinds: CPUs 0–3 performance cores (5.1 GHz, own L2),
