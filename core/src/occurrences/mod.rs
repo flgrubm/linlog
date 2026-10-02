@@ -69,9 +69,13 @@ impl Not for Sign {
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Bias {
-    /// [`Factors`](Self::Factors) for a sequent without exponentials,
-    /// [`Rarer`](Self::Rarer) for one with a `!` or a `?`; a search with
-    /// weakening takes `Rarer` in either case.
+    /// [`Factors`](Self::Factors) for a sequent without exponentials and
+    /// [`Rarer`](Self::Rarer) for a search with weakening. For a sequent
+    /// with a `!` or a `?` the forest's own bias is `Rarer`, and proof
+    /// search runs a search under each rule and answers with the first
+    /// that decides, so it decides whatever either does: the backward one
+    /// within the copy bound, the forward one within a bound of its own
+    /// where the formulas under `!` and `?` are Horn clauses.
     #[default]
     Auto,
     /// The literal with fewer occurrences in the sequent is positive, `Var`

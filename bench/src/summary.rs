@@ -132,6 +132,12 @@ pub fn summary(files: &[PathBuf]) -> Result<()> {
         if !matches!(row.get("bias"), "" | "auto") {
             label.push_str(&format!(" bias {}", row.get("bias")));
         }
+        let forward = row.get("forward_copies");
+        if !forward.is_empty()
+            && forward != linlog::search::Options::DEFAULT_FORWARD_COPIES.to_string()
+        {
+            label.push_str(&format!(" forward {forward}"));
+        }
         label
     };
     let mut groups: Vec<Group> = Vec::new();

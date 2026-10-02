@@ -72,6 +72,28 @@ const NO_DEPENDENCY: u32 = u32::MAX;
 /// engine takes between two polls of the stop condition.
 const SPLITS_PER_POLL: u64 = 4096;
 
+/// The work of a stable sequent in steps of a split search, the unit a
+/// turn is counted in, before what depends on its size: the bookkeeping
+/// of a visit costs some ten times a step, which moves one member and
+/// tests its row.
+const NODE_WORK: u64 = 16;
+
+/// How many occurrences of the forest make a unit of a stable sequent's
+/// work: both zones are hashed, compared and copied as bitsets of the
+/// forest's width.
+const OCCURRENCES_PER_WORK: usize = 128;
+
+/// How many comparisons of a member of `Γ` with a literal of a formula of
+/// `Θ` make a unit of work: the copies are ranked by whether they meet a
+/// member, which on a Petri net with its hundreds of transitions and
+/// tokens is most of what a stable sequent costs.
+const MEETS_PER_WORK: usize = 16;
+
+/// How many occurrences of the forest make a unit of the work of a split
+/// whose premises are tried: its two sides are built as zones of the
+/// forest's width.
+const OCCURRENCES_PER_LEAF: usize = 512;
+
 /// Runs the focused engine on the forest of a sequent of `fragment` under
 /// `mode`, two-sided when the sequent's intuitionistic reading is given,
 /// polling `stop` at every stable sequent, and returns the verdict with the
@@ -123,38 +145,213 @@ pub(crate) fn search_goal(
     options: &Options,
     stop: &mut dyn FnMut() -> bool,
 ) -> (Search, Vec<Node>, Statistics) {
-    let counts = Counts::new(forest, bias(options, mode));
     let classes = Classes::new(forest, reading);
-    let rules = Rules::new(fragment, mode, &counts);
-    let mut engine = Engine::new(
-        forest,
-        rules,
-        reading,
-        (&counts, &classes),
-        options,
-        Stop::Closure(stop),
-        Table::Own(Memo::new(options.memo_limit)),
-        Arena::new(Kept::Own(Vec::new())),
-    );
-    let result = engine
-        .run(goal)
-        .map(|root| root.map(|root| engine.nodes.keep(0, root)));
-    let statistics = engine.statistics();
-    let nodes = match engine.nodes.kept {
-        Kept::Own(nodes) => nodes,
-        Kept::Shared(_) => unreachable!("a sequential search owns its arena"),
+    let (first, second) = plan(forest, fragment, mode, options);
+    let Some(second) = second else {
+        let (result, nodes, statistics, _) = first.search(
+            forest, goal, fragment, mode, reading, &classes, options, stop, None,
+        );
+        return (result.map_err(|r| reason(r, options)), nodes, statistics);
     };
-    (result, nodes, statistics)
+    // The two searches take turns, each from its start, on an amount of
+    // work that grows from round to round, until one decides. A search
+    // that ended without deciding takes no further turn, and the other
+    // then runs to its own end.
+    let rules = [first, second];
+    let mut ended: [Option<Reason>; 2] = [None, None];
+    let mut statistics = Statistics::default();
+    let mut turn = FIRST_TURN;
+    loop {
+        for (i, rule) in rules.iter().enumerate() {
+            if ended[i].is_some() {
+                continue;
+            }
+            let alone = ended[1 - i].is_some();
+            let (result, nodes, run, over) = rule.search(
+                forest,
+                goal,
+                fragment,
+                mode,
+                reading,
+                &classes,
+                options,
+                stop,
+                (!alone).then_some(turn),
+            );
+            statistics.add(&run);
+            statistics.memo_hits += run.memo_hits;
+            statistics.memo_entries = statistics.memo_entries.max(run.memo_entries);
+            match result {
+                Err(Reason::Stopped) if over => {}
+                Err(Reason::Stopped) => return (Err(Reason::Stopped), nodes, statistics),
+                Err(reason) => ended[i] = Some(reason),
+                decided => return (decided, nodes, statistics),
+            }
+        }
+        if let [Some(_), Some(backward)] = ended {
+            return (Err(reason(backward, options)), Vec::new(), statistics);
+        }
+        turn = turn.saturating_mul(TURN_GROWTH);
+    }
 }
 
-/// The bias a search runs under: the one the options name, where `Auto`
-/// under weakening is the rarer literal, since nothing forces a split
-/// there and the factors have nothing to say.
-pub(crate) fn bias(options: &Options, mode: Mode) -> Bias {
-    if options.bias == Bias::Auto && mode.affine {
-        Bias::Rarer
-    } else {
-        options.bias
+/// The work each of the two searches of the default bias gets in the
+/// first round of their turns, in steps of a split search, a stable
+/// sequent counting [`NODE_WORK`] of them and more with its size: some
+/// thousand stable sequents of a small problem.
+const FIRST_TURN: u64 = 1 << 16;
+
+/// The factor by which the turns of the two searches grow from round to
+/// round. A search starts afresh in every turn, so with turns that grow
+/// geometrically the turns that ended early cost a fraction of the one
+/// that decides.
+const TURN_GROWTH: u64 = 4;
+
+/// One search of a goal: the bias it runs under and its copy bound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Rule {
+    /// The bias.
+    bias: Bias,
+    /// The most copies a branch may take.
+    copies: u32,
+}
+
+impl Rule {
+    /// Runs the search of this rule alone, with a memo and an arena of its
+    /// own, until it ends, `stop` fires or the work of the turn given is
+    /// done. Returns what [`search_goal`] does, and whether it was the
+    /// turn that ended the search.
+    #[allow(clippy::too_many_arguments)]
+    fn search(
+        self,
+        forest: &Forest,
+        goal: &[OccId],
+        fragment: Fragment,
+        mode: Mode,
+        reading: Option<&Reading>,
+        classes: &Classes,
+        options: &Options,
+        stop: &mut dyn FnMut() -> bool,
+        turn: Option<u64>,
+    ) -> (Search, Vec<Node>, Statistics, bool) {
+        let stop = match turn {
+            Some(work) => Stop::Turn(stop, work),
+            None => Stop::Closure(stop),
+        };
+        let counts = Counts::new(forest, self.bias);
+        let rules = Rules::new(fragment, mode, &counts);
+        let mut engine = Engine::new(
+            forest,
+            rules,
+            reading,
+            (&counts, classes),
+            &options.clone().copies(self.copies),
+            stop,
+            Table::Own(Memo::new(options.memo_limit)),
+            Arena::new(Kept::Own(Vec::new())),
+        );
+        let result = engine
+            .run(goal)
+            .map(|root| root.map(|root| engine.nodes.keep(0, root)));
+        let statistics = engine.statistics();
+        let over = matches!(engine.stop, Stop::Turn(_, 0));
+        let nodes = match engine.nodes.kept {
+            Kept::Own(nodes) => nodes,
+            Kept::Shared(_) => unreachable!("a sequential search owns its arena"),
+        };
+        (result, nodes, statistics, over)
+    }
+}
+
+/// The searches that decide a goal under the options: one, under the bias
+/// they name, where `Auto` is the factor rule without an exponential in
+/// the sequent and the rarer literal with one or under weakening (nothing
+/// forces a split there, so the factors have nothing to say). Or two, for
+/// `Auto` on a goal with exponentials in linear mode: the forward search
+/// first, under the factor rule, and the backward search, under the rarer
+/// literal within [`Options::copies`], which is the one `Auto` ran alone
+/// before; they share nothing, and the first to decide answers. The
+/// forward search runs within `Options::copies` too, and where every
+/// formula under a `?` is a Horn clause ([`chains`]) within the larger of
+/// that and [`Options::forward_copies`]: there a copy is a step of a
+/// forward chain, of which one branch takes as many as the chain is long.
+/// Not under Mix, where every sequent of a chain that grows is tried in
+/// every partition.
+/// When the two rules give every atom the same literal the forward search
+/// is the backward one continued, and runs alone.
+pub(crate) fn plan(
+    forest: &Forest,
+    fragment: Fragment,
+    mode: Mode,
+    options: &Options,
+) -> (Rule, Option<Rule>) {
+    let copies = options.copies;
+    let both = options.bias == Bias::Auto
+        && !mode.affine
+        && fragment.has_exponentials()
+        && forest.sequent().fragment().has_exponentials();
+    if !both {
+        let bias = if options.bias == Bias::Auto && mode.affine {
+            Bias::Rarer
+        } else {
+            options.bias
+        };
+        return (Rule { bias, copies }, None);
+    }
+    let forward = Rule {
+        bias: Bias::Factors,
+        copies: if !mode.mix && chains(forest) {
+            copies.max(options.forward_copies)
+        } else {
+            copies
+        },
+    };
+    let backward = Rule {
+        bias: Bias::Rarer,
+        copies,
+    };
+    let same = forest.bias_under(Bias::Factors) == forest.bias_under(Bias::Rarer);
+    (forward, (!same).then_some(backward))
+}
+
+/// Whether every formula under a `?` of the forest is a Horn clause: a
+/// tensor of literals of which at most one factor is a `⅋` of literals
+/// instead, which is what `!(a ⊗ b ⊸ c ⊗ d)` is on the right of `⊢`, as
+/// are a tensor of literals, a `⅋` of literals and a literal alone; a `1`
+/// may stand for an empty body and a `⊥` for an empty head. The
+/// transitions of a Petri net are such clauses, and a copy of one rewrites
+/// the linear zone and opens no branch that another copy could deepen.
+fn chains(forest: &Forest) -> bool {
+    let head = |kind| matches!(kind, Kind::Par | Kind::Bot);
+    forest
+        .ids()
+        .filter(|&q| forest.kind(q) == Kind::Quest)
+        .all(|q| {
+            let mut heads = 0;
+            forest.subtree(forest.left(q).unwrap()).all(|x| {
+                let kind = forest.kind(x);
+                if !head(kind) {
+                    return forest.is_literal(x) || matches!(kind, Kind::Tensor | Kind::One);
+                }
+                // The top of a head; what lies below it is looked at
+                // with it.
+                let top = forest.parent(x).is_none_or(|p| forest.kind(p) != Kind::Par);
+                heads += u32::from(top);
+                heads <= 1
+                    && forest
+                        .subtree(x)
+                        .all(|y| forest.is_literal(y) || head(forest.kind(y)))
+            })
+        })
+}
+
+/// The reason a search of the options gives up with, given the reason one
+/// of its searches did: a copy bound is [`Options::copies`], the bound
+/// every search ran within at the least.
+fn reason(reason: Reason, options: &Options) -> Reason {
+    match reason {
+        Reason::CopyBound(_) => Reason::CopyBound(options.copies),
+        reason => reason,
     }
 }
 
@@ -343,6 +540,10 @@ struct Engine<'a> {
     /// The steps of split searches since the stop condition was last
     /// polled there.
     steps: u64,
+    /// The work done since the stop condition was last polled, as far as
+    /// it grows with the size of the sequents and is no step of a split
+    /// search: the unit of a turn.
+    work: u64,
     /// The nesting of engine calls right now.
     depth: u32,
     /// The deepest nesting allowed.
@@ -426,6 +627,7 @@ impl<'a> Engine<'a> {
             memoizes: options.memo_limit != 0,
             statistics: Statistics::default(),
             steps: 0,
+            work: 0,
             depth: 0,
             recursion_limit: options.recursion_limit,
             copies: options.copies,
@@ -631,7 +833,10 @@ impl<'a> Engine<'a> {
     /// decision.
     fn prove_stable(&mut self, theta: &OccSet, gamma: &Context, budget: u32) -> Search {
         self.statistics.nodes += 1;
-        if self.stop.fired() {
+        let work = NODE_WORK
+            + (self.forest.len() / OCCURRENCES_PER_WORK) as u64
+            + std::mem::take(&mut self.work);
+        if self.stop.fired(work) {
             return Err(Reason::Stopped);
         }
         let mut key = self.take_key();
@@ -797,6 +1002,7 @@ impl<'a> Engine<'a> {
         // they need an empty context (any context, with weakening); a
         // literal never, since a focus on it succeeds only in the initial
         // cases tested below.
+        self.work += members.len() as u64;
         let mut zero = false;
         for &o in members {
             tally.add(self.counts, o);
@@ -837,6 +1043,8 @@ impl<'a> Engine<'a> {
         // used), those that can meet a literal of `Γ` first, then by id.
         if self.rules.exponentials {
             copies.extend(theta.iter().filter(|&a| !gamma.contains(a)));
+            // Each is looked up in `Γ`, compared with its class and sorted.
+            self.work += 2 * copies.len() as u64;
             self.one_of_each(copies);
             if budget == 0 {
                 // A branch cut by the bound: the level cannot claim
@@ -847,6 +1055,7 @@ impl<'a> Engine<'a> {
                 // By rank, those that meet a member first: the heuristic is
                 // asked once per formula, not once per comparison.
                 copies.sort_unstable_by_key(|&a| self.rank(a));
+                self.work += (copies.len() * members.len() / MEETS_PER_WORK) as u64;
                 let mut others = self.take_list();
                 let mut met = 0;
                 for i in 0..copies.len() {
@@ -1462,6 +1671,7 @@ impl<'a> Engine<'a> {
                     next += 1;
                     continue;
                 }
+                self.work += (self.forest.len() / OCCURRENCES_PER_LEAF) as u64;
                 let joined = match join {
                     Join::Tensor(f, a, b) => self.premises(theta, left, right, f, a, b, budget)?,
                     // A Mix needs two parts.
@@ -1507,7 +1717,8 @@ impl<'a> Engine<'a> {
             return Ok(());
         }
         self.steps = 0;
-        if self.stop.fired() {
+        let work = SPLITS_PER_POLL + std::mem::take(&mut self.work);
+        if self.stop.fired(work) {
             Err(Reason::Stopped)
         } else {
             Ok(())
@@ -2058,7 +2269,8 @@ mod tests {
     /// The bias never changes what is provable, only what a copy bound
     /// allows: the counter with eight tokens is proved within three copies
     /// a branch chaining backward, and needs seven chaining forward, where
-    /// it visits a fraction of the stable sequents.
+    /// it visits a fraction of the stable sequents; the default finds the
+    /// forward proof.
     #[test]
     fn bias_option() {
         let (sequent, copies) = crate::families::counter(8, false);
@@ -2074,16 +2286,136 @@ mod tests {
                 &mut || false,
             )
         };
-        let backward = Options::default().copies(copies);
+        let backward = Options::default().bias(Bias::Rarer).copies(copies);
         let (verdict, slow) = run(&backward);
         assert!(verdict.proof().is_some());
-        let forward = backward.bias(Bias::Factors);
+        let forward = backward.clone().bias(Bias::Factors);
         let (verdict, _) = run(&forward);
         assert!(matches!(verdict, Verdict::Unknown(Reason::CopyBound(_))));
         let (verdict, fast) = run(&forward.copies(7));
         let proof = verdict.proof().expect("seven steps on one branch");
         assert_eq!(proof.check(Mode::CLASSICAL), Ok(()));
         assert!(fast.nodes * 10 < slow.nodes, "{fast:?} against {slow:?}");
+        // The default runs both: the clauses are Horn, so the forward
+        // search has its own bound and its proof comes first, at its cost.
+        let (verdict, default) = run(&Options::default().copies(copies));
+        assert_eq!(verdict.proof().unwrap().check(Mode::CLASSICAL), Ok(()));
+        assert_eq!(default, fast);
+    }
+
+    /// The default bias on a sequent with exponentials takes turns between
+    /// the forward and the backward search, each from its start on a
+    /// number of polls that grows, and answers with the first that
+    /// decides: here the backward one, after the forward one used up a
+    /// turn and then its bound.
+    #[test]
+    fn default_bias_takes_turns() {
+        // The counter with eight tokens takes seven steps forward, more than
+        // the forward bound here; the clauses that move a token between
+        // places give the forward search markings to visit until then.
+        let (mut clauses, marking, goal) = counter(8);
+        for (body, head) in [
+            ("a", "x"),
+            ("x", "y"),
+            ("y", "a"),
+            ("a", "u"),
+            ("u", "v"),
+            ("v", "a"),
+            ("b", "w"),
+            ("w", "b"),
+            ("x", "u"),
+        ] {
+            clauses.push((body.to_string(), head.to_string()));
+        }
+        let clauses: Vec<(&str, &str)> = clauses.iter().map(|(b, h)| (&**b, &**h)).collect();
+        let text = horn(&clauses, &marking, &[goal]);
+        let m = Mode::CLASSICAL;
+        let options = Options::default().forward_copies(4);
+        let (verdict, backward) = run(&text, m, &options.clone().bias(Bias::Rarer));
+        assert!(verdict.proof().is_some());
+        let (verdict, forward) = run(&text, m, &options.clone().bias(Bias::Factors).copies(4));
+        assert!(matches!(verdict, Verdict::Unknown(Reason::CopyBound(4))));
+        let (verdict, both) = run(&text, m, &options);
+        assert!(verdict.proof().is_some());
+        // What the turns cut short cost: less than a third of the turn
+        // the forward search ends in for itself, and at most that turn and
+        // the ones before it for the backward search, which then runs
+        // alone.
+        let turns = both.nodes - forward.nodes - backward.nodes;
+        assert!(
+            0 < turns && turns < 7 * forward.nodes,
+            "{turns} stable sequents in the turns cut short, {forward:?}, {backward:?}"
+        );
+        // One thread, so the run is a function of the input.
+        assert_eq!(run(&text, m, &options).1, both);
+        // With no bound of its own the forward search gives up sooner, and
+        // the default is the backward search after it.
+        let (_, cut) = run(&text, m, &options.clone().bias(Bias::Factors));
+        let (verdict, after) = run(&text, m, &options.forward_copies(0));
+        assert!(verdict.proof().is_some());
+        assert!(cut.nodes + backward.nodes <= after.nodes && after.nodes < both.nodes);
+    }
+
+    /// The contract of the default bias: on a sequent with exponentials it
+    /// decides whatever the backward or the forward search decides under
+    /// the same options, with the same verdict, with and without the memo,
+    /// classically and intuitionistically.
+    #[test]
+    fn default_bias_decides_what_either_rule_does() {
+        let mut compared = 0;
+        let mut check = |text: &str, mode: Mode, options: &Options| {
+            let both = decided(text, mode, options);
+            for bias in [Bias::Rarer, Bias::Factors] {
+                let one = decided(text, mode, &options.clone().bias(bias));
+                assert!(
+                    one.is_none() || one == both,
+                    "{text:?} in {mode} mode: {one:?} under {bias:?}, {both:?} by default"
+                );
+                compared += u64::from(one.is_some());
+            }
+        };
+        for (i, rules) in Rules::ALL.into_iter().enumerate() {
+            if !rules.exponentials {
+                continue;
+            }
+            let mut rng = Rng::new(200 + i as u64);
+            for _ in 0..30 {
+                let generate::Provable {
+                    mut formulas,
+                    copies,
+                } = generate::provable(&mut rng, rules, 3, 8);
+                let options = Options::default().copies(copies);
+                check(&generate::sequent(&formulas), mode_for(rules), &options);
+                if generate::mutate(&mut rng, &mut formulas, 3) {
+                    let text = generate::sequent(&formulas);
+                    check(&text, mode_for(rules), &Options::default());
+                    // Without the memo a refutation under Mix takes seconds.
+                    if !rules.mix {
+                        check(&text, mode_for(rules), &Options::default().memo_limit(0));
+                    }
+                }
+            }
+        }
+        for (n, rules) in generate::IllRules::ALL.into_iter().enumerate() {
+            let mut rng = Rng::new(300 + n as u64);
+            for _ in 0..30 {
+                let generate::Ill {
+                    mut hypotheses,
+                    goal,
+                    copies,
+                } = generate::ill(&mut rng, rules, 3, 8);
+                let options = Options::default().copies(copies);
+                let text = generate::two_sided(&hypotheses, &goal);
+                check(&text, Mode::INTUITIONISTIC, &options);
+                hypotheses.push(goal);
+                if generate::mutate(&mut rng, &mut hypotheses, 3) {
+                    let goal = hypotheses.pop().unwrap();
+                    let text = generate::two_sided(&hypotheses, &goal);
+                    check(&text, Mode::INTUITIONISTIC, &Options::default());
+                }
+            }
+        }
+        assert!(compared > 1000, "{compared} verdicts compared");
     }
 
     /// A split search whose splits all fail in focus visits no stable
@@ -2352,14 +2684,14 @@ mod tests {
         assert!(matches!(proof.node(below), Node::Bang(..)));
     }
 
-    /// The copy bound: a level that hit its bound never answers
-    /// `Unprovable`, a level that did not answers it, a failure recorded at
-    /// a smaller remaining budget is not reused at a larger one, and the
-    /// bound is per branch.
+    /// The copy bound of one search, the backward one here: a level that
+    /// hit its bound never answers `Unprovable`, a level that did not
+    /// answers it, a failure recorded at a smaller remaining budget is not
+    /// reused at a larger one, and the bound is per branch.
     #[test]
     fn copy_bound() {
         let m = Mode::CLASSICAL;
-        let with = |copies| Options::default().copies(copies);
+        let with = |copies| Options::default().bias(Bias::Rarer).copies(copies);
         // ⊢ ?~a, a needs one copy: bound 0 is hit, bound 1 proves.
         assert!(matches!(
             run("!a |- a", m, &with(0)).0,
@@ -2733,14 +3065,39 @@ mod tests {
                 .proof()
                 .is_some()
         );
+        // Five copies are too few for either search alone; the default's
+        // forward search has a bound of its own on Horn clauses.
+        for bias in [Bias::Rarer, Bias::Factors] {
+            assert!(matches!(
+                run(&text, m, &Options::default().bias(bias).copies(5)).0,
+                Verdict::Unknown(Reason::CopyBound(5))
+            ));
+        }
+        assert!(
+            run(&text, m, &Options::default().copies(5))
+                .0
+                .proof()
+                .is_some()
+        );
         assert!(matches!(
-            run(&text, m, &Options::default().copies(5)).0,
+            run(&text, m, &Options::default().copies(5).forward_copies(0)).0,
             Verdict::Unknown(Reason::CopyBound(5))
         ));
 
         let (clauses, marking, goal) = counter(4);
         let clauses: Vec<(&str, &str)> = clauses.iter().map(|(b, h)| (&**b, &**h)).collect();
         assert!(provable(&horn(&clauses, &marking, &[goal]), m));
+        // A goal no firing reaches: the backward search is cut at its
+        // bound, the forward one runs out of markings within its own.
+        assert!(matches!(
+            run(
+                &horn(&clauses, &marking, &[goal, "a"]),
+                m,
+                &Options::default().bias(Bias::Rarer)
+            )
+            .0,
+            Verdict::Unknown(Reason::CopyBound(3))
+        ));
         assert!(matches!(
             run(
                 &horn(&clauses, &marking, &[goal, "a"]),
@@ -2748,7 +3105,7 @@ mod tests {
                 &Options::default()
             )
             .0,
-            Verdict::Unknown(Reason::CopyBound(3))
+            Verdict::Unprovable
         ));
         assert!(matches!(
             run(
@@ -2763,7 +3120,7 @@ mod tests {
         five.push("a");
         assert!(matches!(
             run(&horn(&clauses, &five, &[goal]), m, &Options::default()).0,
-            Verdict::Unknown(Reason::CopyBound(3))
+            Verdict::Unprovable
         ));
         assert!(provable(&horn(&clauses, &five, &[goal]), m.affine()));
     }

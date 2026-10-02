@@ -26,7 +26,8 @@ use super::classes::Classes;
 use super::context::Context;
 use super::counts::{Counts, Split};
 use super::memo::{Key, Shared, Table};
-use super::{Arena, Engine, Join, Kept, NO_DEPENDENCY, Rules, Search};
+use super::{Arena, Engine, Join, Kept, NO_DEPENDENCY, Rule, Rules, Search};
+use crate::Error;
 use crate::fragment::{Fragment, Mode};
 use crate::occurrences::{Forest, OccId, OccSet, Reading};
 use crate::proofs::{Node, NodeId, Side};
@@ -44,10 +45,17 @@ const LEVELS: u32 = 2;
 /// task when the splits run on several threads: 2⁶ tasks at most.
 const MAX_FIXED: usize = 6;
 
-/// Runs the focused engine on the runtime's pool from a goal, as
+/// Runs the focused engine on `Options::jobs` threads from a goal, as
 /// [`super::search_goal`] does on one thread, polling `stop` on the
-/// calling thread while the pool searches. Returns the node proving the
-/// goal, the shared arena and the statistics of every worker together.
+/// calling thread while the threads search. Returns the node proving the
+/// goal, the arena it lives in and the statistics of every worker
+/// together. Where the default bias takes two searches they run side by
+/// side, each on a pool of its own with half the threads, the first to
+/// decide stopping the other.
+///
+/// # Errors
+///
+/// [`Error::ThreadPool`] when a pool's threads cannot start.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn search_goal(
     forest: &Forest,
@@ -56,34 +64,102 @@ pub(crate) fn search_goal(
     mode: Mode,
     reading: Option<&Reading>,
     options: &Options,
-    runtime: &Runtime,
     stop: &mut dyn FnMut() -> bool,
-) -> (Search, Vec<Node>, Statistics) {
-    let counts = Counts::new(forest, super::bias(options, mode));
+) -> Result<(Search, Vec<Node>, Statistics), Error> {
     let classes = Classes::new(forest, reading);
-    let rules = Rules::new(fragment, mode, &counts);
-    let memo = Shared::new(options.memo_limit);
-    let arena = Mutex::new(Vec::new());
-    let (result, statistics) = runtime.drive(stop, |flags| {
-        let mut engine = Engine::new(
-            forest,
-            rules,
-            reading,
-            (&counts, &classes),
-            options,
-            Stop::Flags(flags),
-            Table::Shared(&memo),
-            Arena::new(Kept::Shared(&arena)),
-        );
-        engine.runtime = Some(runtime);
-        let result = engine.run(goal);
-        let result = engine.exported(result);
-        (result, engine.statistics())
-    });
-    let nodes = arena
-        .into_inner()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    (result, nodes, statistics)
+    let stack = options.stack_size();
+    let (first, second) = super::plan(forest, fragment, mode, options);
+    let search = |rule: Rule, runtime: &Runtime, flags: Flags<'_>| {
+        rule.search_on(
+            forest, goal, fragment, mode, reading, &classes, options, runtime, flags,
+        )
+    };
+    let Some(second) = second else {
+        let runtime = Runtime::new(options.jobs, stack)?;
+        let (result, nodes, statistics) =
+            runtime.drive(stop, |flags| search(first, &runtime, flags));
+        let result = result.map_err(|r| super::reason(r, options));
+        return Ok((result, nodes, statistics));
+    };
+    // Two pools, so that no thread of one search is ever busy with a task
+    // of the other when its own search has decided.
+    let threads = options.jobs / 2;
+    let runtimes = (
+        Runtime::new(threads, stack)?,
+        Runtime::new(options.jobs - threads, stack)?,
+    );
+    let (forward, backward) = crate::search::parallel::race(
+        (&runtimes.0, &runtimes.1),
+        stop,
+        (
+            |flags: Flags<'_>| search(first, &runtimes.0, flags),
+            |flags: Flags<'_>| search(second, &runtimes.1, flags),
+        ),
+        |(result, _, _)| result.is_ok(),
+    );
+    let mut statistics = forward.2;
+    statistics.add(&backward.2);
+    statistics.memo_hits += backward.2.memo_hits;
+    statistics.memo_entries += backward.2.memo_entries;
+    debug_assert!(
+        !matches!((&forward.0, &backward.0), (Ok(a), Ok(b)) if a.is_some() != b.is_some()),
+        "the two searches contradict each other"
+    );
+    // A verdict of either; else the caller's stop, which also names a
+    // search that the other's verdict would have stopped; else the
+    // backward search's reason.
+    let (result, nodes) = match (forward.0, backward.0) {
+        (Ok(root), _) => (Ok(root), forward.1),
+        (_, Ok(root)) => (Ok(root), backward.1),
+        (Err(Reason::Stopped), _) | (_, Err(Reason::Stopped)) => (Err(Reason::Stopped), Vec::new()),
+        (Err(_), Err(reason)) => (Err(super::reason(reason, options)), Vec::new()),
+    };
+    Ok((result, nodes, statistics))
+}
+
+impl Rule {
+    /// Runs the search of this rule on a pool, from one of its threads,
+    /// with a memo and an arena of its own that its workers share, stopped
+    /// by the flags; on a pool of one thread it is the sequential engine.
+    /// Returns what [`Rule::search`] does.
+    #[allow(clippy::too_many_arguments)]
+    fn search_on(
+        self,
+        forest: &Forest,
+        goal: &[OccId],
+        fragment: Fragment,
+        mode: Mode,
+        reading: Option<&Reading>,
+        classes: &Classes,
+        options: &Options,
+        runtime: &Runtime,
+        flags: Flags<'_>,
+    ) -> (Search, Vec<Node>, Statistics) {
+        let counts = Counts::new(forest, self.bias);
+        let rules = Rules::new(fragment, mode, &counts);
+        let memo = Shared::new(options.memo_limit);
+        let arena = Mutex::new(Vec::new());
+        let (result, statistics) = {
+            let mut engine = Engine::new(
+                forest,
+                rules,
+                reading,
+                (&counts, classes),
+                &options.clone().copies(self.copies),
+                Stop::Flags(flags),
+                Table::Shared(&memo),
+                Arena::new(Kept::Shared(&arena)),
+            );
+            engine.runtime = (runtime.threads() > 1).then_some(runtime);
+            let result = engine.run(goal);
+            let result = engine.exported(result);
+            (result, engine.statistics())
+        };
+        let nodes = arena
+            .into_inner()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        (result, nodes, statistics)
+    }
 }
 
 /// What a worker starts from: the state of the engine that spawns it at
@@ -144,6 +220,7 @@ impl<'s> Spawn<'s> {
             memoizes: self.memoizes,
             statistics: Statistics::default(),
             steps: 0,
+            work: 0,
             depth: self.depth,
             recursion_limit: self.recursion_limit,
             copies: self.copies,

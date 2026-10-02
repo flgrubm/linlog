@@ -82,7 +82,15 @@ fn prove_verdicts_and_exit_statuses() {
             "provable (MALL as asserted, classical, focus engine)",
         ),
         (
-            &["prove", "-q", "--copies", "0", "!A |- A"],
+            &[
+                "prove",
+                "-q",
+                "--copies",
+                "0",
+                "--forward-copies",
+                "0",
+                "!A |- A",
+            ],
             3,
             "unknown (MELL, classical, focus engine): the copy bound of 0 was reached; \
              raise it with --copies",
@@ -504,7 +512,9 @@ fn svg_formats() {
     let (status, out, _) = linlog(&["check", "--format", "net-svg"], &json);
     assert_eq!(status, 0);
     assert!(out.contains("<circle id=\"o0\""), "{out}");
-    let (status, out, _) = linlog(&["prove", "--format", "svg", "--copies", "0", "|- ?A"], "");
+    let bounds = ["--copies", "0", "--forward-copies", "0"];
+    let args = [&["prove", "--format", "svg"], &bounds[..], &["|- ?A"]].concat();
+    let (status, out, _) = linlog(&args, "");
     assert_eq!(status, 3);
     assert!(
         out.contains("raise it with \u{2010}\u{2010}copies -->"),

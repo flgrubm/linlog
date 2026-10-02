@@ -32,16 +32,25 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 pub(crate) enum Stop<'a> {
     /// The caller's condition.
     Closure(&'a mut dyn FnMut() -> bool),
+    /// The caller's condition, and an amount of work after which the
+    /// search stops as well: one turn of a search that takes turns with
+    /// another.
+    Turn(&'a mut dyn FnMut() -> bool, u64),
     /// A worker's flags.
     #[cfg(feature = "parallel")]
     Flags(parallel::Flags<'a>),
 }
 
 impl Stop<'_> {
-    /// Polls the condition.
-    pub(crate) fn fired(&mut self) -> bool {
+    /// Polls the condition after `work` more units of work, in the unit
+    /// the engine that polls counts its turns in.
+    pub(crate) fn fired(&mut self, work: u64) -> bool {
         match self {
             Self::Closure(stop) => stop(),
+            Self::Turn(stop, left) => {
+                *left = left.saturating_sub(work);
+                *left == 0 || stop()
+            }
             #[cfg(feature = "parallel")]
             Self::Flags(flags) => flags.raised(),
         }
@@ -233,18 +242,13 @@ pub fn prove_goal(
         }
         _ => {}
     }
-    // Several threads run the focused engine and the net engine on a pool
+    // Several threads run the focused engine and the net engine on pools
     // of their own; the additive path is sequential in every case.
-    #[cfg(feature = "parallel")]
-    let runtime = if options.jobs > 1 && engine != Engine::Additive {
-        Some(parallel::Runtime::new(options.jobs, options.stack_size())?)
-    } else {
-        None
-    };
     let (verdict, statistics, net) = match engine {
         #[cfg(feature = "parallel")]
-        Engine::Net if runtime.is_some() => {
-            net::parallel::search(forest, mode, options, runtime.as_ref().unwrap(), &mut stop)
+        Engine::Net if options.jobs > 1 => {
+            let runtime = parallel::Runtime::new(options.jobs, options.stack_size())?;
+            net::parallel::search(forest, mode, options, &runtime, &mut stop)
         }
         Engine::Net => net::search(forest, mode, options, &mut stop),
         Engine::Focus | Engine::TwoSided | Engine::Additive => {
@@ -252,7 +256,7 @@ pub fn prove_goal(
                 additive::search_goal(forest, goal, options, &mut stop)
             } else {
                 #[cfg(feature = "parallel")]
-                if let Some(runtime) = &runtime {
+                if options.jobs > 1 {
                     focus::parallel::search_goal(
                         forest,
                         goal,
@@ -260,9 +264,8 @@ pub fn prove_goal(
                         mode,
                         reading.as_ref(),
                         options,
-                        runtime,
                         &mut stop,
-                    )
+                    )?
                 } else {
                     focus::search_goal(
                         forest,
@@ -417,6 +420,9 @@ pub struct Options {
     portfolio: bool,
     /// How the focused engine picks each atom's positive literal.
     bias: Bias,
+    /// The most copies of `?` formulas one branch may take in the forward
+    /// search of the default bias.
+    forward_copies: u32,
 }
 
 impl Default for Options {
@@ -425,7 +431,9 @@ impl Default for Options {
     /// [`DEFAULT_RECURSION_LIMIT`](Self::DEFAULT_RECURSION_LIMIT), the
     /// engine and fragment chosen by detection, the net engine's exact test
     /// at its default cadence, a copy bound of
-    /// [`DEFAULT_COPIES`](Self::DEFAULT_COPIES), and one thread.
+    /// [`DEFAULT_COPIES`](Self::DEFAULT_COPIES), one of
+    /// [`DEFAULT_FORWARD_COPIES`](Self::DEFAULT_FORWARD_COPIES) for the
+    /// forward search of the default bias, and one thread.
     fn default() -> Self {
         Self {
             memo_limit: Self::DEFAULT_MEMO_LIMIT,
@@ -437,6 +445,7 @@ impl Default for Options {
             jobs: 1,
             portfolio: false,
             bias: Bias::Auto,
+            forward_copies: Self::DEFAULT_FORWARD_COPIES,
         }
     }
 }
@@ -452,6 +461,9 @@ impl Options {
     /// The copy bound of the default options: three copies per branch, the
     /// bound llprover searches with by default.
     pub const DEFAULT_COPIES: u32 = 3;
+
+    /// The forward search's copy bound of the default options.
+    pub const DEFAULT_FORWARD_COPIES: u32 = 10;
 
     /// Sets the most copies of `?` formulas one branch of a proof may take.
     /// The search deepens the bound from zero up to this value; a sequent
@@ -538,16 +550,35 @@ impl Options {
     }
 
     /// Sets how the focused engine picks the positive literal of every
-    /// atom. No choice changes what is provable. The default,
-    /// [`Bias::Auto`], takes [`Bias::Factors`] without exponentials and
-    /// [`Bias::Rarer`] with them or in affine mode. On a sequent with exponentials whose
-    /// hypotheses are Horn clauses, a Petri net for one, `Factors` chains
-    /// forward and often decides in milliseconds what `Rarer` does not
-    /// decide at all, but a proof then takes one copy per step on one
-    /// branch, so it needs [`copies`](Self::copies) raised to the number
-    /// of steps and answers [`Reason::CopyBound`] below that.
+    /// atom. No choice changes what is provable. [`Bias::Rarer`] mostly
+    /// chains backward from the goal and [`Bias::Factors`] forward from
+    /// the hypotheses; on a sequent with exponentials whose hypotheses are
+    /// Horn clauses, a Petri net for one, the forward search often decides
+    /// in milliseconds what the backward one does not decide at all, but
+    /// its proofs take one copy per step on a single branch. The default,
+    /// [`Bias::Auto`], is `Factors` without exponentials and `Rarer` under
+    /// weakening; on a sequent with exponentials in linear mode it runs
+    /// both searches, the backward one within [`copies`](Self::copies) and
+    /// the forward one within [`forward_copies`](Self::forward_copies),
+    /// and answers with the first that decides. Either of the two named
+    /// explicitly is that search alone, within `copies`.
     pub fn bias(self, bias: Bias) -> Self {
         Self { bias, ..self }
+    }
+
+    /// Sets the most copies of `?` formulas one branch may take in the
+    /// forward search that [`Bias::Auto`] runs beside the backward one on
+    /// a sequent with exponentials: a forward chain takes a copy per step,
+    /// all on one branch, so it wants a larger bound than
+    /// [`copies`](Self::copies), which this is when it is the larger of
+    /// the two; the forward search never runs within less than `copies`.
+    /// Under any other bias, without exponentials and under weakening it
+    /// has no effect.
+    pub fn forward_copies(self, copies: u32) -> Self {
+        Self {
+            forward_copies: copies,
+            ..self
+        }
     }
 
     /// Returns the stack, in bytes, a thread needs to run the search at

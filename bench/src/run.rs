@@ -25,10 +25,10 @@ use std::time::{Duration, Instant};
 pub const HEADER: &str = "source,family,size,index,problem,mode,engine_requested,jobs,portfolio,\
                           test_period,timeout_s,run,copies,expected,verdict,reason,checked,engine,\
                           fragment,occurrences,multiplicity,time_ms,nodes,memo_hits,memo_entries,\
-                          splits,links,tests,recursion_limit,cpu_ms,wait_ms,bias";
+                          splits,links,tests,recursion_limit,cpu_ms,wait_ms,bias,forward_copies";
 
 /// The columns the child prints.
-const TAIL: usize = 20;
+const TAIL: usize = 21;
 
 /// Which mode to run a problem in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -79,6 +79,12 @@ impl BiasChoice {
             Self::Factors => Bias::Factors,
         }
     }
+}
+
+/// The forward search's copy bound of a run: the one asked for, or the
+/// library's default.
+fn forward_copies(asked: Option<u32>) -> u32 {
+    asked.unwrap_or(Options::DEFAULT_FORWARD_COPIES)
 }
 
 /// Which engine to run.
@@ -193,6 +199,7 @@ pub fn run(args: &RunArgs) -> Result<()> {
                         &args.portfolio.to_string(),
                         &args.test_period.map_or(String::new(), |p| p.to_string()),
                         &name(&args.bias),
+                        &forward_copies(args.forward_copies).to_string(),
                     ]
                     .join(",");
                     if done_before.contains(&key) {
@@ -245,8 +252,10 @@ pub fn run(args: &RunArgs) -> Result<()> {
 
 /// The problems and configurations a CSV file has a row for, each as its
 /// source, family, problem, mode, requested engine, jobs, portfolio, test
-/// period and bias joined by commas; a file from before the bias had a
-/// column ran them all with `auto`.
+/// period, bias and forward copy bound joined by commas; a file from before
+/// the bias had a column ran them all with `auto`, and one from before the
+/// forward bound had one ran the default bias as one search, which no
+/// bound names, so every row of it is run again.
 fn finished(path: &Path) -> Result<HashSet<String>> {
     let Ok(text) = std::fs::read_to_string(path) else {
         return Ok(HashSet::new());
@@ -269,6 +278,7 @@ fn finished(path: &Path) -> Result<HashSet<String>> {
         anyhow::bail!("{} is not a CSV file of `run`", path.display());
     };
     let bias = at("bias");
+    let forward = at("forward_copies");
     Ok(lines
         .map(|line| {
             let fields: Vec<&str> = line.split(',').collect();
@@ -276,7 +286,7 @@ fn finished(path: &Path) -> Result<HashSet<String>> {
             let bias = bias.map(field).filter(|b| !b.is_empty()).unwrap_or("auto");
             key.iter()
                 .map(|&i| field(i))
-                .chain([bias])
+                .chain([bias, forward.map_or("", field)])
                 .collect::<Vec<_>>()
                 .join(",")
         })
@@ -310,6 +320,9 @@ fn child(
         command.args(["--copies", &copies.to_string()]);
     }
     command.args(["--bias", &name(&args.bias)]);
+    if let Some(copies) = args.forward_copies {
+        command.args(["--forward-copies", &copies.to_string()]);
+    }
     if let Some(limit) = args.recursion_limit {
         command.args(["--recursion-limit", &limit.to_string()]);
     }
@@ -354,6 +367,7 @@ fn child(
         fields[2] = "unknown".to_owned();
         fields[3] = reason;
         fields[19] = name(&args.bias);
+        fields[20] = forward_copies(args.forward_copies).to_string();
         fields[9] = format!("{:.3}", start.elapsed().as_secs_f64() * 1000.0);
         fields.join(",")
     };
@@ -426,6 +440,7 @@ fn tail(args: &OneArgs) -> String {
         .portfolio(args.portfolio)
         .copies(copies)
         .bias(args.bias.bias())
+        .forward_copies(forward_copies(args.forward_copies))
         .test_period(args.test_period)
         .recursion_limit(recursion);
 
@@ -472,6 +487,7 @@ fn tail(args: &OneArgs) -> String {
                 (8, &multiplicity.to_string()),
                 (16, &recursion.to_string()),
                 (19, &name(&args.bias)),
+                (20, &forward_copies(args.forward_copies).to_string()),
             ]);
         }
     };
@@ -516,6 +532,7 @@ fn tail(args: &OneArgs) -> String {
         cpu,
         wait,
         name(&args.bias),
+        forward_copies(args.forward_copies).to_string(),
     ]
     .join(",")
 }

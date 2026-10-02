@@ -264,7 +264,7 @@ impl<'a> Engine<'a> {
     /// literal.
     fn decide(&mut self) -> Result<Choice, Reason> {
         self.statistics.nodes += 1;
-        if self.stop.fired() {
+        if self.stop.fired(1) {
             return Err(Reason::Stopped);
         }
         Ok(self.choose())

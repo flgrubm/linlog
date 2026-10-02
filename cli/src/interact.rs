@@ -50,6 +50,7 @@ pub fn interact(args: &InteractArgs) -> Result<Status> {
         .recursion_limit(args.recursion_limit)
         .copies(args.copies)
         .bias(args.bias.into())
+        .forward_copies(args.forward_copies)
         .jobs(if args.deterministic { 1 } else { args.jobs });
     catch_interrupt();
     let stack_size = options.stack_size();

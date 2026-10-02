@@ -83,6 +83,65 @@ impl Runtime {
     }
 }
 
+/// Runs two pieces of work at once, each on a pool of its own and given
+/// the root of its own stop flags, and returns both results. The calling
+/// thread polls `stop` once a millisecond, as [`Runtime::drive`] does, and
+/// raises both flags when it fires; a result that `settles` the matter
+/// raises the other work's flag, so the other returns as soon as it polls.
+/// A panic in either propagates to the caller once both have ended.
+pub(crate) fn race<T: Send>(
+    runtimes: (&Runtime, &Runtime),
+    stop: &mut dyn FnMut() -> bool,
+    work: (
+        impl FnOnce(Flags<'_>) -> T + Send,
+        impl FnOnce(Flags<'_>) -> T + Send,
+    ),
+    settles: impl Fn(&T) -> bool,
+) -> (T, T) {
+    let flags = [AtomicBool::new(false), AtomicBool::new(false)];
+    let (sender, receiver) = channel();
+    let mut results = (None, None);
+    runtimes.0.pool.in_place_scope(|first| {
+        runtimes.1.pool.in_place_scope(|second| {
+            let flags = &flags;
+            let other = sender.clone();
+            first.spawn(move |_| {
+                let _ = sender.send((0, work.0(Flags::root(&flags[0]))));
+            });
+            second.spawn(move |_| {
+                let _ = other.send((1, work.1(Flags::root(&flags[1]))));
+            });
+            while results.0.is_none() || results.1.is_none() {
+                match receiver.recv_timeout(POLL) {
+                    Ok((i, result)) => {
+                        if settles(&result) {
+                            flags[1 - i].store(true, Ordering::Relaxed);
+                        }
+                        if i == 0 {
+                            results.0 = Some(result);
+                        } else {
+                            results.1 = Some(result);
+                        }
+                    }
+                    Err(RecvTimeoutError::Timeout) => {
+                        if stop() {
+                            flags[0].store(true, Ordering::Relaxed);
+                            flags[1].store(true, Ordering::Relaxed);
+                        }
+                    }
+                    // Both tasks ended and one without a result: it
+                    // panicked, and its scope resumes the panic.
+                    Err(RecvTimeoutError::Disconnected) => break,
+                }
+            }
+        });
+    });
+    match results {
+        (Some(first), Some(second)) => (first, second),
+        _ => unreachable!("a task that ends without a result panicked, which its scope propagates"),
+    }
+}
+
 /// The stop flags a worker polls: its own, which a sibling raises to
 /// cancel it once their common alternative is settled, and its
 /// ancestors', up to the root flag the driver raises for the caller's stop

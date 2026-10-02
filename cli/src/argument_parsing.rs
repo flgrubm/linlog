@@ -92,10 +92,12 @@ pub struct ProveArgs {
     pub engine: EngineArg,
     /// How the focused engines pick the positive literal of every atom
     ///
-    /// No choice changes what is provable. `factors` chains forward on
-    /// Horn-like hypotheses with exponentials, such as Petri nets, where it
-    /// is often much faster but takes one copy per step on a single branch:
-    /// raise `--copies` with it.
+    /// No choice changes what is provable. `rarer` mostly chains backward
+    /// from the goal, `factors` forward from the hypotheses, which on Horn
+    /// clauses under `!`, such as a Petri net, is often much faster but
+    /// takes one copy per step on a single branch. `auto` runs both
+    /// searches on a sequent with exponentials and answers with the first
+    /// that decides: in turns on one thread, side by side on several.
     #[arg(long, value_enum, value_name = "BIAS", default_value_t = BiasArg::Auto)]
     pub bias: BiasArg,
     /// How often `?` formulas may be copied on one branch of the proof
@@ -107,6 +109,16 @@ pub struct ProveArgs {
     /// not affected.
     #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_COPIES)]
     pub copies: u32,
+    /// How often `?` formulas may be copied on one branch of the forward
+    /// search that `--bias auto` runs
+    ///
+    /// It applies where every formula under a `!` or `?` is a Horn clause
+    /// such as `!(a * b -o c * d)`: there a copy is one step of a chain,
+    /// and a chain of n steps needs n of them. The forward search never
+    /// runs within less than `--copies`; elsewhere, and under Mix, it runs
+    /// within `--copies`.
+    #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_FORWARD_COPIES)]
+    pub forward_copies: u32,
     /// Give up after this long, such as 500ms, 10s, 2m or 1h
     ///
     /// The verdict is then unknown (exit status 3). Without it, the search
@@ -177,6 +189,11 @@ pub struct InteractArgs {
     /// `prove --bias`
     #[arg(long, value_enum, value_name = "BIAS", default_value_t = BiasArg::Auto)]
     pub bias: BiasArg,
+    /// How often `?` formulas may be copied on one branch of the forward
+    /// search of `--bias auto` when the search closes a goal; see `prove
+    /// --forward-copies`
+    #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_FORWARD_COPIES)]
+    pub forward_copies: u32,
     /// Give up on a `close` after this long, such as 500ms, 10s, 2m or 1h
     #[arg(long, value_name = "DURATION", value_parser = parse_duration)]
     pub timeout: Option<Duration>,
