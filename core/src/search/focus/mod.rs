@@ -379,8 +379,11 @@ struct Engine<'a> {
     lists: Vec<Vec<OccId>>,
     /// Spare tallies of the forest's atoms.
     tallies: Vec<Tally>,
-    /// Spare counts of splits.
-    splits: Vec<Split>,
+    /// Spare counts of splits, boxed so that a split search holds a
+    /// pointer on the stack and not the counts: a level of recursion
+    /// through a searched split took 1.5 KiB with them in the frame.
+    #[allow(clippy::vec_box)]
+    splits: Vec<Box<Split>>,
     /// Spare trails of split searches.
     trails: Vec<Vec<Side>>,
     /// Spare lists of the links of a chain of forced splits.
@@ -1643,18 +1646,18 @@ impl<'a> Engine<'a> {
     }
 
     /// Takes the counts of a split with no member from the pool.
-    fn take_split(&mut self) -> Split {
+    fn take_split(&mut self) -> Box<Split> {
         match self.splits.pop() {
             Some(mut split) => {
                 split.clear();
                 split
             }
-            None => self.counts.split(),
+            None => Box::new(self.counts.split()),
         }
     }
 
     /// Returns the counts of a split to the pool.
-    fn give_split(&mut self, split: Split) {
+    fn give_split(&mut self, split: Box<Split>) {
         self.splits.push(split);
     }
 

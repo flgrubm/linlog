@@ -367,7 +367,7 @@ impl<'a> Engine<'a> {
                 let mut right = self.take_context();
                 right.clone_from(sides.1);
                 let mut counts = self.take_split();
-                counts.clone_from(split);
+                (*counts).clone_from(split);
                 for (i, &m) in members.iter().enumerate().take(fixed) {
                     if pattern >> i & 1 == 1 {
                         right.remove(m);
