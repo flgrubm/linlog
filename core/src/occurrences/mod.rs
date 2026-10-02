@@ -11,6 +11,7 @@ pub use set::OccSet;
 
 use crate::Error;
 use crate::sequents::{Atom, Formula, Kind, Sequent, TermId};
+use std::cmp::Ordering;
 use std::ops::Not;
 
 /// The index of a subformula occurrence in a [`Forest`]: the position of the
@@ -328,9 +329,16 @@ impl Forest {
         Some(a)
     }
 
-    /// Returns the sign of the positive literal of an atom: the literal with
-    /// fewer occurrences in the sequent, `Var` when both have the same
-    /// number. The literal of the other sign is negative.
+    /// Returns the sign of the positive literal of an atom; the literal of
+    /// the other sign is negative. Focused search is complete whatever the
+    /// choice, so it is made for speed, from the sequent alone. Without
+    /// exponentials, the literal that is more often a direct factor of a
+    /// `⊗` is positive, since such a `⊗` takes exactly the dual literal
+    /// for that factor and needs no search for its split; an occurrence
+    /// counts half for every `&` or `⊕` above it. With an exponential
+    /// anywhere in the sequent, or when the two literals count the same,
+    /// the literal with fewer occurrences is positive, `Var` when both
+    /// have the same number.
     pub fn bias(&self, atom: Atom) -> Sign {
         self.bias[atom.index()]
     }
@@ -430,13 +438,42 @@ impl TryFrom<Sequent> for Forest {
                 literal_start[2 * a.index() + s as usize + 1] += 1;
             }
         }
+        // The bias. A `⊗` with a positive literal for a factor has its split
+        // forced, so the literal that is more often such a factor is the
+        // positive one; an occurrence counts half for every additive
+        // choice above it, of which a proof takes one side. Not with
+        // exponentials, where the choice decides how many copies a branch
+        // of the proof needs: there, and on a tie, the rarer literal.
+        let exponentials = kind.iter().any(|k| matches!(k, Kind::Bang | Kind::Quest));
+        let mut factors = vec![0u64; 2 * num_atoms];
+        if !exponentials {
+            /// The weight of an occurrence under no additive choice.
+            const WHOLE: u64 = 1 << 31;
+            let mut choices = vec![0u8; n];
+            for (o, k) in kind.iter().enumerate() {
+                if parent[o] == NONE {
+                    continue;
+                }
+                let p = parent[o] as usize;
+                let additive = matches!(kind[p], Kind::With | Kind::Plus);
+                choices[o] = choices[p].saturating_add(u8::from(additive));
+                if let Some(s) = k.sign()
+                    && kind[p] == Kind::Tensor
+                {
+                    let a = terms[term[o].index()].atom().unwrap();
+                    factors[2 * a.index() + s as usize] +=
+                        WHOLE.checked_shr(u32::from(choices[o])).unwrap_or(0);
+                }
+            }
+        }
         let bias: Box<[Sign]> = (0..num_atoms)
             .map(|a| {
                 let (vars, duals) = (literal_start[2 * a + 1], literal_start[2 * a + 2]);
-                if duals < vars {
-                    Sign::DualVar
-                } else {
-                    Sign::Var
+                match factors[2 * a].cmp(&factors[2 * a + 1]) {
+                    Ordering::Greater => Sign::Var,
+                    Ordering::Less => Sign::DualVar,
+                    Ordering::Equal if duals < vars => Sign::DualVar,
+                    Ordering::Equal => Sign::Var,
                 }
             })
             .collect();
@@ -587,16 +624,6 @@ mod tests {
                 }
                 all.extend_from_slice(list);
             }
-            let (vars, duals) = (
-                f.literals(atom, Sign::Var).len(),
-                f.literals(atom, Sign::DualVar).len(),
-            );
-            let expected_bias = if duals < vars {
-                Sign::DualVar
-            } else {
-                Sign::Var
-            };
-            assert_eq!(f.bias(atom), expected_bias, "atom {a}");
             assert_eq!(f.positive_literals(atom), f.literals(atom, f.bias(atom)));
             assert_eq!(f.negative_literals(atom), f.literals(atom, !f.bias(atom)));
         }
@@ -679,8 +706,9 @@ mod tests {
         assert_eq!(f.lca(o(7), o(7)), Some(o(7)));
     }
 
-    /// The literal with fewer occurrences is positive; a tie makes the atom
-    /// positive; every occurrence is listed once, by atom and sign.
+    /// Where no literal is a factor of a `⊗`, the literal with fewer
+    /// occurrences is positive and a tie makes the atom positive; every
+    /// occurrence is listed once, by atom and sign.
     #[cfg(feature = "parse")]
     #[test]
     fn literals_and_bias() {
@@ -719,6 +747,29 @@ mod tests {
         assert_eq!(f.bias(a), Sign::DualVar);
         assert_eq!(f.polarity(o(0)), Polarity::Negative);
         assert_eq!(f.polarity(o(2)), Polarity::Positive);
+    }
+
+    /// The literal that is more often a factor of a `⊗` is positive, an
+    /// occurrence under an additive choice counting half; with an
+    /// exponential in the sequent the rarer literal is.
+    #[cfg(feature = "parse")]
+    #[test]
+    fn bias_by_tensor_factors() {
+        let bias = |input: &str, atom: &str| {
+            let f = forest(input);
+            check_invariants(&f);
+            f.bias(f.sequent().atom(atom).unwrap())
+        };
+        // `A` is a factor once and `~A` never, though `A` is not the rarer.
+        let horn = "|- ~A, A * ~B, A * ~B, B";
+        assert_eq!(bias(horn, "A"), Sign::Var);
+        assert_eq!(bias(horn, "B"), Sign::DualVar);
+        // `~D` is a factor under each side of a choice, `D` once outside
+        // one: a tie, which the rarer literal wins.
+        let choice = "|- (A * ~D) + (B * ~D), D * C, ~A, ~B, ~C";
+        assert_eq!(bias(choice, "D"), Sign::Var);
+        let exponential = "|- ?~A, A * ~B, A * ~B, B";
+        assert_eq!(bias(exponential, "A"), Sign::DualVar);
     }
 
     /// Connectives have their fixed polarities.

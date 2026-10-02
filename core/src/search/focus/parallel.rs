@@ -725,7 +725,7 @@ mod tests {
 
         // A split search that visits no stable sequent stops as well.
         let input = format!(
-            "|- p * q, 0 * (~p * ~p), 0 * (~q * ~q), {}",
+            "|- p * q, 0 * (~p par ~p), 0 * (~q par ~q), {}",
             crate::search::focus::tests::wide_context()
         );
         let sequent: Sequent = input.parse().unwrap();

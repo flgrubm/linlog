@@ -1821,7 +1821,10 @@ mod tests {
     /// member is the `~p` its left side wants.
     #[test]
     fn stops_inside_a_split_search() {
-        let input = format!("|- p * q, 0 * (~p * ~p), 0 * (~q * ~q), {}", wide_context());
+        let input = format!(
+            "|- p * q, 0 * (~p par ~p), 0 * (~q par ~q), {}",
+            wide_context()
+        );
         let s: Sequent = input.parse().unwrap();
         let forest = Forest::new(&s).unwrap();
         let mut polls = 0;

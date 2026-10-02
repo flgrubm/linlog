@@ -123,11 +123,39 @@ of terms. Invariants the code relies on:
   returns `Option<OccId>`. That is why a forest refuses a sequent with
   `u32::MAX` or more occurrences (`Error::TooManyOccurrences`), which only a
   deeply shared arena from JSON can produce.
-- **Atom bias**: per atom, the literal (`Sign::Var` or `Sign::DualVar`) with
-  fewer occurrences is positive; a tie makes `Var` positive. So an atom that
-  occurs with one sign only has all its literals negative, which is intended:
-  they are never focus candidates. The bias is computed once per forest and
-  every engine must use it; `polarity(o)` already applies it to literals.
+- **Atom bias** (`Forest::bias`, computed once in `Forest::new`, a
+  function of the sequent alone, so a run stays deterministic; the
+  focused engine is its only reader, through `polarity(o)`). Focusing is
+  complete for every assignment of polarities to atoms, so the bias is
+  chosen for speed and can never change what is provable. Without an
+  exponential in the sequent: per atom, the literal that is more often a
+  direct factor of a `⊗` is positive, each occurrence weighted by ½ per
+  `&` or `⊕` above it (a proof takes one side of a choice, so the two
+  heads `~d` of a clause `(… ⊗ ~d) ⊕ (… ⊗ ~d)` count as one); a `⊗`
+  with a positive literal factor has its split forced. On a tie, and
+  whenever the sequent has a `!` or `?`, the old rule: the literal with
+  fewer occurrences is positive, a tie makes `Var` positive, so an atom
+  with one sign only has all its literals negative. Why not with
+  exponentials: the bias decides the shape of the focused proofs, hence
+  the copies a branch needs; with the factor rule the counter family
+  chains forward and needs `n − 1` copies on its one branch where the
+  rarer-literal rule needs `log₂ n`, so within the family's bound
+  `Proved` became `CopyBound` (measured), which a default must not do.
+  At a bound of `n − 1` the same rule would decide the counter with 16
+  tokens in 19 stable sequents instead of 392 160: a bias option for
+  exponential problems is a follow-up. Rules tried on the
+  exponential-free targets and not taken: `Var` always (as good on the
+  families written two-sided, where it is forward chaining, but it
+  depends on how the atoms happen to be written and loses the gains on
+  Partition and the wide sequents), `DualVar` always (30 to 300 times
+  more stable sequents on the Horn families), the factor count without
+  the ½ (the heads of the 3-Partition clauses outvote the goal: 317 138
+  stable sequents against 923 at bins of four). Measured, old rule and
+  new (stable sequents, splits): unsolvable 3-Partition with bins of
+  five 3 373 and 41 160 against 971 and 36 072; QBF 20 #2 105 667 and
+  1 037 858 against 60 883 and 97 394; Partition with seven items 179
+  and 6 008 against 178 and 2 078; `wide-m3` at 30 91 and 768 against 31
+  and 688.
 - Literal lists are one `Box<[OccId]>` in CSR layout, grouped by atom, then
   sign (`Var` first), ascending ids within a group; `literals(atom, sign)`
   slices it. `all_literals()` is the whole thing.
@@ -801,12 +829,6 @@ relies on:
   buffer on an error path only costs an allocation later. The memo insert
   clones its key, and a repeated occurrence grows a context's extra list;
   those are the allocations per stable sequent.
-- **The atom bias hurts Horn clauses.** The forest makes the rarer literal
-  positive, so clause bodies whose atoms also appear as hypotheses are
-  usually negative and their `⊗` splits are enumerated instead of forced;
-  refuting `families::three_partition` with bins of four takes 51 s in
-  release mode for that reason (the `3-partition-no` family at size 4).
-  A bias override is performance-pass material.
 - **The memo can change decisiveness within the bound, never a verdict.**
   An `Exhausted` entry is a fact about the sequent alone, the loop check
   about the branch, so a run with the memo may answer `Unknown` where a
