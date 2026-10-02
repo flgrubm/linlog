@@ -127,20 +127,23 @@ too_wide=(
   SwimmingPool-9_5_1
 )
 # Petri nets whose search, in the first baseline, missed its stop inside a
-# split enumeration and ran 10 s to over 600 s under a limit of 5 s, or
-# whose proof arena outgrew the memory (bench/reruns.txt and the
-# `-generous' rows): here with 25 s before the kill, which a run that
-# still misses its stop meets.
+# split enumeration and ran 10 s to over 400 s under a limit of 5 s
+# (bench/reruns.txt and the `-generous' rows): here with 25 s before the
+# kill, which a run that still misses its stop meets.
 missed_stop=(
   AutoFlight_afcs_05_a_1_1 ClientsAndServers-0005-0_1_1 IOTPpurchase_IOTP_c5m4p3d2_1_1
   RwMutex_rwmutex-r10w100_1_1 PermAdmissibility_unf-8x8-4stageSEN-05_100_1
   PhaseVariation_5-10_phaseVariation_50_1 SimpleLoadBal_simple_lbs-15_50_1 DES_des_00_a_20_1
   SafeBus-10-unfolded_1_1 TCPcondis_tcp30_50_1 RobotManipulation_robot-manipulation-5_1_1
-  Parking_parking_2_8_5_1 ResAllocation_RAS-R-15_10_1 DatabaseWithMutex_database20UNFOLD_5_1
-  Diffusion2D_2D8_gradient_20x20_50_1_1
+  Parking_parking_2_8_5_1 ResAllocation_RAS-R-15_10_1
 )
-# Two nets proved long after their limit under a recursion limit of 16 384.
-late=(TokenRing-15-unfolded_1_1 TokenRing-20-unfolded_1_1)
+# Under a recursion limit of 16 384: two nets proved long after their
+# limit, one whose proof arena outgrew the memory inside a split
+# enumeration and one killed after 605 s.
+deep=(
+  TokenRing-15-unfolded_1_1 TokenRing-20-unfolded_1_1 Diffusion2D_2D8_gradient_20x20_50_1_1
+  DatabaseWithMutex_database20UNFOLD_5_1
+)
 
 # names PREFIX NAME...: the problems as a list for --only.
 names() {
@@ -163,7 +166,7 @@ names() {
   run 1 --lltp "$lltp/ILL" --timeout 5 --grace 25 \
     --only "$(names ILL/petri-nets/MCC/ "${missed_stop[@]}")"
   run 1 --lltp "$lltp/ILL" --timeout 5 --grace 55 --recursion-limit 16384 \
-    --only "$(names ILL/petri-nets/MCC/ "${late[@]}")"
+    --only "$(names ILL/petri-nets/MCC/ "${deep[@]}")"
 ) &
 first=$!
 
