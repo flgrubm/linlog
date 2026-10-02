@@ -61,6 +61,7 @@ use crate::fragment::{Fragment, Mode};
 use crate::occurrences::{Forest, OccId, OccSet, Polarity, Position, Reading};
 use crate::proofs::{Node, NodeId, Proof, Side};
 use crate::sequents::Kind;
+use std::hash::BuildHasher as _;
 use std::sync::Mutex;
 
 /// The stack depth that stands for "no pruned sequent depends on an
@@ -363,6 +364,9 @@ struct Engine<'a> {
     /// The stable sequents of the current branch, the root end first; only
     /// the first `stack_len` are live, the rest are spare buffers.
     stack: Vec<Key>,
+    /// The hash of every entry of the stack, live or spare: the loop check
+    /// compares hashes before sequents.
+    hashes: Vec<u64>,
     /// How many entries of the stack are live.
     stack_len: usize,
     /// Spare occurrence sets of the forest's width.
@@ -420,6 +424,7 @@ impl<'a> Engine<'a> {
             seed: 0,
             portfolio: options.portfolio,
             stack: Vec::new(),
+            hashes: Vec::new(),
             stack_len: 0,
             sets: Vec::new(),
             contexts: Vec::new(),
@@ -659,9 +664,14 @@ impl<'a> Engine<'a> {
         // redundant, with or without weakening: a proof of the larger
         // sequent proves nothing about the smaller one, and ⊢ ?(a ⅋ ~a) is
         // proved only through ⊢ a ⅋ ~a ; a, ~a.)
+        let hash = if self.rules.stack {
+            crate::hash::BuildHasher::default().hash_one(&key)
+        } else {
+            0
+        };
         if self.rules.stack {
             for depth in 0..self.stack_len {
-                if self.stack[depth] == key {
+                if self.hashes[depth] == hash && self.stack[depth] == key {
                     self.dependency = self.dependency.min(depth as u32);
                     self.give_key(key);
                     self.give_key(canonical);
@@ -679,8 +689,10 @@ impl<'a> Engine<'a> {
         if self.rules.stack {
             if self.stack_len < self.stack.len() {
                 self.stack[self.stack_len].clone_from(&key);
+                self.hashes[self.stack_len] = hash;
             } else {
                 self.stack.push(key.clone());
+                self.hashes.push(hash);
             }
             self.stack_len += 1;
         }

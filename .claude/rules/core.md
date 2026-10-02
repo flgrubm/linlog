@@ -615,6 +615,11 @@ relies on:
   `Proved` or `Complete` memo entry answers first; then the stack; then an
   `Exhausted` entry, so that a repeated sequent is pruned rather than
   reported as cut by the budget. Pruned branches never set `exhausted`.
+  Every stack entry has its hash beside it (`hashes`), compared before
+  the sequents: the ancestors of a branch mostly share `Θ` and the set
+  of `Γ`, so a comparison of sequents ran over both bitsets before it
+  met the difference (the `growing` family at a bound of 1 024 took
+  530 ms of CPU for 392 961 stable sequents, 260 ms with the hashes).
 - **The spec's affine prune is wrong and is not implemented.** It prunes a
   stable sequent that *contains* an ancestor as a multiset, arguing that
   weakening shortens the proof; but weakening turns a proof of the smaller

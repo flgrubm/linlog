@@ -32,6 +32,7 @@ use crate::occurrences::{Forest, OccId, OccSet, Reading};
 use crate::proofs::{Node, NodeId, Side};
 use crate::search::parallel::{Flags, Runtime};
 use crate::search::{Options, Reason, Statistics, Stop};
+use std::hash::BuildHasher as _;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -154,6 +155,11 @@ impl<'s> Spawn<'s> {
             seed: self.seed,
             portfolio: self.portfolio,
             stack: self.stack.to_vec(),
+            hashes: self
+                .stack
+                .iter()
+                .map(|key| crate::hash::BuildHasher::default().hash_one(key))
+                .collect(),
             stack_len: self.stack.len(),
             sets: Vec::new(),
             contexts: Vec::new(),
