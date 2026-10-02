@@ -136,14 +136,14 @@ pub static FAMILIES: &[Family] = &[
     Family {
         name: "partition-yes",
         summary: "Matsuoka's Horn encoding of Partition (MLL) with this many random items, solvable",
-        sizes: &[4, 5, 6, 7],
+        sizes: &[4, 5, 6, 7, 12, 16, 20, 24, 28],
         instances: 1,
         generate: |n, _| instance(partition(&partition_items(n, true)), Mode::CLASSICAL, true),
     },
     Family {
         name: "partition-no",
         summary: "Matsuoka's Horn encoding of Partition (MLL) with this many random items, unsolvable",
-        sizes: &[3, 4, 5],
+        sizes: &[3, 4, 5, 9, 12, 14, 15],
         instances: 1,
         generate: |n, _| {
             instance(
@@ -156,7 +156,7 @@ pub static FAMILIES: &[Family] = &[
     Family {
         name: "qbf",
         summary: "random 3-QBF with this many alternating variables (∃ first), 1.5 clauses per variable with two existentials each, under a lock-and-key encoding into MALL",
-        sizes: &[8, 12, 16, 20, 24],
+        sizes: &[8, 12, 16, 20, 24, 32, 40, 44, 48],
         instances: 4,
         generate: |n, index| {
             let (formula, valid) = qbf(n, index);
@@ -180,14 +180,14 @@ pub static FAMILIES: &[Family] = &[
     Family {
         name: "wide-m3",
         summary: "the wide sequent with every atom shared by three pairs: every literal three times",
-        sizes: &[12, 24, 30, 36],
+        sizes: &[12, 24, 30, 36, 256, 1024, 2048],
         instances: 1,
         generate: |k, _| instance(wide(k, 3), Mode::CLASSICAL, true),
     },
     Family {
         name: "wide-m4",
         summary: "the wide sequent with every atom shared by four pairs: every literal four times",
-        sizes: &[12, 24, 28, 32, 36],
+        sizes: &[12, 24, 28, 32, 36, 256, 1024, 2048],
         instances: 1,
         generate: |k, _| instance(wide(k, 4), Mode::CLASSICAL, true),
     },
@@ -201,7 +201,7 @@ pub static FAMILIES: &[Family] = &[
     Family {
         name: "counter",
         summary: "the Petri-net counter !(c0 ⊗ c0 ⊸ c1), …, c0^n ⊢ cL with n tokens, n a power of two (MELL), provable within log2 n copies",
-        sizes: &[2, 4, 8, 16],
+        sizes: &[2, 4, 8, 16, 32, 64],
         instances: 1,
         generate: |n, _| {
             let (sequent, levels) = counter(n, false);
@@ -214,7 +214,7 @@ pub static FAMILIES: &[Family] = &[
     Family {
         name: "counter-over",
         summary: "the counter with the unreachable goal cL ⊗ c0 (MELL), unprovable, searched to log2 n copies",
-        sizes: &[2, 4, 8, 16],
+        sizes: &[2, 4, 8, 16, 32, 64],
         instances: 1,
         generate: |n, _| {
             let (sequent, levels) = counter(n, true);
