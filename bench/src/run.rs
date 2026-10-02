@@ -333,6 +333,13 @@ fn child(
             stdout.trim().to_owned()
         }
         Some(status) => {
+            // The row keeps the last line; the log gets all of it, since a
+            // panic's message and backtrace come before that line.
+            eprintln!(
+                "{} crashed ({status}); its error output:\n{}",
+                reference.name,
+                stderr.trim_end()
+            );
             let last = stderr.lines().rev().find(|l| !l.trim().is_empty());
             died(clean(&format!("crash ({status}): {}", last.unwrap_or(""))))
         }
