@@ -22,6 +22,7 @@
 //! choice, and every task of a level has ended when the level's answer is
 //! read.
 
+use super::classes::Classes;
 use super::context::Context;
 use super::counts::{Counts, Split};
 use super::memo::{Key, Shared, Table};
@@ -58,6 +59,7 @@ pub(crate) fn search_goal(
     stop: &mut dyn FnMut() -> bool,
 ) -> (Search, Vec<Node>, Statistics) {
     let counts = Counts::new(forest);
+    let classes = Classes::new(forest, reading);
     let rules = Rules::new(fragment, mode, &counts);
     let memo = Shared::new(options.memo_limit);
     let arena = Mutex::new(Vec::new());
@@ -66,7 +68,7 @@ pub(crate) fn search_goal(
             forest,
             rules,
             reading,
-            &counts,
+            (&counts, &classes),
             options,
             Stop::Flags(flags),
             Table::Shared(&memo),
@@ -93,6 +95,8 @@ struct Spawn<'s> {
     reading: Option<&'s Reading<'s>>,
     /// Its count invariants.
     counts: &'s Counts,
+    /// Its classes of interchangeable occurrences.
+    classes: &'s Classes,
     /// The rules in force.
     rules: Rules,
     /// The shared memo.
@@ -132,6 +136,7 @@ impl<'s> Spawn<'s> {
             forest: self.forest,
             reading: self.reading,
             counts: self.counts,
+            classes: self.classes,
             rules: self.rules,
             memo: Table::Shared(self.memo),
             nodes: Arena::new(Kept::Shared(self.arena)),
@@ -289,6 +294,7 @@ impl<'a> Engine<'a> {
             forest: self.forest,
             reading: self.reading,
             counts: self.counts,
+            classes: self.classes,
             rules: self.rules,
             memo,
             arena,
@@ -367,7 +373,7 @@ impl<'a> Engine<'a> {
                 let result = self.search_splits(
                     theta,
                     members,
-                    fixed,
+                    (fixed, pattern),
                     (&mut left, &mut right),
                     &mut counts,
                     join,
@@ -490,7 +496,18 @@ impl<'a> Engine<'a> {
         let threads = self.runtime.map_or(1, Runtime::threads);
         let bits = (2 * threads).next_power_of_two().trailing_zeros() as usize;
         let fixed = bits.clamp(1, MAX_FIXED).min(members.len());
+        // Of interchangeable members the lowest ids go left, and they come
+        // last among their like: a pattern that sends one left and the
+        // next one right is none of the splits searched.
+        let canonical = |pattern: u64| {
+            (1..fixed).all(|i| {
+                pattern >> (i - 1) & 1 == 0
+                    || pattern >> i & 1 == 1
+                    || !self.classes.same(members[i - 1], members[i])
+            })
+        };
         let alternatives: Vec<Alternative<'_>> = (0..1u64 << fixed)
+            .filter(|&pattern| canonical(pattern))
             .map(|pattern| Alternative::Splits {
                 join,
                 members,
@@ -686,15 +703,15 @@ mod tests {
         }
     }
 
-    /// A 3-Partition instance without a solution, whose refutation takes
-    /// seconds: the caller's stop condition, polled on the calling thread,
-    /// stops every worker, inside a search for splits too.
+    /// Eleven tensor pairs under Mix, whose refutation takes minutes: the
+    /// caller's stop condition, polled on the calling thread, stops every
+    /// worker, inside a search for splits too.
     #[test]
     fn stops() {
-        let sequent = crate::families::three_partition(&[1, 1, 1, 3, 1, 1], 2, 4);
+        let sequent = crate::families::mix(11);
         let options = Options::default().jobs(4);
         let mut polls = 0;
-        let outcome = prove_until(&sequent, Mode::CLASSICAL, &options, || {
+        let outcome = prove_until(&sequent, Mode::CLASSICAL.with_mix(), &options, || {
             polls += 1;
             polls > 20
         })

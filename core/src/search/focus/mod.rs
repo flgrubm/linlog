@@ -41,6 +41,8 @@
 //! whose intervals exclude zero for some atom is refuted without search,
 //! and in the multiplicative fragments the count equation as well.
 
+/// Interchangeable occurrences.
+mod classes;
 /// The linear zone as a multiset.
 mod context;
 /// The count invariants the engine prunes with.
@@ -50,6 +52,7 @@ mod memo;
 #[cfg(feature = "parallel")]
 pub(crate) mod parallel;
 
+use self::classes::Classes;
 use self::context::Context;
 use self::counts::{Counts, Split, Tally};
 use self::memo::{Entry, Failure, Key, Memo, Table};
@@ -120,12 +123,13 @@ pub(crate) fn search_goal(
     stop: &mut dyn FnMut() -> bool,
 ) -> (Search, Vec<Node>, Statistics) {
     let counts = Counts::new(forest);
+    let classes = Classes::new(forest, reading);
     let rules = Rules::new(fragment, mode, &counts);
     let mut engine = Engine::new(
         forest,
         rules,
         reading,
-        &counts,
+        (&counts, &classes),
         options,
         Stop::Closure(stop),
         Table::Own(Memo::new(options.memo_limit)),
@@ -312,6 +316,8 @@ struct Engine<'a> {
     reading: Option<&'a Reading<'a>>,
     /// Its count invariants.
     counts: &'a Counts,
+    /// Its classes of interchangeable occurrences.
+    classes: &'a Classes,
     /// The rules in force.
     rules: Rules,
     /// The memo of stable sequents.
@@ -376,14 +382,14 @@ struct Engine<'a> {
 }
 
 impl<'a> Engine<'a> {
-    /// Prepares a run on the forest with the rules given, its counts, the
-    /// stop condition, the memo and the arena to use.
+    /// Prepares a run on the forest with the rules given, its counts and
+    /// classes, the stop condition, the memo and the arena to use.
     #[allow(clippy::too_many_arguments)]
     fn new(
         forest: &'a Forest,
         rules: Rules,
         reading: Option<&'a Reading<'a>>,
-        counts: &'a Counts,
+        (counts, classes): (&'a Counts, &'a Classes),
         options: &Options,
         stop: Stop<'a>,
         memo: Table<'a>,
@@ -393,6 +399,7 @@ impl<'a> Engine<'a> {
             forest,
             reading,
             counts,
+            classes,
             rules,
             memo,
             nodes,
@@ -770,6 +777,9 @@ impl<'a> Engine<'a> {
             return Ok(None);
         }
 
+        // Of interchangeable candidates one is enough: the focus on either
+        // leaves the same sequent up to a renaming.
+        self.one_of_each(candidates);
         // Forced splits first, then `⊕`, then the free splits; by id within
         // a class, so that the run is deterministic.
         candidates.sort_by_key(|&o| (self.focus_class(o), self.rank(o)));
@@ -778,6 +788,7 @@ impl<'a> Engine<'a> {
         // used), those that can meet a literal of `Γ` first, then by id.
         if self.rules.exponentials {
             copies.extend(theta.iter().filter(|&a| !gamma.contains(a)));
+            self.one_of_each(copies);
             if budget == 0 {
                 // A branch cut by the bound: the level cannot claim
                 // completeness, unless nothing was there to copy.
@@ -810,6 +821,13 @@ impl<'a> Engine<'a> {
             }
         }
         self.last_resort(theta, gamma, members, tally, budget)
+    }
+
+    /// Keeps, of the occurrences that are interchangeable, the one with
+    /// the lowest id.
+    fn one_of_each(&self, occurrences: &mut Vec<OccId>) {
+        occurrences.sort_unstable_by_key(|&o| (self.classes.of(o), o));
+        occurrences.dedup_by_key(|o| self.classes.of(*o));
     }
 
     /// What is tried on a stable sequent after every focus failed: Mix,
@@ -1147,7 +1165,7 @@ impl<'a> Engine<'a> {
             self.search_splits(
                 theta,
                 &members,
-                0,
+                (0, 0),
                 (&mut left, &mut right),
                 &mut split,
                 join,
@@ -1158,7 +1176,7 @@ impl<'a> Engine<'a> {
         let result = self.search_splits(
             theta,
             &members,
-            0,
+            (0, 0),
             (&mut left, &mut right),
             &mut split,
             join,
@@ -1172,15 +1190,17 @@ impl<'a> Engine<'a> {
     }
 
     /// Puts the members a split search assigns in the order it decides
-    /// them in, by the first atom of their rows, so that the members that
-    /// bear on an atom are decided one after the other and its counts are
-    /// settled early (those without a row last), and opens them in the
-    /// split's counts.
+    /// them in and opens them in the split's counts: those that bear on
+    /// more atoms first, then by the first atom of their rows, so that the
+    /// members that bear on an atom are decided one after the other and
+    /// its counts are settled early (those without a row last);
+    /// interchangeable members next to each other, the lowest id last.
     fn open(&self, members: &mut [OccId], split: &mut Split) {
         members.sort_unstable_by_key(|&m| {
             (
                 std::cmp::Reverse(self.counts.row_len(m)),
                 self.counts.first_atom(m),
+                self.classes.of(m),
                 std::cmp::Reverse(m),
             )
         });
@@ -1194,17 +1214,21 @@ impl<'a> Engine<'a> {
     /// says. The members from `start` on are assigned one by one, in their
     /// order, each to the right first and then to the left, and a partial
     /// assignment is given up as soon as the counts show that no way of
-    /// assigning the rest lets both sides pass; so every split that passes
-    /// the counts is reached, each once, and none that fails them. `left`
-    /// and `right` are the sides with every member to assign on the right,
-    /// `split` their counts with those members open. Returns the node of
-    /// the first split whose two sides are proved.
+    /// assigning the rest lets both sides pass. Of interchangeable members
+    /// the left side takes those with the lowest ids, so that only their
+    /// number varies: any other choice of as many gives the same two
+    /// sequents up to a renaming. So every such split that passes the
+    /// counts is reached, each once, and none that fails them. `left` and
+    /// `right` are the sides and `split` their counts, with the members
+    /// before `start` assigned as the bits of `prefix` say (one for the
+    /// left) and the others on the right and open. Returns the node of the
+    /// first split whose two sides are proved.
     #[allow(clippy::too_many_arguments)]
     fn search_splits(
         &mut self,
         theta: &OccSet,
         members: &[OccId],
-        start: usize,
+        (start, prefix): (usize, u64),
         (left, right): (&mut Context, &mut Context),
         split: &mut Split,
         join: Join,
@@ -1212,7 +1236,13 @@ impl<'a> Engine<'a> {
     ) -> Search {
         let rules = self.rules;
         let mut trail = self.take_trail();
-        trail.resize(members.len(), Side::Right);
+        trail.extend((0..members.len()).map(|i| {
+            if i < start && prefix >> i & 1 == 1 {
+                Side::Left
+            } else {
+                Side::Right
+            }
+        }));
         // The members before `next` are assigned, as the trail says.
         let mut next = start;
         let found = 'search: loop {
@@ -1220,8 +1250,21 @@ impl<'a> Engine<'a> {
             self.poll_splits()?;
             if split.feasible(rules.intervals, rules.equation, rules.mix) {
                 if next < members.len() {
-                    split.assign(self.counts, members[next], Side::Right);
-                    trail[next] = Side::Right;
+                    let m = members[next];
+                    // On the left at once when the member before it is
+                    // interchangeable and went left: the lowest ids do.
+                    let side = if next > 0
+                        && trail[next - 1] == Side::Left
+                        && self.classes.same(members[next - 1], m)
+                    {
+                        right.remove(m);
+                        left.insert(m);
+                        Side::Left
+                    } else {
+                        Side::Right
+                    };
+                    split.assign(self.counts, m, side);
+                    trail[next] = side;
                     next += 1;
                     continue;
                 }
@@ -1331,7 +1374,7 @@ impl<'a> Engine<'a> {
         let result = self.search_splits(
             theta,
             &rest,
-            0,
+            (0, 0),
             (&mut left, &mut right),
             &mut split,
             Join::Mix,

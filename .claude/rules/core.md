@@ -651,6 +651,55 @@ relies on:
   names. A `Tally` keeps a set's sums incrementally; a `Split` keeps those
   of the two sides of a split in the making and what the members not yet
   assigned can still add (below).
+- **Interchangeable occurrences** (`focus/classes.rs`, `Classes`): two
+  occurrences of the same term, and under a reading in the same
+  position, share a class, named by its first occurrence. The lemma
+  everything below rests on: *a sequent stays provable, by a proof of
+  the same shape (hence with the same copies on every branch), when
+  members of `Γ` are replaced by interchangeable occurrences one for
+  one, and `Θ` by any set of occurrences with the same classes.* By
+  induction on the proof: every rule reads off an occurrence its kind,
+  its atom and sign, its subformulas and (two-sided) its position and
+  whether it is an implication; equal terms give equal kinds, atoms and
+  subterms, and the position below an occurrence is a function of its
+  term and its own position (the reading's choice of the antecedent is
+  made per term), so the premises of the rule on the replaced occurrence
+  are again replacements of the premises. No rule looks at an
+  occurrence's id, its parent or its root. What was checked and is *not*
+  part of the definition: the zone (a replacement keeps each member in
+  its zone, and `Θ` counts as a set of classes because `?` adds a formula
+  that may already be there under another id); the branch stack (the
+  loop check prunes a sequent equal to an ancestor, which stays sound
+  when fewer proofs are searched: of the proofs with canonical choices a
+  smallest one has no repeat either, since the choices are a function of
+  the sequent they are made in and a subproof of a canonical proof is
+  canonical); the copy bookkeeping (the rule that skips a `Θ` member
+  with an unconsumed copy in `Γ` is by id and skips less than the same
+  rule by class would, and by class it is the same normal form). The
+  count rows, weights and `absorbs` are functions of the term and the
+  problem's exponential atoms, so interchangeable occurrences have equal
+  counts.
+- **One of each kind** (`one_of_each`): of interchangeable focus
+  candidates, and of interchangeable members of `Θ` to copy (among those
+  the unconsumed-copy rule leaves), only the lowest id is tried; the
+  focus on another leaves the same sequent up to a replacement. A
+  repeated occurrence of `Γ` is one candidate for the same reason.
+- **Canonical splits**: in `search_splits` the left side takes, of each
+  class, the members with the lowest ids, so only the number taken
+  varies (`C(n, k)` splits of `n` equal hypotheses become one per `k`).
+  Sound and complete by the lemma: a split with another choice of as
+  many gives the same two premises up to a replacement. In the order of
+  `Engine::open` a class is a run with descending ids, so the rule is
+  "a member goes left at once when the one before it is of its class
+  and went left", which the trail decides; on the pool the patterns
+  that break it are not spawned (`split_parallel`), so the chunks still
+  partition the splits searched. Under Mix the first member, which is
+  fixed on the left, has the lowest id of all, which agrees with the
+  rule. Measured (stable sequents, splits): the unsolvable 3-Partition
+  with bins of four 1 834 321 and 410 255 721 before, 4 761 and 54 193
+  after; the counter with 8 tokens 2 316 421 and 4 644 336 before,
+  14 228 and 42 105 after, and with 16 tokens, which no run had
+  finished, 473 232 and 2 004 517.
 - **Focus candidates.** Every `⊗` and `⊕` of a stable sequent; `1` and `!`
   only when alone (they need an empty context; any, in affine mode); never
   a literal (a positive literal in focus succeeds only in the initial
