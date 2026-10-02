@@ -121,9 +121,11 @@ beyond clap and anyhow, which the CLI already has.
   line (with the harness's estimate of the time left), the load and the
   other processes using a CPU every ten minutes. Each process is capped
   at 12 GiB of address space (`prlimit`; 16 and 32 GiB in stage 4): the
-  additive path's memo is unbounded (depth 18 of the `additive` family
-  needs about 130 GB), and three such processes at once stay within the
-  unit's limit. Loading is cheap by comparison: the library's largest
+  check of a child's proof takes a bitset of the forest's width per proof
+  node (7.6 GB at depth 16 of the `additive` family, about 130 GB at
+  depth 18; the additive search itself stays under 0.1 GB since its memo
+  has a cap), and three such processes at once stay within the unit's
+  limit. Loading is cheap by comparison: the library's largest
   file (103 MB, 30 million occurrences) loads in 16 s with 2 GB. The
   classical LLTP pass runs `--reverse` so that the two LLTP passes do not
   load those files at the same time.

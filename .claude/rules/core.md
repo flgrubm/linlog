@@ -1215,7 +1215,17 @@ procedure is the same in every mode: additive rules keep one output by
 themselves, and neither weakening nor Mix can help a two-formula sequent
 (a proof of one formula alone ends in `⊤` leaves, which absorb the other).
 `Statistics::nodes` is pairs visited, `memo_hits` and `memo_entries` the
-memo's.
+memo's. The memo holds at most `Options::memo_limit` pairs and is emptied
+when full, like the focused memo (zero switches it off); the product
+bound on the time then no longer holds in theory, but the identity of
+depth 16 (7.9 million pairs without a cap) is decided with the default
+limit of 2²⁰ in 11.7 million visits instead of 10.7 million, in less
+time (a table that fits the cache) and in 0.1 GB instead of 0.46 GB.
+What takes gigabytes on such a proof is not the search but the checker,
+whose `derive` keeps a `Θ` bitset of the forest's width for every node
+(262 141 nodes of 32 KB at depth 16, 7.6 GB): the first baseline's
+"8 GB of memo" was this, measured by the peak before and after the
+check. It is the checker's to fix, not the engines'.
 
 ## Export
 

@@ -375,8 +375,8 @@ trap 'kill $watcher 2>/dev/null || true' EXIT
 
 # run CPU NAME ARGS...: one `run` into NAME.csv, pinned to CPU unless it is
 # `-`. Every process gets `cap' GiB of address space, 12 until stage 4, so
-# that a search whose memory grows without bound (the additive path's memo
-# has no cap) fails its own run; three such processes at once stay within
+# that a run whose memory grows without bound (the check of a large proof
+# takes gigabytes) fails alone; three such processes at once stay within
 # the unit's 40 GiB.
 cap=12
 run() {

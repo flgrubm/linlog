@@ -4,7 +4,9 @@
 //! The additive fast path: a sequent of two additive-only formulas,
 //! `⊢ A, B` classically or `A ⊢ B` intuitionistically, is decided by a
 //! recursion on pairs of subformula occurrences, memoized on the pair, in
-//! time proportional to the product of the two sizes.
+//! time proportional to the product of the two sizes as long as the memo
+//! holds every pair; it is emptied when it reaches the limit of the
+//! options, which costs time and never an answer.
 //!
 //! Every rule of the additive fragment replaces one formula of a two-formula
 //! sequent by a subformula, so every sequent of a proof is a pair of
@@ -69,6 +71,8 @@ pub(crate) fn search_goal(
     let mut engine = Engine {
         forest,
         memo: HashMap::default(),
+        memo_limit: options.memo_limit,
+        memo_peak: 0,
         nodes: Vec::new(),
         statistics: Statistics::default(),
         depth: 0,
@@ -77,7 +81,7 @@ pub(crate) fn search_goal(
     };
     let result = engine.pair(*x, *y);
     let statistics = Statistics {
-        memo_entries: engine.memo.len(),
+        memo_entries: engine.memo_peak,
         ..engine.statistics
     };
     (result, engine.nodes, statistics)
@@ -90,6 +94,10 @@ struct Engine<'a> {
     forest: &'a Forest,
     /// The pairs decided: the node proving the pair, or `None`.
     memo: HashMap<(OccId, OccId), Option<NodeId>>,
+    /// The most pairs the memo holds; zero switches it off.
+    memo_limit: usize,
+    /// The most pairs the memo held at once.
+    memo_peak: usize,
     /// The proof arena.
     nodes: Vec<Node>,
     /// The counters: `nodes` is the pairs visited, memo hits included.
@@ -121,7 +129,15 @@ impl Engine<'_> {
         let result = self.decide(x, y);
         self.depth -= 1;
         let node = result?;
-        self.memo.insert((x, y), node);
+        if self.memo_limit != 0 {
+            // A full memo is emptied: every entry is a fact the search can
+            // find again, and the arena keeps the nodes of the proofs.
+            if self.memo.len() >= self.memo_limit {
+                self.memo.clear();
+            }
+            self.memo.insert((x, y), node);
+            self.memo_peak = self.memo_peak.max(self.memo.len());
+        }
         Ok(node)
     }
 
@@ -227,6 +243,21 @@ mod tests {
             Verdict::Unprovable => false,
             Verdict::Unknown(reason) => panic!("{input:?} by {engine}: {reason}"),
         }
+    }
+
+    /// A memo that fills up is emptied and the verdict stays: the identity
+    /// of depth 8, which decides thousands of pairs, with room for 64.
+    #[test]
+    fn capped_memo() {
+        let instance = crate::families::find("additive").unwrap().instance(8, 0);
+        let options = Options::default().memo_limit(64);
+        let outcome = prove(&instance.sequent, instance.mode, &options).unwrap();
+        assert_eq!(outcome.engine, Which::Additive);
+        assert_eq!(outcome.statistics.memo_entries, 64);
+        let Verdict::Proved(proof) = outcome.verdict else {
+            panic!("the identity is provable");
+        };
+        assert_eq!(proof.check(instance.mode), Ok(()));
     }
 
     /// The additive fragment's textbook sequents, classically and
