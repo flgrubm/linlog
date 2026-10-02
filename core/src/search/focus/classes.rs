@@ -70,6 +70,7 @@ impl Classes {
 mod tests {
     use super::*;
     use crate::Sequent;
+    use crate::search::focus::context::Context;
 
     /// Equal formulas share a class wherever they occur, and a reading
     /// separates the positions: here the `⊤` that is the hypothesis `0`
@@ -91,6 +92,19 @@ mod tests {
         assert!(!classes.same(tops[0], literals[0]));
         assert_eq!(classes.of(literals[1]), literals[0]);
         assert!(!classes.distinct());
+        // A zone's canonical form has the first of each class, as often as
+        // the zone has members of the class.
+        let mut gamma = Context::empty(forest.len());
+        for o in [literals[1], literals[1], literals[0], tops[1]] {
+            gamma.insert(o);
+        }
+        let mut canonical = Context::empty(forest.len());
+        assert!(canonical.canonical_from(&gamma, &classes));
+        let mut expected = vec![literals[0], literals[0], literals[0], tops[0]];
+        expected.sort_unstable();
+        assert_eq!(canonical.iter().collect::<Vec<_>>(), expected);
+        assert!(!gamma.canonical_from(&canonical, &classes));
+        assert_eq!(gamma, canonical);
         let reading = Reading::new(&forest).unwrap();
         let classes = Classes::new(&forest, Some(&reading));
         assert!(!classes.same(tops[0], tops[1]));

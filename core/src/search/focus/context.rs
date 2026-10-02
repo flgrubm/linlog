@@ -102,12 +102,31 @@ impl Context {
     pub(crate) fn canonical_from(&mut self, other: &Self, classes: &Classes) -> bool {
         self.clear();
         let mut replaced = false;
-        for o in other.iter() {
+        // The extra list is in ascending order, like the set.
+        let mut extra = other.extra.iter().peekable();
+        for o in other.set.iter() {
+            let copies = 1 + extra.next_if(|&&(x, _)| x == o).map_or(0, |&(_, n)| n);
             let class = classes.of(o);
             replaced |= class != o;
-            self.insert(class);
+            self.add(class, copies);
         }
         replaced
+    }
+
+    /// Adds `copies` copies of `o`, at least one.
+    fn add(&mut self, o: OccId, copies: u32) {
+        let extra = if self.set.insert(o) {
+            copies - 1
+        } else {
+            copies
+        };
+        if extra == 0 {
+            return;
+        }
+        match self.slot(o) {
+            Ok(i) => self.extra[i].1 += extra,
+            Err(i) => self.extra.insert(i, (o, extra)),
+        }
     }
 
     /// Returns whether the zone has no member.
@@ -167,6 +186,9 @@ mod tests {
         let mut d = Context::empty(70);
         d.clone_from(&c);
         assert_eq!(c, d);
+        d.add(o(65), 2);
+        d.add(o(4), 1);
+        assert_eq!(d.iter().collect::<Vec<_>>(), [o(4), o(65), o(65), o(65)]);
         c.clear();
         assert!(c.is_empty());
     }
