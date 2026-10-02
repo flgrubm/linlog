@@ -844,7 +844,23 @@ impl<'a> Engine<'a> {
                 self.exhausted |= !copies.is_empty();
                 copies.clear();
             } else {
-                copies.sort_by_key(|&a| (!self.meets(a, members), self.rank(a)));
+                // By rank, those that meet a member first: the heuristic is
+                // asked once per formula, not once per comparison.
+                copies.sort_unstable_by_key(|&a| self.rank(a));
+                let mut others = self.take_list();
+                let mut met = 0;
+                for i in 0..copies.len() {
+                    let a = copies[i];
+                    if self.meets(a, members) {
+                        copies[met] = a;
+                        met += 1;
+                    } else {
+                        others.push(a);
+                    }
+                }
+                copies.truncate(met);
+                copies.extend_from_slice(&others);
+                self.give_list(others);
             }
         }
         #[cfg(feature = "parallel")]
