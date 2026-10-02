@@ -2,6 +2,201 @@
 
 You are working in the linlog repository. CLAUDE.md applies throughout: jj
 only (never git), thematic commits as soon as a unit is done, doc comments on
+every item, the verification table, no pushing.
+
+This step is being run a second time, for the one thing its first session
+left open and named as the largest gain left on the table: the default
+atom bias when the sequent has exponentials. Everything else the step
+asked for is built, reviewed and accepted; do not redo any of it. Read
+before you start:
+
+- `plan/reports/15-performance.md`, the first session's report, which is
+  yours to extend: "Outcome", "What each change contributed" (item 4),
+  "The reviews", "Targets that remain undecided, and why", "For step 16".
+- `.claude/rules/core.md`: "Atom bias", "The copy budget", "Memo contract
+  with the bound", "Complete failures are keyed up to interchangeable
+  members", "The loop check", "A factor that is a tensor of positive
+  literals forces its side too", and "The parallel runtime".
+- `plan/README.md`: D7, D8 with the paragraph under its table, D9, D11,
+  D15, and the Status entry of step 15's review.
+- `plan/later.md`, "Follow-ups: the focused engine", its first entry.
+- `core/src/search/focus/**`, `core/src/search/mod.rs` (`Options`,
+  `Bias`, `run`'s deepening), `core/src/occurrences/mod.rs`
+  (`Forest::bias_under`), `bench/targets.sh`, `.claude/rules/bench.md`.
+- "What the step first asked for" at the end of this prompt, for how
+  this step measures and what its constraints are; they hold for you.
+
+## Where the step stands
+
+`Options::bias` has three values. `Rarer` makes the literal of an atom
+with fewer occurrences positive; `Factors` makes the one positive that is
+more often a direct factor of a `⊗`, so that more splits are forced, and
+on Horn-like hypotheses under `!` (a Petri net) that is forward chaining.
+`Auto`, the default, is `Factors` without exponentials and `Rarer` with
+them or in affine mode. The reason for `Rarer` with exponentials is the
+copy bound: a forward chain takes one copy per step on a single branch,
+so within the default bound of 3 the factor rule turns proofs into
+`Reason::CopyBound` (the counter family at every size), which a default
+must not do. What that default leaves unused, measured on the target
+set's LLTP sample (109 intuitionistic problems, 5 s):
+
+| | proved | refuted | copy bound or recursion limit | time limit |
+|---|--:|--:|--:|--:|
+| `rarer` (the default), bound 3 | 11 | 0 | 30 | 68 |
+| `factors`, bound 3 | 23 | 0 | 78 | 8 |
+| `factors`, bound 10 | 48 | 1 | 23 | 37 |
+
+(From the first session's report, the third column by subtraction; take
+the three runs again as your `before`.) `factors` at bound 3 loses 3 of the default's 11
+proofs to the bound and answers 45 of its 68 timeouts at the bound within
+milliseconds; at bound 10 it has every one of the 11. And one problem
+shows what the default costs outside the sample: the planning session
+ran the engine on every LLTP row the first baseline had decided (1 890
+rows of its three sequential passes, 5 s), and all keep their verdict
+but the Petri net `ILL/petri-nets/MCC/IBM5964_1_1.p`, which the engine
+before the first session proved in 1.8 s and 14 million stable
+sequents, and which now takes 42 s and 256 million under `rarer` (the
+order of the search changed) and 0.08 ms under `factors`.
+
+## Goal
+
+A default that a user never has to second-guess: with exponentials,
+`Bias::Auto` decides what either rule decides, as far as the limits
+allow, without the user knowing that forward chaining wants its copy
+bound raised, and without ever answering less than today's default does
+under the same options. The second baseline (step 16, a night) then
+measures the engine users get.
+
+## What to build
+
+1. **The combined default.** For a sequent with exponentials in linear
+   mode, classical and intuitionistic, `Bias::Auto` uses both rules. The
+   design is yours; what it must satisfy:
+   - **Never less than today.** With no stop condition firing, `Auto`
+     never answers `Unknown` where `Bias::Rarer` under the same options
+     decides, and never another verdict. This is a contract, stated in
+     the rules file and tested, not a tendency.
+   - **The gain is taken.** What `Factors` decides is decided by `Auto`
+     too, the proofs that need more copies on one branch than
+     `Options::copies` included as far as you can argue it: say what
+     bound the forward search runs under and why (a bound of its own, a
+     count that treats a chain of forced steps differently, a multiple
+     of `Options::copies`), keep the documented meaning of
+     `Options::copies` for the search it describes today, and keep
+     `Reason::CopyBound(n)` truthful about what was tried. If it needs a
+     knob, it is a field of `Options` with a default (D15), a flag of
+     the CLI and an axis of the harness; no constant a user might want
+     to move.
+   - **Neither rule starves the other under a limit.** Eight of the
+     sampled nets time out under `Factors` as well, and `Rarer` runs
+     into the limit on most, so "one, then the other" spends a time
+     limit on the first. The crate has no clock (D11): the turns are
+     counted in the engine's own units (stable sequents, split steps),
+     on budgets that grow, so that a run is a function of the input on
+     one thread and a problem either rule decides quickly is decided
+     quickly. Say what the scheme costs against the better rule alone,
+     in the worst case and on the targets.
+   - **What is shared between the two searches is only what holds under
+     both.** Provability does not depend on the bias, so a proof and a
+     complete failure are facts for both; a failure cut by the budget is
+     a statement about one rule's search space under one budget, and the
+     loop check is about one branch of one search. Argue each thing you
+     share in `.claude/rules/core.md`; when in doubt, do not share.
+   - **`Unprovable` keeps its meaning**: a level searched to its end
+     without a cut, under either rule, since focusing is complete for
+     every bias.
+2. **What stays as it is, as the oracle.** `Bias::Rarer` and
+   `Bias::Factors` named explicitly search exactly as they do now, and
+   `Auto` without exponentials and in affine mode is what it is now: on
+   the target set the counters (`nodes`, `splits`, `memo_hits`,
+   `memo_entries`) of every decided row without exponentials are
+   identical to `bench/targets/after.csv`, and a run of the LLTP sample
+   under each explicit bias reproduces what you took as `before`.
+3. **On a pool.** The two searches are independent, which is what a
+   pool is good at, and `Options::portfolio`, which reorders
+   alternatives per worker, has never shown a gain. If the combined
+   default falls out naturally as the two rules side by side when
+   `jobs` is above one, build that, and say what should become of the
+   portfolio; if it does not, leave the parallel path on the scheme of
+   item 1 and say so. Either way the parallel guarantee stands: another
+   proof, never another decided verdict.
+4. **Measured.** `bench/targets.sh after-bias`, committed with a column
+   in `bench/TARGETS.md`: no row that `after.csv` decides is lost, the
+   LLTP sample decides at least what the two explicit runs decide
+   between them at the default bound, and the report says how close it
+   comes to `factors` at bound 10. The check the planning session made
+   is yours to repeat, since it is what found the lost net: every LLTP
+   row the first baseline decided, in `lltp-intuitionistic.csv`,
+   `lltp-classical.csv` and `lltp-copies-10.csv` under
+   `bench/results/2026-09-30/`, run again at 5 s on one pinned
+   performance core (`run --lltp … --only` with the `FAMILY/NAME` of
+   the decided rows; three runs of about a minute each, named here, so
+   they are measurements you may make), and every one decided with its
+   verdict, `IBM5964_1_1` among them.
+5. **Documentation.** `.claude/rules/core.md` ("Atom bias" rewritten for
+   the default as it is, with the contract and the argument for what is
+   shared), the doc comments of `Bias` and `Options::bias`, the CLI's
+   `--bias` help, README's paragraph on the bias with its example
+   regenerated, `.claude/rules/bench.md` and `bench/TARGETS.md` for the
+   new label.
+
+## Constraints
+
+- The first run's constraints hold (below): no verdict changes, every
+  proof passes the checker, no `unsafe`, no new dependency, determinism
+  on one thread, the engine changed and not forked.
+- This is soundness-relevant. Before you call it done, a fresh-context
+  reviewer compares the engine at your head with the engine at the
+  commit you start from, on generated sequents with exponentials in
+  classical and intuitionistic linear mode (the generators of
+  `search::generate`, mutants included, copy bounds 0 to 3 and the
+  generator's own, memo limits default, 0 and 2, one thread and four):
+  no `Proved` against an `Unprovable`, every proof checked, and, which
+  is this session's own contract, no case decided at the start and
+  `Unknown` at the head without a stop. With a stop condition that
+  fires after a random number of polls: no contradiction, and a
+  decided verdict only where the unstopped run has the same. Scratch
+  programs capped and pinned as the first run's.
+- By day on a shared machine: at most two cores busy with measurements,
+  no run over five minutes, nothing on every core, no
+  `bench/baseline.sh`; every measurement and scratch program in a
+  memory-capped scope (`systemd-run --user --scope -p MemoryMax=8G -p
+  MemorySwapMax=0 taskset -c 2-3 …`), and every sub-agent told so with
+  the reason. A measurement this prompt does not name is asked for
+  first.
+- Commit as you go, each commit building and passing its tests alone:
+  the signing key's passphrase is cached for two hours at most, and a
+  session that leaves its commits to the end finds that it cannot make
+  them (CLAUDE.md, "Version control").
+
+## Verification
+
+`cargo clippy --workspace --all-targets -- --deny warnings`,
+`cargo test --workspace`, `cargo hack check --each-feature -p linlog` and
+`cargo hack check --feature-powerset --depth 2 -p linlog` if a feature
+gate moved, `cargo run --release -p linlog-bench -- run --all-families
+--timeout 5` for the verdicts, the target set under its new label, the
+check of item 4, and `nix flake check` at the end (`jj st` first).
+
+## Deliverables
+
+- Thematic jj commits ("Decide a sequent with exponentials under both
+  biases", "Record the target set under the combined default", …).
+- `plan/reports/15-performance.md`, extended, not rewritten: a section
+  "The default bias" (the scheme and why, the contract and its argument,
+  what is shared, what it costs, the numbers of item 4, the review), the
+  summary at the top and "For step 16" brought up to date (which passes
+  under an explicit bias the second baseline still needs as the record
+  of the two components, and which rows to look at), and the follow-up
+  in "Targets that remain undecided" turned into what is left.
+
+## What the step first asked for
+
+Kept for how the step measures, its constraints and what the pass was
+for. All of it is built; the report says how.
+
+You are working in the linlog repository. CLAUDE.md applies throughout: jj
+only (never git), thematic commits as soon as a unit is done, doc comments on
 every item, the verification table, no pushing. Read before you start:
 
 - `plan/README.md` (D7, D8, D9, D10) and every report in `plan/reports/`,
@@ -21,7 +216,7 @@ every item, the verification table, no pushing. Read before you start:
 - `core/src/search/focus/**`, `core/src/search/additive.rs`,
   `core/src/occurrences/mod.rs` (the forest's atom bias), `bench/**`.
 
-## Where step 14 left things
+### Where step 14 left things
 
 The harness exists and is checked: `linlog-bench run` runs generated
 families (`linlog::families`, 17 of them with verdicts known by
@@ -43,7 +238,7 @@ engines before your changes, and step 16 takes the baseline again after
 them, on another such night. By day the machine is shared, and you work
 by day.
 
-## What the baseline found in the engines
+### What the baseline found in the engines
 
 Beyond the times, the night turned up defects of the focused engine that
 this step's changes must remove, since they are in the code the step
@@ -91,7 +286,7 @@ rewrites (the report's "Open questions and follow-ups" and
   to see it.
 - **The additive memo is unbounded**, as item 6 says.
 
-## How this step measures
+### How this step measures
 
 By day the machine is shared, so this step measures differently from a
 baseline, and the rule binds everything below:
@@ -123,7 +318,7 @@ baseline, and the rule binds everything below:
   `nodes` and `splits` of the same row in the baseline, which is a check
   on your set-up worth making once.
 
-## Goal
+### Goal
 
 The focused engine decides, or decides much faster, the instances the
 benchmarks showed it losing on, without changing a single verdict: fewer
@@ -134,7 +329,7 @@ sound in `.claude/rules/core.md`. Last, and within a stated bound, the
 cost of a unit of search: a few changes of representation that a profile
 points at and the counters prove behaviour-neutral (item 7).
 
-## What to build
+### What to build
 
 1. **The target set and its command**, before any engine change: a script
    (`bench/targets.sh`, or a named set the harness knows) that runs, on
@@ -277,7 +472,7 @@ points at and the counters prove behaviour-neutral (item 7).
    target set; README only where behaviour a user sees changed (a limit
    gone, an option added).
 
-## Constraints
+### Constraints
 
 - No verdict changes, in any mode, on any input: `Proved` stays `Proved`,
   `Unprovable` stays `Unprovable`, and `Unknown` may only become decided.
@@ -302,7 +497,7 @@ points at and the counters prove behaviour-neutral (item 7).
 - No `unsafe`, no new dependency, determinism on one thread as before
   (`--deterministic` counts are a function of the input).
 
-## Verification
+### Verification
 
 `cargo clippy --workspace --all-targets -- --deny warnings`,
 `cargo test --workspace`, `cargo hack check --each-feature -p linlog` and
@@ -312,7 +507,7 @@ set before and after with the table pasted into the report. Report the
 counters and the CPU times faithfully, including the targets nothing
 helped and the candidates that did not pay.
 
-## Deliverables
+### Deliverables
 
 - Thematic jj commits, one per optimisation, each naming what it does
   ("Search the splits of a tensor by their counts", "Choose among equal

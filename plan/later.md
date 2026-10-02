@@ -351,7 +351,9 @@ members, the forced rule for a tensor of positive literals and the hash
 per branch-stack entry, and measured and dropped the restart of a level
 from the frontier.
 
-- **The bias under exponentials.** `Options::bias` exists; the default
+- **The bias under exponentials** (taken up by a second session of step
+  15 on the author's word of 2026-10-02; what its report leaves open
+  replaces this entry at its review). `Options::bias` exists; the default
   keeps the rarer literal positive when the sequent has a `!` or `?`,
   because the factor rule (forward chaining on Horn clauses) takes one
   copy per step on one branch. On the LLTP sample (109 problems, 5 s)

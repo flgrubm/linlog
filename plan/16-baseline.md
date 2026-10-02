@@ -60,16 +60,20 @@ for it (`Options::bias`; `linlog-bench run --bias rarer|factors`, a
   modes; 0.08 ms under `--bias factors`). Your comparison lists every
   row decided before and not now; this one should be among them, and a
   long list would be news.
-- **The bias is the open decision, and the night should give step 17
-  its numbers.** On step 15's sample `--bias factors` proves 23 of 109
-  where the default proves 11 and loses 3 of those to the copy bound of
-  3; with `--copies 10` it proves 48 and loses none. Add two sequential
-  passes over the intuitionistic library, `--bias factors` at the
-  default bound and at a bound of 10 (`lltp-factors.csv`,
-  `lltp-factors-10.csv`); they fit into stage 1's four streams, two of
-  which are free after the first hour. They have no counterpart in the
-  first baseline and are compared with the second's own default pass
-  and its `lltp-copies-10`.
+- **The default bias was settled in a second session of step 15**, so
+  that the night measures the engine users get: with exponentials
+  `Bias::Auto` uses both rules (the report's section "The default
+  bias"; before it, the default proved 11 of 109 sampled LLTP problems
+  where `--bias factors` proved 23, and 48 with `--copies 10`). The
+  default passes of the night measure that default. Beside them, as the
+  record of its two components and the answer to what the combination
+  costs and gains, add the sequential passes over the intuitionistic
+  library that the report's "For step 16" names (as the plan stands:
+  `--bias rarer`, `--bias factors`, and `--bias factors --copies 10`,
+  into files of their own); they fit into stage 1's four streams, two
+  of which are free after the first hour. They have no counterpart in
+  the first baseline and are compared with the second's own default
+  pass and its `lltp-copies-10`.
 - **The families got easy.** Every size the first baseline timed out
   on is decided in milliseconds now, except `mix` at eleven pairs. The
   old sizes stay, for their counterparts; add larger ones until the
@@ -178,11 +182,14 @@ on this step" below apply.
    looked at: a decided verdict that changed is a bug in step 15 and is
    reported as such, at the top. A row decided before and not now is
    not a wrong verdict but a loss, and every one is listed with both
-   rows and with what the two bias passes make of the same problem
-   (`IBM5964_1_1` is the known one). The bias gets a table of its own:
-   per LLTP collection, the problems the default decides, those
-   `--bias factors` decides at the default bound and at a bound of 10,
-   and the overlaps, since step 17 chooses the default from it. The
+   rows and with what the passes under an explicit bias make of the
+   same problem (`IBM5964_1_1` was the one known before the default
+   changed, and should be decided again). The bias gets a table of its
+   own: per LLTP collection, the problems the default decides, those
+   each explicit bias decides at the default bound and `factors` at a
+   bound of 10, and the overlaps: it says whether the combined default
+   keeps its contract (never less than `rarer`) and what it leaves on
+   the table. The
    rows that were `killed` or
    `crash` on the first night (a search that missed its stop inside a
    split enumeration, a proof arena that outgrew its cap; the first

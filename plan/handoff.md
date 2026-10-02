@@ -75,13 +75,17 @@ session's transcript is
 As of 2026-10-02 (afternoon) steps 14 and 15 are finished, reviewed and
 pushed: the first baseline is `bench/results/2026-09-30/` (two nights),
 and the performance pass is in (`bench/TARGETS.md`,
-`plan/reports/15-performance.md`). The next command is step 16:
+`plan/reports/15-performance.md`). One thing of step 15 is still to run,
+at the author's word: a second session for the default atom bias with
+exponentials (the prompt file opens with it), by day:
 
 ```nu
-claude --model claude-opus-5-5 --effort xhigh --name step-16 ((open --raw plan/16-baseline.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-15 ((open --raw plan/15-performance.md) + "\n" + (open --raw plan/conduct.md))
 ```
 
-The order is 16 (a night whose slot the session agrees with the author),
+After its review (which also settles the list of bias passes in prompt
+16), the order is 16 (a night whose slot the session agrees with the
+author; Opus 5.5 at `xhigh`, the command is in `plan/README.md`), then
 17 (assessment, the author's answers, then the plan from 18). By day the
 machine is shared; a baseline night's slot is agreed with the author
 (20:00 to 07:00 for the first baseline; for step 16 the author can start

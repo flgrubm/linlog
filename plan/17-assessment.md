@@ -71,13 +71,13 @@ reader of a paper that cites the tool would expect of it.
    limit, which the problem's nature. What the numbers say about the
    dispatch between the engines, now that the focused engine is as fast
    as the net engine on the wide sequents that were the net engine's
-   case. And what they say about the atom bias (`Options::bias`), the
-   largest gain step 15 left on the table: the second baseline has the
-   default pass and two passes under `--bias factors`, at the default
-   copy bound and at a bound of 10, so say which default follows (a
-   bias per sequent, the two in turn on a budget, or raced on a pool,
-   which would give the portfolio a use it never had), what it does to
-   the default copy bound, and what it would cost to build.
+   case. And what they say about the atom bias (`Options::bias`): step
+   15's second session made the default use both rules where the
+   sequent has exponentials, and the second baseline has that default
+   beside passes under each rule alone, so say whether the combination
+   keeps its contract across the library, what it costs against the
+   better rule, what is still left on the table (the copy bound above
+   all), and whether the portfolio has a use now or should go.
 3. **Every candidate, one by one.** For each: what it is for and who
    would use it; what in the code it builds on and what would have to
    change first; whether its premises still hold after steps 15 and 16

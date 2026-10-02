@@ -30,7 +30,7 @@ amended (see "Review protocol"). `notes/` holds research the prompts rely on.
 | 12 | Rocq certificates | `12-certificates.md` | Fable 5.1 | high | 10 |
 | 13 | Parallel search | `13-parallel.md` | Fable 5.1 | xhigh | 9 |
 | 14 | Benchmarks, LLTP input, hard families, and the baseline (taken on the night of 2026-09-30, completed by a supplement on the night of 2026-10-01) | `14-benchmarks.md` | Opus 5.5 | xhigh | 13 |
-| 15 | Performance pass on the focused engine, driven by 14's baseline, measured by day through the engines' counters, with a bounded profile-driven pass on constant factors at its end | `15-performance.md` | Fable 5.1 | xhigh | 14 |
+| 15 | Performance pass on the focused engine, driven by 14's baseline, measured by day through the engines' counters, with a bounded profile-driven pass on constant factors at its end (done; run again for the default atom bias with exponentials) | `15-performance.md` | Fable 5.1 | xhigh | 14 |
 | 16 | The baseline again, after the pass, and the comparison of the two | `16-baseline.md` | Opus 5.5 | xhigh | 15 |
 | 17 | Assessment and planning: the state of the repository, the two baselines, every candidate in `later.md`; the author's decisions; then the prompts for the steps from 18 | `17-assessment.md` | Fable 5.1 | xhigh | 16 |
 | 18– | Planned by step 17 from the candidates in `later.md` (configurable output, a code audit and refactoring, net-engine pruning and routing, MELL nets with boxes, essential nets, the inverse method, Petri nets, Lambek, second certificate kernels, MALL nets, the web front end) | written by step 17 | – | – | 17 |
@@ -983,3 +983,23 @@ into an option or names it as a follow-up.
   routing as questions of its assessment; `later.md` has the changed
   premises of the net-engine and Petri-net candidates and what a
   combined bias default must settle.
+- 2026-10-02, the default bias before the night: the planning session
+  had recommended leaving the default to step 17, with step 16 measuring
+  both rules; the author asked for it to be dealt with, so that the
+  second baseline measures the engine users get. It is engine work with
+  a soundness side (what two searches may share, what `Unprovable` and
+  the copy bound mean under a combination), so it is a second session
+  of step 15, as step 14 had two, on the same model and effort and with
+  the same command: `15-performance.md` now opens with that session's
+  prompt (a default that with exponentials uses both rules, never
+  answers less than the rarer-literal rule does today, takes the
+  forward chaining's gain without the user raising the copy bound,
+  starves neither rule under a limit, and shares between the two
+  searches only what holds under both; the explicit biases unchanged as
+  the oracle; the target set under a new label and the planning
+  session's rerun of every row the first baseline decided as its
+  check; a differential review against the commit it starts from) and
+  keeps the first run's below it. Prompt 16's passes under an explicit
+  bias become the record of the default's components, and its exact
+  list is settled at the review of that session; prompt 17 assesses the
+  combination instead of choosing a default.
