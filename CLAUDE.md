@@ -36,7 +36,7 @@ Workspace crates:
   runs the search on a thread sized from `--recursion-limit` and owns the
   output; `--copies` bounds the copies of `?` formulas per branch and
   `--bias` picks the focused engines' atom bias (`--forward-copies` the
-  bound of the forward search that the default runs on Horn clauses);
+  bound of the forward search that the default runs on Horn programs);
   `--jobs N` (default: every core) runs the search on a pool and
   `--deterministic` the sequential engines; exit status 0 proved/valid,
   1 unprovable/invalid, 2 error, 3 unknown. Its
@@ -90,7 +90,7 @@ positive literal is picked, `Bias::Rarer` or `Factors`, which
 changes speed and the copies a proof needs, never provability, or
 `Bias::Auto`, which on a sequent with exponentials runs a search under
 each and answers with the first that decides, the forward one within
-`Options::forward_copies` where the formulas under `?` are Horn clauses
+`Options::forward_copies` where the sequent is a Horn program
 (alternating in slices on one core, or in turns from their start without
 the `parallel` feature, and side by side on a pool);
 affine

@@ -101,7 +101,7 @@ pub struct RunArgs {
     #[arg(long, default_value = "auto")]
     bias: run::BiasChoice,
     /// The copy bound of the forward search that the bias `auto` runs on
-    /// Horn clauses under `!` (default: the library's)
+    /// a Horn program (default: the library's)
     #[arg(long)]
     forward_copies: Option<u32>,
     /// The net engine's links between two exact acyclicity tests

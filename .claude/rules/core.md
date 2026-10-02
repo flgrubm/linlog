@@ -702,11 +702,15 @@ relies on:
     searches (the forward one was cut at every level up to its own
     bound, which is at least that).
   - **The forward bound** is `Options::copies`, and the larger of that
-    and `Options::forward_copies` (`DEFAULT_FORWARD_COPIES`) where every
-    formula under a `?` is a Horn clause (`chains`: a tensor of
-    literals with at most one factor a `⅋` of literals, `1` and `⊥`
-    for an empty body or head; what `!(a ⊗ b ⊸ c ⊗ d)` lowers to) and
-    the mode has no Mix. Why a bound of its own: a forward chain takes
+    and `Options::forward_copies` (`DEFAULT_FORWARD_COPIES`) where the
+    sequent is a Horn program (`chains`) and the mode has no Mix. A
+    program: every root under a `?` is a clause, a tensor of body
+    literals, all of one sign throughout the sequent, with at most one
+    factor a head instead, a literal of the other sign or a `⅋` of
+    such (what `!(a ⊗ b ⊸ c ⊗ d)` lowers to); every other root is a
+    marking, a `⅋` of head literals, or a goal, a tensor of body
+    literals; `1` and `⊥` stand for an empty body, goal or head. A
+    Petri net with a marking to reach is exactly that. Why a bound of its own: a forward chain takes
     one copy per step on one branch, where the same derivation
     backward takes as many as its tree is deep, so no multiple of
     `copies` converts one into the other. Why only on Horn clauses: a
@@ -715,7 +719,17 @@ relies on:
     the memo holds once each; on arbitrary formulas a deeper bound
     multiplies the search by the copies' alternatives per level, and
     with the bound applied everywhere the generated tests no longer
-    finished (the LLTP translations of intuitionistic problems that
+    finished. The test is on the whole sequent and on the signs because
+    a first version that looked only at the shape of the formulas under
+    `?` let through `(c ⊸ c), !((c ⊸ b) ⊸ c), 1 ⊢ 1 ⊸ 1 ⊗ c`, which
+    answered "unknown" in 0.02 s before and took sevenfold per copy
+    with the bound (a review's finding). What remains is the price of
+    the bound on a real program whose markings grow: `!(a ⊸ a ⊗ b),
+    !(1 ⊸ b), !(b ⊸ a ⊗ b), !(a ⊗ a ⊗ b ⊸ a), a ⊢ 1` answers
+    "unknown" after 0.6 s where the backward search alone took 0.02 s,
+    and of a review's 2 000 random programs 45 took over a second to
+    an "unknown" that took under 0.1 s before, against 471 that are
+    decided now and were not (3 and 453 at a bound of 10) (the LLTP translations of intuitionistic problems that
     `--copies 10` decides are decided by the bound, under either bias,
     and stay the user's `--copies`). Why not under Mix: every stable
     sequent a chain leaves unproved is tried in every partition, and a
@@ -754,11 +768,17 @@ relies on:
     searches' own, added up, and a function of the input. A search that
     decides stops the other at the end of its slice; one that ended
     undecided leaves the other to run on, and the calling thread then
-    polls the caller's stop once a millisecond (it polls it at every
-    poll of the forward search before; a caller that reads its clock
-    every `n` polls, as the CLI does every 64 on one thread, is then up
-    to `n` milliseconds late, and while the backward search has its
-    slice nobody polls, which is a slice's time). `Ended`, dropped on return and
+    wakes once a millisecond. The caller's stop is not `Send`, so it
+    lives on the calling thread, and it is polled once for every poll
+    of either search: at the forward search's own polls, and for the
+    backward search's (counted in `Baton::polls`) when the forward one
+    gets its turn back and at every wake-up after it has ended
+    (`Baton::caught_up`). A condition that counts its polls or reads a
+    clock every `n` of them, as the CLI does every 1 024 on one thread,
+    therefore sees what it sees of one search; polled only once per
+    wake-up, it was a second late (a review's finding). The backward
+    search reads `Baton::halt` at every poll. `StopOnPanic` stops it
+    when the caller's condition panics. `Ended`, dropped on return and
     on a panic, hands the baton on so that nobody waits for a thread
     that is gone. What it costs against the better rule alone, in units
     of work `W`: `1.5 W` when the backward search decides and `3 W`

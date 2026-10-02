@@ -52,7 +52,7 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   each rule, and `--forward-copies` (default
   `Options::DEFAULT_FORWARD_COPIES`, on both commands too) is
   `Options::forward_copies`, the forward search's own copy bound on
-  Horn clauses. A test that pins a copy bound's message sets both
+  Horn programs. A test that pins a copy bound's message sets both
   bounds, or names a bias. `--format net` prints the net the
   net engine found (`Outcome::net`) and otherwise the net read off the
   proof; `--stats` prints the counters of the engine that ran

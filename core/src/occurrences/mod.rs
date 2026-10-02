@@ -75,7 +75,7 @@ pub enum Bias {
     /// search runs a search under each rule and answers with the first
     /// that decides, so it decides whatever either does: the backward one
     /// within the copy bound, the forward one within a bound of its own
-    /// where the formulas under `!` and `?` are Horn clauses.
+    /// where the sequent is a Horn program.
     #[default]
     Auto,
     /// The literal with fewer occurrences in the sequent is positive, `Var`

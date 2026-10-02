@@ -165,10 +165,10 @@ but a forward chain takes one copy per step on a single branch, where
 exponentials `auto` runs both searches and answers with the first that
 decides: alternating in slices of work on one core, so that the run stays
 a function of the input, and side by side on several. The backward search is
-bounded by `--copies`; so is the forward one, except where every formula
-under a `!` or `?` is a Horn clause such as `!(a * b -o c * d)`, where it
-runs within `--forward-copies` (30 by default), a bound in steps of the
-chain:
+bounded by `--copies`; so is the forward one, except on a Horn program
+(clauses such as `!(a * b -o c * d)`, a marking and a goal of atoms, which
+is what a Petri net is), where it runs within `--forward-copies` (30 by
+default), a bound in steps of the chain:
 
 ```console
 $ linlog prove -q --deterministic --stats "!(a * a -o b), !(b * b -o c), !(c * c -o d), a, a, a, a, a, a, a, a |- d"
