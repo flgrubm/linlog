@@ -835,3 +835,38 @@ into an option or names it as a follow-up.
   set, 16 the two-night shape of the first baseline, `reruns.txt` run as
   it stands, the evening block before 20:00 and the killed rows as the
   place to look for step 15's fixes.
+- 2026-10-02: step 14 reviewed and accepted in full. Four more commits,
+  "Add the night of 2026-10-01 to the baseline: the reruns and the net
+  engine's cubes on MLL 3-Partition" to "Finish the step 14 report with
+  the night of 2026-10-01"; all checks pass including `nix flake check`;
+  the engines are still those of `b53cb17c6831` (the supplement's start
+  names `5b2d49de6880`, which adds `plan/` and the harness's kill and
+  filter). The supplement ran from 20:00 to 21:27 on an idle machine,
+  the author's block pasted before the slot this time, after a reboot at
+  19:29 had dropped the transient timers and they were armed again. The
+  planning session checked the report against the rows: 95 reruns, of
+  which 81 end cleanly (75 timeouts, 4 at the copy bound, 2 proofs), 7
+  abort and 7 are killed at 605 s; the net engine's cubes on MLL
+  3-Partition (59.7 s on one thread at five bins, 13.0× at sixteen);
+  26 mismatch rows on 25 files, as the report now says. What the
+  supplement settled: the kills on the library's largest files were the
+  load, not the search (16 s where the kill came at 10.5 s); the five
+  aborts at sixteen threads were the 12 GiB cap on a pool, not the
+  arena; the arena defect is real on one thread (seven more aborts);
+  and a missed stop is also a late verdict (two Petri nets proved 21.6 s
+  and 552 s into a 5 s limit, which `summary` counts as solved). One
+  planning concern from the durations: stages 1 to 3 and the supplement
+  took 10 h 50 min of the 11-hour slot against the script's estimate of
+  10 h 30 min, and step 15 will make 845 problems searchable that were
+  refused at once, so step 16's night may not fit; its prompt now asks
+  for the estimate by arithmetic, a word to the author before the night,
+  and a second night by the resume rather than dropped rows. The
+  planning session made one fix of its own in `.claude/rules/bench.md`
+  (the timers are transient; what a resumed baseline's starts must
+  share). Prompts amended: 15 (the corrected account of the aborts, the
+  two TokenRing nets as targets, the crashed child's whole error output
+  in the log), 16 (the estimate and the slot, the transient timers, late
+  verdicts kept apart in the comparison), and `later.md` (the Petri-net
+  and net-engine candidates' numbers, the parallel follow-ups with the
+  CLI's default thread count and the portfolio's removal as questions
+  for step 17, the benchmark follow-ups brought up to date).

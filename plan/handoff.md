@@ -72,11 +72,8 @@ session's transcript is
 
 ## Where things stand
 
-As of 2026-10-01 (midday) step 14's baseline is taken and reviewed, its
-supplement is armed for the night of 2026-10-01 (`systemctl --user
-list-timers` shows `linlog-baseline` and its stop), and the step's
-session finishes its report the morning after on the author's
-"continue". Then the planning session reviews that, and the next command
+As of 2026-10-02 step 14 is finished, reviewed and pushed: the first
+baseline is `bench/results/2026-09-30/` (two nights). The next command
 is step 15:
 
 ```nu

@@ -54,8 +54,13 @@ rewrites (the report's "Open questions and follow-ups" and
   LLTP runs on files under 2 MB ran past the harness's kill at 10.5 s
   under a 5 s limit; the Petri net `ILL/petri-nets/MCC/AutoFlight_afcs_05_a_1_1.p`
   examines 1.8 billion splits at one stable sequent and stops after
-  242 s. The poll every `SPLITS_PER_POLL` splits does not reach that
-  loop. `linlog prove --timeout` runs the same engine, so a user's time
+  242 s. Given 600 s before the kill, 37 such runs stop 10 s to 506 s
+  after their start, and two Petri nets are proved after their limit,
+  with checked proofs (`TokenRing-15-unfolded_1_1` at 21.6 s and
+  `TokenRing-20-unfolded_1_1` at 552 s, under 5 s and a recursion limit
+  of 16 384; `lltp-recursion-generous.csv`): a missed stop is also a
+  late verdict. The poll every `SPLITS_PER_POLL` splits does not reach
+  that loop. `linlog prove --timeout` runs the same engine, so a user's time
   limit overruns the same way. After item 2 the split search must poll
   the stop condition at a bounded interval of work wherever it loops,
   and a run of that problem under a 2 s limit must end within a few
@@ -66,9 +71,15 @@ rewrites (the report's "Open questions and follow-ups" and
   failed`, the backtrace showing `Engine::push` growing the proof-node
   arena from `initial` inside `enumerate_split`, at about 110 MB a
   second: nodes are pushed for premises that the split then rejects and
-  are never reclaimed. The additive family at depth 16 on the forced
-  focused engine, and the five sixteen-thread aborts on the largest SYJ
-  problems, end with the same last line. Nodes a failed branch pushed
+  are never reclaimed. Seven more one-thread reruns aborted the same way
+  in the supplement, after 53 s to 469 s under 16 GiB (which allows the
+  arena no further doubling than 12 GiB did). Two aborts that looked
+  alike are not this: the five at sixteen threads on the largest SYJ
+  problems end cleanly with 32 GiB (12 GiB was too little for a pool on
+  8 to 15 million occurrences), and for the focused engine forced onto
+  the additive family at depth 16 the harness does not say which
+  allocation fails, since it keeps only the last line of a crashed
+  child's error output. Nodes a failed branch pushed
   must not stay in the arena (truncate on backtrack, or push only once a
   split's premises are proved; on the shared arena of the parallel path
   argue what is safe), and the memory of a refutation must stay bounded
@@ -80,8 +91,10 @@ rewrites (the report's "Open questions and follow-ups" and
   to see it.
 - **The additive memo is unbounded**, as item 6 says.
 
-So this step measures differently from a baseline, and the rule binds
-everything below:
+## How this step measures
+
+By day the machine is shared, so this step measures differently from a
+baseline, and the rule binds everything below:
 
 - **The engine's counters are the primary evidence.** On one thread the
   search is deterministic, so `nodes` (stable sequents visited), `splits`,
@@ -127,9 +140,10 @@ sound in `.claude/rules/core.md`.
    on and writes one CSV file per label outside `bench/results` (which
    the baseline's `--fresh` deletes), so that `linlog-bench summary
    before.csv after.csv` prints them side by side. The set, from the
-   report: `3-partition-no` at bins of 4 (52.6 s, 3.9 billion splits by
-   step 3's count) and 5 (undecided), `partition-yes` at 5, 6 and 7,
-   `partition-no` at 4 and 5, `mix` at 8 to 11, `qbf` at 16 and 20,
+   report: `3-partition-no` at bins of 4 (49.8 s in the baseline, 3.9
+   billion splits by step 3's count) and 5 (302 s), `partition-yes` at
+   5, 6 and 7 (the last over 1 200 s), `partition-no` at 4 and 5 (811 s),
+   `mix` at 8 to 11 (214 s at ten), `qbf` at 16 and 20,
    `counter` at 8 and 16 and `counter-over` at 8, both classically and
    intuitionistically, `growing`, `chain`, `wide-m3` at 24 and 30 and
    `wide-m4` at 24 and 28 on the focus engine (the dispatch sends both
@@ -143,10 +157,15 @@ sound in `.claude/rules/core.md`.
    `lltp-intuitionistic.csv`, whose `reason` column says how each problem
    ended, and add the Petri nets of `bench/reruns.txt` whose enumeration
    misses its stop (`AutoFlight_afcs_05_a_1_1` first), which the
-   `*-generous.csv` rows time. A target that today runs past its limit
-   is run with a kill you can afford (`--grace`) and counted as such.
-   Commit the script, the before file and, at the end, the after
-   file and a short table (`bench/TARGETS.md`).
+   `*-generous.csv` rows time, with the two TokenRing nets above under
+   `--recursion-limit 16384`, which are provable and should become
+   quick. A target that today runs past its limit is run with a kill
+   you can afford (`--grace`) and counted as such. One small change to
+   the harness belongs here, since the arena defect's evidence is a
+   backtrace: a crashed child's whole error output goes to the run's
+   log, where today only its last line survives, in the `reason`
+   column. Commit the script, the before file and, at the end, the
+   after file and a short table (`bench/TARGETS.md`).
 2. **Splits without enumeration.** Today `split` moves members one at a
    time through all `2^n` submasks in Gray-code order
    (`enumerate_split`, `submasks`) and tests the counts after every flip;

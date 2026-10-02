@@ -55,10 +55,30 @@ work on this step" below apply.
    longer need the room, so that the `-generous` files compare too.
    Have the author paste the evening block before 20:00, not after the
    run has started as on the first night.
+
+   Check that the night still fits. The first baseline took 9 h 21 min
+   for stages 1 to 3 and 1 h 28 min for its supplement, 10 h 50 min of
+   an 11-hour slot, while the script's `estimate` says 10 h 30 min, so a
+   run that starts at its latest start would be cut in stage 4. Step 15
+   moves the durations in both directions: targets that timed out may
+   be decided, and the 845 LLTP problems that were refused at once for
+   a context too wide to split are now searched, each for up to its 5 s
+   in both passes and again on every core with and without the
+   portfolio. Estimate the night by day from step 15's target rows and
+   the first baseline's (arithmetic, not a run), set `estimate` from
+   it, and tell the author before the night whether one night is
+   enough. If it is not, do not drop rows the first baseline has: the
+   stages are ordered so that the stop at 07:00 cuts the parallel ones,
+   and the script run again without `--fresh` finishes the baseline on
+   a second night.
 2. **The night.** Arm the unattended start as step 14 did, give the
    author the two blocks to paste (before leaving, and in the morning),
    the time the run should end, and the word to come back with
-   ("continue"), and end your turn. Do not poll overnight.
+   ("continue"), and end your turn. Do not poll overnight. The timers
+   are transient and a reboot drops them, as happened before the first
+   baseline's second night: arm after the machine's last reboot, and
+   have the author look at `systemctl --user list-timers` before
+   leaving.
 3. **In the morning.** Read the journal: duration, the load at the start,
    the jobs that fired, the throttling, the rows that waited for a CPU.
    If the run did not finish, leave the rest for another night. Commit
@@ -80,7 +100,13 @@ work on this step" below apply.
    `crash` on the first night (a search that missed its stop inside a
    split enumeration, a proof arena that outgrew its cap; the first
    report explains both) are where step 15's fixes should show as clean
-   `timeout` rows or decisions; count them.
+   `timeout` rows or decisions; count them. `summary` counts a verdict
+   found after the limit as solved (two Petri nets of the first
+   baseline's `lltp-recursion-generous.csv` are proved 21.6 s and 552 s
+   into a 5 s limit, which the grace of stage 4 allows): the comparison
+   keeps such late verdicts apart from those within the limit, in both
+   baselines, and compares the `*-generous.csv` files by verdict, reason
+   and time.
 5. **Documentation.** README and the rules files where they quote
    numbers; `plan/later.md` where a candidate's premise changed (the
    net engine's targets, what is left for the inverse method and for the

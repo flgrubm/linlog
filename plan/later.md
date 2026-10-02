@@ -105,8 +105,10 @@ variant of symmetry breaking for equal compound conclusions (keys under
 roots no symmetry moves; the spec's first-literal key is unsound across
 groups, as step 6's report shows). Step 14's numbers
 (`plan/reports/14-benchmarks.md`, "Focus against net") give the targets:
-the Partition table (4.5 s and 3.7 s against 6 ms on the focused engine)
-and the MLL 3-Partition at bins of five (57 s against 17 µs). They also
+the Partition table (4.6 s and 3.7 s against 6 ms on the focused engine)
+and the MLL 3-Partition at bins of five (56 s against 18 µs; six bins
+stay over 60 s at every thread count, though the cubes scale 13× at
+sixteen threads). They also
 show that literal multiplicity is the wrong routing feature: the net
 engine wins by four orders of magnitude on literals repeated three or
 four times across conclusions (`wide-m3`, `wide-m4`) and loses as badly
@@ -153,10 +155,11 @@ xhigh.
 Detect the fragment, build the net, and either call an external reachability
 tool (KReach) through the CLI or implement coverability for the affine case.
 Only worth it with the ILLTP Petri-net problems from step 14 as the
-benchmark: of the 2 664 Petri nets its partial pass reached, 184 were
-decided in 5 s, 895 stopped at the recursion limit and 651 at the
-63-member split limit, both of which step 15 addresses, so assess after
-step 15 what is left for a reachability route. Opus 5.5, xhigh.
+benchmark: of the library's 3 137 Petri nets the first baseline decides
+210 in 5 s; 982 time out, 171 stop at the copy bound and 1 774 at the
+recursion limit, the 63-member split limit or the harness's kill (a
+search that misses its stop), all of which step 15 addresses, so assess
+after step 16 what is left for a reachability route. Opus 5.5, xhigh.
 
 ## Cyclic MLL and the Lambek calculus
 
@@ -296,7 +299,17 @@ closes many small goals (a web server, an `interact` session), which
 needs a runtime value in the public API next to D9's plain-data options.
 The duplicated exploration of and-parallel `&` premises and of copies as
 alternatives on memo-bound families, which is where the parallel focused
-engine gains little (the baselines of steps 14 and 16 measure it). A
+engine gains little (the baselines of steps 14 and 16 measure it). What
+the first baseline adds, for step 17 to weigh with the second: on the
+LLTP problems one thread does not decide at once, sixteen threads are
+2.2× slower in the median and decide 32 against 28 (11 gained, 7 lost),
+so the CLI's default of every core is in question for small problems (a
+smaller default, or a sequential first attempt of a few milliseconds);
+the portfolio gains nothing on the families nor on LLTP and is a
+candidate for removal; QBF gains 1.8× from the second thread and nothing
+from more; and a pool on the largest SYJ problems (8 to 15 million
+occurrences) needs more than 12 GiB where one thread stays within it,
+presumably the workers' per-forest state (not looked into). A
 thread-sanitizer run needs
 nightly and a rebuilt standard library; the code has no `unsafe` and
 every shared value is behind a lock or an atomic, so it stays a wish.
@@ -306,12 +319,22 @@ if the suite's time matters more than the coverage.
 ## Follow-ups: the benchmarks
 
 Left open by step 14 (`plan/reports/14-benchmarks.md`), beyond the two
-baselines, which are steps 14 and 16. Fourteen LLTP headers contradict their problems (KLE065, SYJ212+1.001,
-SYN001, KLE013, SYN041, SYN915 in the translations the report lists) and
-SYJ206+1.018 is malformed: worth reporting upstream with linlog's checked
-proofs attached. The CLI does not read LLTP files, a one-flag addition
-over `linlog::lltp::read`. The net engine's exact test could run less
-often on large structures (a period of 8 or 16 was 1.3× faster at 14 000
-occurrences). Matsuoka's 3D-Matching encoding is not among the families.
-The largest SYJ files (up to 103 MB) take longer to parse than a run
-gets.
+baselines, which are steps 14 and 16. Twenty-five LLTP files have
+headers that contradict them (23 headers: KLE065, SYJ212+1.001, SYN001,
+KLE013, SYN041, SYN915, and, found with a copy bound of 10 and confirmed
+by classical countermodels, KLE017, KLE069, KLE078, KLE088, SYJ103,
+SYJ105+1.003 and +1.004, in the translations the report lists) and
+SYJ206+1.018 in its 01 translation has a tab for a closing parenthesis
+(repaired in the flake's fetch): worth reporting upstream with linlog's
+checked proofs and the countermodels attached. The CLI does not read
+LLTP files, a one-flag addition over `linlog::lltp::read`. The net
+engine's exact test could run less often on large structures (a period
+of 16 was 1.39× faster at 14 000 occurrences). Matsuoka's 3D-Matching
+encoding is not among the families. The harness keeps only the last line
+of a crashed child's error output (step 15 makes it keep all of it in
+the log), and `summary` counts a verdict found after the time limit as
+solved, which a long grace makes possible (step 16 keeps those apart in
+its comparison). The largest SYJ files (up to 103 MB) load in up to 16 s
+with 2 GB, past the default kill, so only the reruns of
+`bench/reruns.txt` reach their search; a kill that counts from the end
+of the load would make the list unnecessary for them.
