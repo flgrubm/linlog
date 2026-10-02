@@ -34,7 +34,8 @@ Workspace crates:
   `--standalone` for a document), `svg` and `net-svg`. The tree and its
   `--help` text are the doc comments in `argument_parsing.rs`; `prove.rs`
   runs the search on a thread sized from `--recursion-limit` and owns the
-  output; `--copies` bounds the copies of `?` formulas per branch;
+  output; `--copies` bounds the copies of `?` formulas per branch and
+  `--bias` picks the focused engines' atom bias;
   `--jobs N` (default: every core) runs the search on a pool and
   `--deterministic` the sequential engines; exit status 0 proved/valid,
   1 unprovable/invalid, 2 error, 3 unknown. Its
@@ -53,7 +54,12 @@ Workspace crates:
   `RESULTS.md`) and copies its tables to `bench/RESULTS.md`, the latest
   baseline's; it needs the machine to itself for a night, 20:00 to
   07:00. The first baseline is `bench/results/2026-09-30/`, taken before
-  the performance pass in two nights (the second added the reruns). Its invariants live in
+  the performance pass in two nights (the second added the reruns).
+  `bench/targets.sh LABEL` runs the target set of that pass (the
+  instances the focused engine lost on, 165 runs on two pinned cores in
+  a memory-capped user unit, about twenty minutes) into
+  `bench/targets/LABEL.csv`; `bench/TARGETS.md` compares `before`,
+  `after-search` and `after`. Its invariants live in
   `.claude/rules/bench.md`, which loads when a file under `bench/` is
   read.
 
@@ -78,7 +84,10 @@ embedding of IMLL into MLL, whose `Outcome` also carries the net found),
 `search::focus` (the focused sequent engine for everything else: MLL with
 units, MALL, MELL and full LL on dyadic sequents with a per-branch copy
 bound that deepens iteratively, `Options::copies`, answering
-`Reason::CopyBound` when it binds; affine mode, the same search with
+`Reason::CopyBound` when it binds, and `Options::bias` for how each atom's
+positive literal is picked, `Bias::Auto`, `Rarer` or `Factors`, which
+changes speed and the copies a proof needs, never provability; affine
+mode, the same search with
 weakening at the leaves; and, given the reading, the two-sided search of
 intuitionistic mode, `Engine::TwoSided`, the same engine keeping the goal
 on the consequent's side of every `⊸L` split) and `search::additive` (two
@@ -152,6 +161,7 @@ cargo deny check                                           # licenses, bans, sou
 cargo run -p linlog-cli -- <args>
 cargo run --release -p linlog-bench -- run --family partition-no=3,4 --engines focus,net
 nix build .#lltp -o bench/lltp   # the LLTP library (1.1 GB, GPL-3.0, fetched at a pinned commit)
+bench/targets.sh LABEL            # the focused engine's target set into bench/targets/LABEL.csv (two cores, about 20 min, detached)
 bench/baseline.sh --arm --fresh   # the whole baseline, unattended from 20:00 to 07:00 (about 10.5 h): bench/results/DAY/, bench/RESULTS.md
 
 nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), export (the LaTeX and Typst output compiles, the SVG renders), rocq (NanoYalla checks the certificates), bench (the harness on the smallest problems), deadnix, actionlint, treefmt, claude-hooks
@@ -168,6 +178,7 @@ Verify as much as the change needs:
 | any `.rs` edit | `cargo clippy …` and `cargo test --workspace` |
 | touches `#[cfg(feature = …)]` or `[features]` | add `cargo hack check --each-feature -p linlog` and `cargo hack check --feature-powerset --depth 2 -p linlog` (both cover `parallel`, which is off by default: `--each-feature`'s `--all-features` run is the one that differs from the defaults) |
 | touches `bench/` or `core/src/families.rs` | add `cargo run --release -p linlog-bench -- run --all-families --timeout 5` for the verdicts (a `MISMATCH` in `summary` is a bug); timings only from `bench/baseline.sh` on an idle machine |
+| changes how the focused engine searches, or must not (a refactoring) | add `bench/targets.sh LABEL` and compare the columns `verdict`, `nodes`, `splits`, `memo_hits` and `memo_entries` of `bench/targets/LABEL.csv` with those of `bench/targets/after.csv`: on one thread they are a function of the input, so a decided row has them equal exactly when the search is (`linlog-bench summary` of the two files sets the times side by side) |
 | touches `search/parallel.rs`, `focus/parallel.rs` or `net::parallel` | `cargo test --workspace` covers them (the CLI depends on `parallel`, and cargo unifies features across a workspace run); `cargo test -p linlog` alone needs `--features parallel` |
 | adds or changes a dependency | add `cargo deny check`. New deps must use a license `deny.toml` allows: EUPL-1.2, MIT, Apache-2.0 (± LLVM-exception), Unicode-3.0 or Zlib |
 | `flake.nix`, `modules/`, `.github/`, the toolchain, a lock bump, or before a push | `nix flake check`, which runs all of the above |

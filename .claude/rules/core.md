@@ -135,27 +135,32 @@ of terms. Invariants the code relies on:
   with a positive literal factor has its split forced. On a tie, and
   whenever the sequent has a `!` or `?`, the old rule: the literal with
   fewer occurrences is positive, a tie makes `Var` positive, so an atom
-  with one sign only has all its literals negative. Why not with
+  with one sign only has all its literals negative. The engine takes
+  the old rule in affine mode as well (`focus::bias`): nothing forces a
+  split there, so the factors have nothing to say, and a review measured
+  up to 700 times the stable sequents on generated affine sequents with
+  the factor rule. Why not with
   exponentials: the bias decides the shape of the focused proofs, hence
   the copies a branch needs; with the factor rule the counter family
   chains forward and needs `n − 1` copies on its one branch where the
   rarer-literal rule needs `log₂ n`, so within the family's bound
   `Proved` became `CopyBound` (measured), which a default must not do.
   At a bound of `n − 1` the same rule decides the counter with 16
-  tokens in 19 stable sequents instead of 392 160, which is what
+  tokens in 19 stable sequents instead of 473 232, which is what
   `Options::bias` is for: `Bias::Auto` is the rule above, `Bias::Rarer`
   and `Bias::Factors` name its two halves for any sequent
   (`Forest::bias_under`; the engine reads its polarities off
   `Counts::positive`, never off `Forest::polarity`, so that the option
   reaches every place a literal's polarity matters, `literal_tensor`
   included). On the LLTP sample of the target set (109 intuitionistic
-  problems, 5 s, the default bound of 3), `Factors` proves 19 where
-  `Rarer` proves 9 and answers 45 more at the copy bound within
+  problems, 5 s, the default bound of 3), `Factors` proves 23 where
+  `Rarer` proves 11 and answers 45 more at the copy bound within
   milliseconds where `Rarer` runs into the time limit, and it loses 3
-  of the 9 (two to the copy bound, one to the recursion limit): no rule
-  wins everywhere, hence the option and its harness axis. Running
-  `Factors` first and `Rarer` after it when the first answers
-  `Unknown` would keep every verdict and is a follow-up. Rules tried on the
+  of the 11 to the copy bound: no rule wins everywhere, hence the option
+  and its harness axis. With a bound of 10, `Factors` proves 48 and
+  refutes one, the 11 among them. Running `Factors` first and `Rarer`
+  after it when the first answers `Unknown`, or a larger default bound
+  under `Factors`, would keep every verdict and is a follow-up. Rules tried on the
   exponential-free targets and not taken: `Var` always (as good on the
   families written two-sided, where it is forward chaining, but it
   depends on how the atoms happen to be written and loses the gains on
@@ -588,34 +593,40 @@ relies on:
   `exhausted`; a later entry only raises `r`, and `Complete` or `Proved`
   replace it. Entries survive across levels; that is where the
   re-exploration of deepening is recovered. Never memoize across forests.
-- **Failures are keyed up to interchangeable members of `Γ`**
+- **Complete failures are keyed up to interchangeable members of `Γ`**
   (`Context::canonical_from`: every member replaced by its class, the
   canonical key; `Θ` stays as it is). By the lemma on interchangeable
-  occurrences a failure, `Complete` or `Exhausted(r)` (no proof with at
-  most `r` copies left on a branch, and a replacement keeps a proof's
-  shape), holds for every sequent with that canonical key. A proof names
-  occurrences, so `Proved` stays under the sequent's own key; renaming a
-  proof on a hit was not taken, since an occurrence of the proof may lie
-  below a member of `Γ` and below a member of `Θ` at once, and which
-  replacement applies depends on the path it came by. One table holds
-  both: a key that is not canonical can only hold a proof, a canonical
-  key holds a failure or the proof of the canonical sequent itself, which
-  answers for that sequent alone (`Memo::failed` skips it). So
-  `prove_stable` asks `failed` under the canonical key and, unless that
-  is `Complete`, `proved` under its own; when the two keys are equal, or
-  no two occurrences of the forest are interchangeable
+  occurrences a `Complete` failure holds for every sequent with that
+  canonical key, so it is recorded there and `Memo::refuted` reads it
+  for any of them. A proof names occurrences, so `Proved` stays under
+  the sequent's own key; renaming a proof on a hit was not taken, since
+  an occurrence of the proof may lie below a member of `Γ` and below a
+  member of `Θ` at once, and which replacement applies depends on the
+  path it came by. **`Exhausted` stays under the sequent's own key
+  too, and must**: it is as true of a relative as of the sequent (a
+  replacement keeps a proof's shape and copies), but shared it defeats
+  the deepening. A sequent whose search reaches a relative of itself
+  one copy lower was answered by its own entry of the level before, so
+  it was cut again and recorded `Exhausted` one higher, at every level,
+  where the search of the relative itself would have ended in a repeat
+  and a complete failure; a review found 167 generated sequents that the
+  engine refuted before and that stayed at the copy bound, and putting
+  the canonical keys on the branch stack as well cured only those whose
+  relative lies below them (`repeats_up_to_equal_members` pins one of
+  each kind). So among relatives only facts that no budget qualifies
+  are shared, and the loop check compares the sequents' own keys, as it
+  always did. One table holds everything: a key that is not canonical
+  holds a proof or an `Exhausted`, a canonical key may also hold a
+  `Complete`, which is all a relative reads there; when the two keys
+  are equal, or no two occurrences of the forest are interchangeable
   (`Classes::distinct`, which skips the canonical key altogether), the
-  one `get` of before. A stale `Exhausted` under the canonical key of a
-  sequent proved since can only answer a relative of it with no more
-  budget than it records, which is true of the relative as it was of
-  the sequent. The loop check compares the sequents' own keys, as
-  before. Keying `Θ` by class too would merge more (a `?` below
-  interchangeable members adds different ids) and is not done: it would
-  cost a pass over `Θ` per stable sequent. Measured (stable sequents,
-  memo entries): the unsolvable 3-Partition with bins of four 4 761 and
-  509 before, 2 991 and 296 after; the counter with 16 tokens 473 232
-  and 1 049 before, 392 160 and 349 after; the chain of 64 clauses
-  4 069 and 129 before, 2 147 and 66 after.
+  one `get` of before. Keying `Θ` by class too would merge more (a `?`
+  below interchangeable members adds different ids) and is not done: it
+  would cost a pass over `Θ` per stable sequent. Measured (stable
+  sequents, memo entries): the unsolvable 3-Partition with bins of four
+  4 761 and 509 before, 2 991 and 296 after; nothing on the families
+  with exponentials, whose failures within a level are mostly cut ones
+  (the counter with 16 tokens 473 232 and 1 049 either way).
 - **The loop check** uses the branch stack of stable sequents (`stack`,
   live up to `stack_len`, entries reused), on with exponentials only: a
   stable sequent equal to an ancestor is pruned, because a smallest proof
@@ -769,8 +780,9 @@ relies on:
   that break it are not spawned (`split_parallel`), so the chunks still
   partition the splits searched. Under Mix the first member, which is
   fixed on the left, has the lowest id of all, which agrees with the
-  rule. Measured (stable sequents, splits): the unsolvable 3-Partition
-  with bins of four 1 834 321 and 410 255 721 before, 4 761 and 54 193
+  rule; a partition both of whose parts hold members of that first
+  member's class still comes up twice, which costs time only. Measured (stable sequents, splits): the unsolvable 3-Partition
+  with bins of four 1 834 321 and 13 015 869 before, 4 761 and 54 193
   after; the counter with 8 tokens 2 316 421 and 4 644 336 before,
   14 228 and 42 105 after, and with 16 tokens, which no run had
   finished, 473 232 and 2 004 517.
@@ -790,7 +802,14 @@ relies on:
   ~b` needs `{a, ~a}` on the `⊥` side.
 - **A factor that is a tensor of positive literals forces its side too**
   (`Forced::Duals`, `Counts::literal_tensor`): one dual per literal, each
-  the first left in `Γ`, and the candidate fails when one is missing.
+  the first left in `Γ`, and the candidate fails when one is missing;
+  the factor's proof is then built in place (`literal_tensor`: the
+  axioms and the `⊗` nodes from the last occurrence back), with no focus
+  on it, so a chain of such tensors costs no recursion either. When both
+  factors force, the one closed in place goes first
+  (`forced_factor`): `a ⊗ b ⊗ c` is nested to the left, and taking the
+  tensor on the left as the forcing factor cost a focus per link (2 500
+  tokens ran into the recursion limit; `limits` pins the chain).
   The argument: in focus the factor is decomposed by `⊗` rules down to
   its literals, each of which stays in focus and closes by an initial
   rule alone, that is on exactly its dual, from `Γ` or by a copy from
@@ -851,7 +870,16 @@ relies on:
   atoms only) last, where only the equation can cut. The order changes
   which proof is found first and nothing else. `Statistics::splits`
   counts the steps of these searches (one feasibility test each) and the
-  forced splits. Measured on the first baseline's instances: Partition
+  forced splits. Where no prune can cut (`Split::set_inert`, decided in
+  `Engine::open`: the equation off and no member, placed or open, with a
+  row entry that excludes zero by itself, which is every split under
+  weakening and every Mix of formulas like `(a ⊗ b) ⊕ 0`), `feasible` is
+  true whatever the assignment, so the counts are left alone and the
+  members not even opened; the steps and their count are the same.
+  `Tally::clear` and `Split::clear` zero the atoms their members touched
+  (`touched`), not every atom of the sequent: a Petri net has thousands
+  of atoms, none with a row, and cleared 24 KB per stable sequent.
+  Measured on the first baseline's instances: Partition
   with six items 946 564 520 splits before and 3 337 after at the same
   94 stable sequents, the unsolvable one with four items 8 192 777 and
   6 845, QBF over 12 variables 9 389 062 and 37 980.
@@ -881,15 +909,26 @@ relies on:
   as before, not by a pass over the zone. None of this changes a counter
   on the sequential targets; what changes is which sequents reach the
   limit. Free splits still cost a level per link. Measured stack per
-  level: under 2 KiB in debug builds, under 512 bytes in release, so the
-  default of 2048 fits an 8 MiB main-thread stack; it stays, since of
+  level, on a chain of tensors whose splits are searched, which is the
+  deepest set of frames (`focus`, `split`, `free_split`,
+  `search_splits`, `premises`): 3.6 KiB in debug builds, 0.9 KiB in
+  release, with the split's counts boxed in their pool (1.5 KiB with
+  them in the frame, which overflowed the stack `Options::stack_size`
+  gives at a raised limit; it now allows twice the measured). So the
+  default of 2048 fits an 8 MiB main-thread stack, in a debug build only
+  just; it stays, since of
   the 24 sampled problems that ended at the limit only two (ILLTP-SYJ
   problems whose search is that deep) still do.
-- **No allocation per node once warm**: sets, contexts, keys, member lists
-  and tallies come from pools on the engine (`take_*`/`give_*`); a leaked
-  buffer on an error path only costs an allocation later. The memo insert
-  clones its key, and a repeated occurrence grows a context's extra list;
-  those are the allocations per stable sequent.
+- **No allocation per node once warm**: sets, contexts, keys, member lists,
+  tallies, split counts, trails and the links of forced chains come from
+  pools on the engine (`take_*`/`give_*`); a leaked buffer on an error
+  path only costs an allocation later. The memo insert clones its key,
+  and a repeated occurrence grows a context's extra list; those are the
+  allocations per stable sequent. The copies are ordered by an unstable
+  sort on the rank and one pass that asks `meets` once per formula: a
+  stable `sort_by_key` allocated its buffer for every stable sequent
+  with more than twenty copies and called `meets` at every comparison
+  (58 % of the samples on the chain of 256 clauses).
 - **The memo can change decisiveness within the bound, never a verdict.**
   An `Exhausted` entry is a fact about the sequent alone, the loop check
   about the branch, so a run with the memo may answer `Unknown` where a

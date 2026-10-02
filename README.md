@@ -27,7 +27,7 @@ provable (MLL, classical, net engine)
   ⊢ ~A, A ⊗ ~B, B
 
 $ linlog prove "A & B |- A + B"
-provable (ALL, classical, focus engine)
+provable (ALL, classical, additive engine)
     ─────── ax
     ⊢ ~A, A
   ─────────── ⊕₁
@@ -53,7 +53,7 @@ and `--stats` what the search cost, in the counters of the engine that
 ran:
 
 ```console
-$ linlog prove --mix --stats "|- A par B, ~A, ~B"
+$ linlog prove --mix --stats --deterministic "|- A par B, ~A, ~B"
 provable (MLL, classical with Mix, net engine)
 ─────── ax   ─────── ax
 ⊢ A, ~A      ⊢ B, ~B
@@ -150,6 +150,37 @@ provable (MLL, classical affine, focus engine)
 ⊢ ~A, ~B, A
 $ linlog prove -q -a "!(A -o A * A), A |- ?B"
 unknown (MELL, classical affine, focus engine): the copy bound of 3 was reached; raise it with --copies
+```
+
+The focused engines treat one literal of every atom as positive, which
+decides where a proof keeps its focus and never what is provable; `--bias`
+names the rule. The default, `auto`, makes the literal positive that is
+more often a direct factor of a `⊗` (`factors`: such a `⊗` needs no search
+for its split) when the sequent has no exponential, and the rarer literal
+(`rarer`) when it has one or under `--affine`. On Horn-like hypotheses under `!`, a Petri net
+for one, `factors` chains forward from the facts and is often faster by
+orders of magnitude, but its proofs take one copy per step on a single
+branch, so it wants `--copies` raised to the number of steps:
+
+```console
+$ linlog prove -q --deterministic --stats "!(a * a -o b), !(b * b -o c), !(c * c -o d), a, a, a, a, a, a, a, a |- d"
+provable (MELL, classical, focus engine)
+stable sequents visited: 14228 (13935 from the memo)
+memo entries at most: 190
+splits examined: 42105
+time: 2.08ms
+$ linlog prove -q --deterministic --stats --bias factors "!(a * a -o b), !(b * b -o c), !(c * c -o d), a, a, a, a, a, a, a, a |- d"
+unknown (MELL, classical, focus engine): the copy bound of 3 was reached; raise it with --copies
+stable sequents visited: 11 (0 from the memo)
+memo entries at most: 5
+splits examined: 31
+time: 20.01µs
+$ linlog prove -q --deterministic --stats --bias factors --copies 7 "!(a * a -o b), !(b * b -o c), !(c * c -o d), a, a, a, a, a, a, a, a |- d"
+provable (MELL, classical, focus engine)
+stable sequents visited: 47 (5 from the memo)
+memo entries at most: 9
+splits examined: 151
+time: 45.69µs
 ```
 
 The search runs on every core by default: `--jobs N` (`-j`) sets the
@@ -450,24 +481,34 @@ configuration.
 
 ```console
 $ linlog-bench run --family partition-no=3,4 --engines focus,net --jobs 1,4 --timeout 10 --output runs.csv
-[1/8] partition-no/3 classical focus j1: unprovable  5.027 ms
-[2/8] partition-no/3 classical focus j4: unprovable  2.108 ms
-[3/8] partition-no/3 classical net j1: unprovable  4323.962 ms
-[4/8] partition-no/3 classical net j4: unprovable  1054.534 ms
-[5/8] partition-no/4 classical focus j1: unprovable  128.696 ms
-[6/8] partition-no/4 classical focus j4: unprovable  47.414 ms
-[7/8] partition-no/4 classical net j1: unknown timeout 10000.942 ms
-[8/8] partition-no/4 classical net j4: unknown timeout 10000.390 ms
+[1/8] partition-no/3 classical focus j1: unprovable  0.089 ms, about 0 min left
+[2/8] partition-no/3 classical focus j4: unprovable  0.146 ms, about 0 min left
+[3/8] partition-no/3 classical net j1: unprovable  3355.671 ms, about 0 min left
+[4/8] partition-no/3 classical net j4: unprovable  1020.791 ms, about 0 min left
+[5/8] partition-no/4 classical focus j1: unprovable  0.146 ms, about 0 min left
+[6/8] partition-no/4 classical focus j4: unprovable  0.303 ms, about 0 min left
+[7/8] partition-no/4 classical net j1: unknown timeout 10000.591 ms, about 0 min left
+[8/8] partition-no/4 classical net j4: unknown timeout 10000.139 ms, about 0 min left
 
 $ linlog-bench summary runs.csv
 …
 ## partition-no
 
-| problem | classical focus j1 | classical focus j4 | classical net j1 | classical net j4 |
+| problem | runs: classical focus j1 | runs: classical focus j4 | runs: classical net j1 | runs: classical net j4 |
 |---|--:|--:|--:|--:|
-| partition-no/3 | 5.0 ms ✗ | 2.1 ms ✗ | 4.32 s ✗ | 1.05 s ✗ |
-| partition-no/4 | 128.7 ms ✗ | 47.4 ms ✗ | > 10 s | > 10 s |
+| partition-no/3 | 89 µs ✗ | 146 µs ✗ | 3.36 s ✗ | 1.02 s ✗ |
+| partition-no/4 | 146 µs ✗ | 303 µs ✗ | > 10 s | > 10 s |
 ```
+
+`run --bias rarer|factors` runs the focused engines under that bias, and
+the rows say which. `bench/targets.sh LABEL` runs the target set of the
+focused engine's performance work, the instances the first baseline
+showed it losing on (the hard families at the sizes that took minutes or
+did not finish, and a fixed sample of 113 LLTP problems), on two pinned
+cores in a memory-capped user unit, into `bench/targets/LABEL.csv`;
+`bench/TARGETS.md` sets the engine before that work beside the engine
+after it. On one thread the engine's counters are a function of the
+input, so two such files tell whether a change altered the search at all.
 
 `bench/baseline.sh --arm --fresh` takes the whole baseline, every
 family, engine and thread count and the whole LLTP library, unattended
@@ -511,9 +552,12 @@ Built:
 - Automatic proof search for every fragment, MLL to full LL and IMLL to
   ILL, with or without Mix, returning a checked proof, "unprovable" after
   an exhaustive search, or "unknown" with the reason: a focused sequent
-  engine over dyadic sequents of occurrence bitsets with a memo,
-  count-based pruning, a per-branch bound on the copies of `?` formulas
-  that deepens iteratively, and a loop check, one-sided or two-sided; for
+  engine over dyadic sequents of occurrence bitsets with a memo, counts
+  that prune sequents and direct the search for the split of a `⊗`
+  (contexts of any width), one representative for formulas that occur
+  several times, an atom bias chosen from the sequent or by `--bias`, a
+  per-branch bound on the copies of `?` formulas that deepens
+  iteratively, and a loop check, one-sided or two-sided; for
   MLL without units a proof-net engine that searches the axiom linkings
   with count checks, constant-time cycle rejections, the exact acyclicity
   test and a symmetry break for repeated literal conclusions, then
@@ -556,7 +600,8 @@ Built:
   families with known verdicts (the hard families of the literature and
   the cases where one engine is known to be slow), and `linlog-bench`,
   which runs them with a time limit per run, writes CSV and summarises it,
-  with a script that takes a whole baseline on an idle machine.
+  with a script that takes a whole baseline on an idle machine and one
+  that runs the focused engine's target set by day.
 
 Planned, in roughly this order:
 

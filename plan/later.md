@@ -218,17 +218,75 @@ holding without it through `textLength`.
 
 ## Follow-ups: the focused engine
 
-Taken up by step 15 (`plan/15-performance.md`); what its report leaves
-open stays here. For that pass, with step 14's numbers: a canonical choice
-among identical members of a stable sequent (hypotheses that are the same
-formula are distinct occurrences today, so the memo sees `C(n, k)` sequents
-where there is one up to renaming), a nested forced rule for a `⊗` factor
-that is itself a tensor of positive literals, a per-level restart from the
-frontier of exhausted sequents rather than re-exploring the levels below,
-and a hash per branch-stack entry for the loop check. Separately, whether
-a sound and useful affine prune exists (Kopylov's decidability argument
-does not give one directly; the spec's was unsound) is a research question
-to keep open; until then affine mode stays bounded.
+Left open by step 15 (`plan/reports/15-performance.md`, which has the
+numbers behind each). Step 15 took the canonical choice among identical
+members, the forced rule for a tensor of positive literals and the hash
+per branch-stack entry, and measured and dropped the restart of a level
+from the frontier.
+
+- **The bias under exponentials.** `Options::bias` exists; the default
+  keeps the rarer literal positive when the sequent has a `!` or `?`,
+  because the factor rule (forward chaining on Horn clauses) takes one
+  copy per step on one branch. On the LLTP sample (109 problems, 5 s)
+  it proves 23 where the default proves 11, answers 45 timeouts at the
+  copy bound in milliseconds, and loses 3 proofs to the bound of 3; with
+  a bound of 10 it proves 48 and refutes one, the default's 11 among
+  them. A default that runs `Factors` first and `Rarer` when that
+  answers `Unknown` would keep every verdict; so would a larger bound
+  under `Factors`, or a bound that counts a chain of forced steps
+  differently. Each needs its own measurement on the whole library (the
+  harness has the axis: `run --bias factors --copies 10`).
+- **Mix costs `3^n` memo lookups** for `n` members that no prune
+  separates (the `mix` family: 14.3 million stable sequents at eight
+  pairs, eleven pairs not within 300 s), since every part enumerates its
+  own partitions. A fact "no subset of this part is provable", which
+  holds for a part when it fails without Mix and holds for each of its
+  subsets with one member less, would make that `n·2^n`.
+- **Free splits where the counts have no rows**: every atom under a `!`
+  or `?` has no row, so on a Petri net with a clause body that is not a
+  tensor of positive literals (the rarer-literal bias makes some body
+  atoms negative) the split search cuts nothing, and such nets still
+  spend their time limit at one stable sequent (69 of the 113 sampled
+  LLTP problems time out). The forward bias removes those splits; a
+  count for exponential atoms that is sound under copies does not exist.
+- **The restart of a copy-bound level from the frontier** was not built:
+  on the counter and the sampled nets the levels below the last are 24
+  to 37 % of the stable sequents, so that is the most it could save;
+  on `chain` and `growing`, whose bound is in the hundreds, the levels
+  are quadratic in all and a restart would make them linear.
+- **Constant factors the profile showed and step 15 did not take**, in
+  the order of their share: hashing and comparing memo keys (29 % of the
+  samples on a Petri net with 12 926 occurrences, where both zones are
+  hashed in full for every stable sequent though `Θ` rarely changes;
+  25 % on Mix), the allocations of a memo insert (23 % on that net: two
+  boxes and a vector per key; keys in an arena), the canonical key built
+  for every stable sequent (6 to 11 %; a bitset of the occurrences that
+  have an earlier equal would skip it where no member is renamed), the
+  member list and tally built per stable sequent (35 % on `growing`),
+  `OccSet` as a `Box<[u64]>` at every size (no target over a second has
+  a forest of at most 64 occurrences, so the profile does not point at
+  it), link-time optimisation (1 to 6 % for twice the build time).
+- **Sharing more among interchangeable sequents.** Only complete
+  failures are shared. Failures cut by the copy budget, shared the same
+  way, halved the stable sequents of `chain` and saved a fifth on the
+  counter, and kept sequents that the search used to refute at the copy
+  bound for good (a relative answered by the sequent's own entry of the
+  level before); a deepening that can tell "cut" from "cut because a
+  relative was cut" would get the saving back. Keying `Θ` up to
+  interchangeable members would merge more as well; it is sound by the
+  lemma in `.claude/rules/core.md` and costs a pass over `Θ`.
+- **A free split still costs a level of recursion per link** of a chain
+  of `⊗`; only forced chains and `?` rules run in a loop. Two sampled
+  ILLTP-SYJ problems still end at the limit of 2 048.
+- **The order in which a split search tries the members** changes which
+  proof is found first, and on some generated sequents with many `⊤` the
+  new order visits more stable sequents than the enumeration it
+  replaced did (the report has the cases); an order informed by which
+  side needs a member is untried.
+- Whether a sound and useful affine prune exists (Kopylov's decidability
+  argument does not give one directly; the spec's was unsound) is a
+  research question to keep open; until then affine mode stays bounded.
+- The interval of `&` could be the intersection instead of the hull.
 
 ## Follow-ups: intuitionistic mode
 
@@ -333,11 +391,17 @@ checked proofs and the countermodels attached. The CLI does not read
 LLTP files, a one-flag addition over `linlog::lltp::read`. The net
 engine's exact test could run less often on large structures (a period
 of 16 was 1.39× faster at 14 000 occurrences). Matsuoka's 3D-Matching
-encoding is not among the families. The harness keeps only the last line
-of a crashed child's error output (step 15 makes it keep all of it in
-the log), and `summary` counts a verdict found after the time limit as
+encoding is not among the families. `summary` counts a verdict found after the time limit as
 solved, which a long grace makes possible (step 16 keeps those apart in
 its comparison). The largest SYJ files (up to 103 MB) load in up to 16 s
 with 2 GB, past the default kill, so only the reruns of
 `bench/reruns.txt` reach their search; a kill that counts from the end
-of the load would make the list unnecessary for them.
+of the load would make the list unnecessary for them. The proof
+checker's `derive` keeps a bitset of the forest's width for every node
+of the proof, 7.6 GB for the additive identity of depth 16 (262 141
+nodes of 32 KB), which is what the first baseline took for the additive
+memo; a `Θ` shared along a branch, or a set of ids, would fix it, and
+the caps of `bench/baseline.sh` are sized for it until then. `summary`
+prints times, not the counters that step 15's comparisons rest on; a
+table of `nodes` and `splits` per configuration would serve the code
+audit's oracle.

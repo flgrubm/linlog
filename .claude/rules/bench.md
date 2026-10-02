@@ -31,7 +31,8 @@ beyond clap and anyhow, which the CLI already has.
   the timed part, and prints the 16-field tail of the CSV row. The parent
   kills a child that outlives its limit by `--grace` seconds (by default a
   tenth of the limit and five) and writes the row itself (`reason` `killed`, or `crash (status): <last
-  stderr line>`).
+  stderr line>`, the child's whole error output going to the parent's
+  standard error, which is the run's log).
 - `src/summary.rs`: Markdown from CSV. A problem counts once per
   configuration (CSV file, family, mode, requested engine, jobs, portfolio, test
   period): the first run's verdict, the median of the runs' times.
@@ -45,7 +46,8 @@ beyond clap and anyhow, which the CLI already has.
   first table, the chain with a token over, the parallel cancellation
   case). `baseline.sh`: the command that takes a baseline into
   `results/DAY/` (`*.csv`, `starts.txt`, `RESULTS.md`) and copies its
-  tables to `bench/RESULTS.md`.
+  tables to `bench/RESULTS.md`. `targets.sh`: the target set of the
+  focused engine's performance pass, into `targets/LABEL.csv` (below).
 
 ## Invariants
 
@@ -200,6 +202,48 @@ beyond clap and anyhow, which the CLI already has.
   --scope -p MemoryMax=8G -p MemorySwapMax=0 taskset -c 4-15 …`, off the
   performance cores the sequential streams are pinned to, and nothing
   heavy runs during the parallel stage.
+
+## The target set
+
+- **`bench/targets.sh LABEL`** runs what the focused engine's performance
+  pass is judged on into `bench/targets/LABEL.csv` (outside
+  `bench/results`, which a baseline's `--fresh` deletes): the families
+  the first baseline showed it losing on at the sizes named in the script
+  (3-Partition, Partition, QBF, Mix, the Petri-net counters in both
+  modes, `growing`, `chain`, the wide sequents), the problem file, and a
+  fixed sample of 113 intuitionistic LLTP problems listed by name: 24
+  each of those the first baseline's pass ended at the time limit, the
+  copy bound, the recursion limit and the width limit (every 35th to
+  41st by name of those with at most 200 000 occurrences), 13 Petri nets
+  whose search missed its stop there (25 s of grace), and 4 under a
+  recursion limit of 16 384 (two proved long after their limit, one
+  whose arena outgrew the memory, one killed; 55 s of grace). 165 runs
+  with 300 s for a family or file problem and 5 s for an LLTP one, runs
+  under 10 s three times.
+- **It runs by day**: two streams, each pinned to a performance core
+  (`cores`, 2 and 3), as the user unit `linlog-targets` with 8 GiB and no
+  swap for all of it and 6 GiB of address space per process, on a copy of
+  the binary (`target/targets/LABEL/`), so that builds meanwhile do not
+  touch it. About 35 minutes at the engines of the first baseline, about
+  20 after the pass (Mix at ten and eleven pairs is most of it). The
+  streams write `LABEL.1.csv` and `LABEL.2.csv`, which a second start
+  resumes, and the script joins them at the end.
+- **What compares**: the counters first. On one thread `nodes`, `splits`,
+  `memo_hits` and `memo_entries` of a decided run are a function of the
+  input and the engine, on any machine under any load; `before.csv`
+  reproduces the first baseline's on every row both decide. `cpu_ms`
+  second, where `wait_ms` is small; `time_ms` is reported and not argued
+  from. A run that ends at a limit has counters that depend on when the
+  limit fell. `splits` changed its meaning with the pass: steps of the
+  split searches (a member assigned and the counts tested) and forced
+  splits, where it was submasks enumerated.
+- **The three labels** of the pass are committed: `before` (the engines
+  of the first baseline), `after-search` (after the changes to what the
+  engine searches) and `after` (after the changes to what a unit of
+  search costs, which leave the counters of every decided row as they
+  were); `bench/TARGETS.md` has the table. A later change that must not
+  alter the search runs the script under a label of its own and compares
+  with `after.csv`; trial labels `scratch-*` are ignored by jj.
 
 ## Extension points
 
