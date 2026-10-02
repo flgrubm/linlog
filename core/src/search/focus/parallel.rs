@@ -34,7 +34,7 @@ use crate::proofs::{Node, NodeId, Side};
 use crate::search::parallel::{Flags, Runtime};
 use crate::search::{Options, Reason, Statistics, Stop};
 use std::hash::BuildHasher as _;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex};
 
 /// How many choices of a branch, from the root, run their alternatives on
@@ -118,6 +118,13 @@ struct Baton {
     state: Mutex<Turns>,
     /// Signalled whenever the state changes.
     changed: Condvar,
+    /// The polls of the second search that the caller's stop condition
+    /// has not been told of yet: it lives on the calling thread, which
+    /// polls it once for each of them.
+    polls: AtomicU64,
+    /// Whether both must stop, for the second search to read at every
+    /// poll without the lock.
+    halt: AtomicBool,
 }
 
 /// The state two alternating searches share.
@@ -170,8 +177,30 @@ impl Baton {
 
     /// Tells both searches to stop.
     fn stop(&self) {
+        self.halt.store(true, Ordering::Relaxed);
         self.lock().stop = true;
         self.changed.notify_all();
+    }
+
+    /// Polls the caller's stop condition once for every poll the second
+    /// search made since it was last done, so that a condition that
+    /// counts its polls, or looks at a clock every so many, sees the two
+    /// searches as it sees one. Returns whether it fired.
+    fn caught_up(&self, stop: &mut dyn FnMut() -> bool) -> bool {
+        (0..self.polls.swap(0, Ordering::Relaxed)).any(|_| stop())
+    }
+}
+
+/// Stops both searches when the calling thread unwinds, so that a panic
+/// of the caller's stop condition does not leave the second search
+/// running.
+struct StopOnPanic<'a>(&'a Baton);
+
+impl Drop for StopOnPanic<'_> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            self.0.stop();
+        }
     }
 }
 
@@ -187,6 +216,9 @@ impl Drop for Ended<'_> {
             turns.ended[me] = true;
             turns.holder = 1 - me;
             turns.stop |= std::thread::panicking();
+            if turns.stop {
+                baton.halt.store(true, Ordering::Relaxed);
+            }
         }
         baton.changed.notify_all();
     }
@@ -199,8 +231,9 @@ impl Drop for Ended<'_> {
 /// search it would be alone, none starts again, and the run is a function
 /// of the input. The first to decide stops the other at the end of its
 /// slice; a search that ended without deciding leaves the other to run
-/// on. The caller's stop condition is polled by the first search, and
-/// once that has ended, every millisecond. Returns what
+/// on. The caller's stop condition is polled by the first search at its
+/// own polls, and once for every poll of the second: when the first gets
+/// its turn back, and every millisecond once it has ended. Returns what
 /// [`super::search_goal`] does, the counters of both searches together,
 /// or `None` when the thread cannot start.
 #[allow(clippy::too_many_arguments)]
@@ -226,7 +259,10 @@ pub(super) fn alternate(
                 if baton.wait(1) {
                     return (Err(Reason::Stopped), Vec::new(), Statistics::default());
                 }
-                let mut give_way = |passed: bool| passed && baton.pass(1);
+                let mut give_way = |passed: bool| {
+                    baton.polls.fetch_add(1, Ordering::Relaxed);
+                    baton.halt.load(Ordering::Relaxed) || (passed && baton.pass(1))
+                };
                 let slice = SLICE * super::BACKWARD_SHARE;
                 let (result, nodes, statistics, _) = second.search(
                     forest,
@@ -244,9 +280,11 @@ pub(super) fn alternate(
                 (result, nodes, statistics)
             })
             .ok()?;
+        let _stop = StopOnPanic(baton);
         let forward = {
             let _ended = Ended(baton, 0);
-            let mut give_way = |passed: bool| stop() || (passed && baton.pass(0));
+            let mut give_way =
+                |passed: bool| stop() || (passed && (baton.pass(0) || baton.caught_up(stop)));
             let (result, nodes, statistics, _) = first.search(
                 forest,
                 goal,
@@ -263,16 +301,17 @@ pub(super) fn alternate(
             (result, nodes, statistics)
         };
         // The second search runs on alone, or is about to end.
-        let mut turns = baton.lock();
-        while !turns.ended[1] {
-            turns = baton
-                .changed
-                .wait_timeout(turns, POLL)
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .0;
-            turns.stop |= stop();
+        loop {
+            let turns = baton.lock();
+            if turns.ended[1] {
+                break;
+            }
+            let waited = baton.changed.wait_timeout(turns, POLL);
+            drop(waited.unwrap_or_else(|poisoned| poisoned.into_inner()));
+            if baton.caught_up(stop) {
+                baton.stop();
+            }
         }
-        drop(turns);
         let backward = thread
             .join()
             .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
