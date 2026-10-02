@@ -351,31 +351,40 @@ members, the forced rule for a tensor of positive literals and the hash
 per branch-stack entry, and measured and dropped the restart of a level
 from the frontier.
 
-- **The bias under exponentials** (taken up by a second session of step
-  15 on the author's word of 2026-10-02; what its report leaves open
-  replaces this entry at its review). `Options::bias` exists; the default
-  keeps the rarer literal positive when the sequent has a `!` or `?`,
-  because the factor rule (forward chaining on Horn clauses) takes one
-  copy per step on one branch. On the LLTP sample (109 problems, 5 s)
-  it proves 23 where the default proves 11, answers 45 timeouts at the
-  copy bound in milliseconds, and loses 3 proofs to the bound of 3; with
-  a bound of 10 it proves 48 and refutes one, the default's 11 among
-  them. A default that runs `Factors` first and `Rarer` when that
-  answers `Unknown` would keep every verdict; so would a larger bound
-  under `Factors`, or a bound that counts a chain of forced steps
-  differently. Each needs its own measurement on the whole library (the
-  harness has the axis: `run --bias factors --copies 10`). The second
-  baseline takes both passes over the whole library for this. One
-  problem already shows what the default costs: the Petri net
-  `IBM5964_1_1`, proved in 1.8 s before step 15, takes 42 s under the
-  default bias now (the order of the search changed) and 0.08 ms under
-  `factors`; it is the one row of the 1 890 that the first baseline
-  decided which a rerun at 5 s loses. Two things a combined default has
-  to settle: under a time limit the first bias must not spend the whole
-  of it (eight of the sampled nets time out under `factors` too), so the
-  two take turns on a budget or run side by side; and on a pool they can
-  race, one bias per worker, which would give `Options::portfolio` the
-  use that reordering alternatives never had.
+- **The default bias with exponentials**, built by the second session of
+  step 15 (`Bias::Auto` runs the backward and the forward search and
+  answers with the first that decides; `.claude/rules/core.md` has the
+  scheme). What it leaves open:
+  - *The unit of work is rough.* The two searches share one core by
+    work the engine counts (a split step, a stable sequent weighted by
+    its size), and the time a unit takes varies by two orders of
+    magnitude between problems, so one search can get several times the
+    other's time. The costs not counted are known (the lookups of duals
+    in a forced chain, the sort of the copies); a unit calibrated on
+    more nets, or the removal of those costs (`meets` compares every
+    literal of every copy with every member of `Γ`, which is most of a
+    stable sequent's cost on a net of thousands of transitions), would
+    bring the measured cost nearer the scheme's 1.5 and 3 times.
+  - *The forward search's own bound applies only where every formula
+    under a `?` is a Horn clause.* A sequent with one hypothesis of
+    another shape gets the forward search within `--copies` only. A
+    count per copy (a clause's copy as a step, any other as a copy)
+    would lift that, at the price of a budget with two parts in the
+    memo's `Exhausted` entries.
+  - *The deepening restarts every level from the root*, which on a
+    forward chain of `n` steps costs `n²/2`; with a bound of 30 that
+    is nothing, with nets that need 100 steps it is what the restart
+    from the frontier (below) would save.
+  - *Five sampled LLTP problems that `--copies 10` decides under either
+    bias stay at the default bound of 3* (translations of intuitionistic
+    problems, not Horn): whether the default of `--copies` should rise
+    is a question for the second baseline's `lltp-copies-10` pass.
+  - *`Options::portfolio` has no use left that a measurement supports*:
+    the two searches side by side are the portfolio that pays. Remove
+    it if the second baseline shows no gain once more.
+  - *On a pool the threads are split evenly* between the two searches;
+    not measured (it needs the machine), and the split is a candidate
+    for a measurement in the second baseline's all-core stage.
 - **Mix costs `3^n` memo lookups** for `n` members that no prune
   separates (the `mix` family: 14.3 million stable sequents at eight
   pairs, eleven pairs not within 300 s), since every part enumerates its
@@ -545,3 +554,29 @@ the caps of `bench/baseline.sh` are sized for it until then. `summary`
 prints times, not the counters that step 15's comparisons rest on; a
 table of `nodes` and `splits` per configuration would serve the code
 audit's oracle.
+
+**Problems from practice** (the author's question during the second
+session of step 15, 2026-10-02: the point of making the tool efficient
+is that it can be used). The benchmark's one real-world set is the LLTP
+library's 3 137 reachability problems over 76 Petri nets of the Model
+Checking Contest, and they are theorems by construction: each goal is
+the marking a replayed firing sequence of 1 to 150 steps ends in. What
+is missing, as candidates whose sources, formats and licences are not
+yet checked:
+
+- real non-theorems on nets: coverability suites from software
+  verification (the nets of concurrent C and Erlang programs that Mist,
+  BFC and Petrinizer are measured on) have unreachable targets, and
+  coverability is affine mode, which no set from practice exercises;
+- planning domains (blocks world, logistics) as `!` Horn clauses, the
+  nets' shape with goals that fail;
+- program synthesis from linear types (the Granule synthesis
+  benchmarks, for one): small ILL sequents with additives where the
+  proof is a program;
+- llprover's example collection: classical LL with additives and
+  exponentials together, which the generated families barely cover.
+
+Each enters as a problem file under `bench/problems/` or as a source in
+`bench/src/problems.rs`. The nets among them are also what the forward
+search's own bound and the unit of work of the default bias should be
+tuned on, beyond the 109 sampled LLTP problems they were set on.
