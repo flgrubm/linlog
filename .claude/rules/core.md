@@ -600,8 +600,34 @@ relies on:
 - **Memo validity without exponentials** is unconditional, as before: cut-
   free provability of a set of occurrences depends on the set alone, and
   every entry is `Proved` or `Complete`. When the table is full it is
-  cleared (`Options::memo_limit`; zero switches it off; the arena is
+  cleared (`Options::memo_limit`; zero switches it off; the kept arena is
   append-only, so a `Proved` id never dangles).
+- **The proof arena has two parts** (`Arena`): a node is *pending* in the
+  engine's own stack (`push`, an id with the `PENDING` bit) until the
+  stable sequent it helps to prove is proved and memoized, when
+  `prove_stable` *keeps* the nodes pushed since its `mark` (`keep` moves
+  them to the kept arena, premises renamed, and returns the root's kept
+  id); a failed step *releases* them (`release`, a truncation). The
+  release points are `prove_stable` on a failure and the four places
+  where a first premise is proved and the second fails (`premises`, the
+  forced split, `with`, `parts`); every other failure pushes nothing. The
+  argument that a release is safe: node ids travel only upwards as return
+  values, so nothing outside the failed call holds an id pushed after its
+  mark, and a memo entry holds kept ids only. The argument for `keep`:
+  the nodes pending above a `prove_stable`'s mark were pushed by its own
+  decision, which succeeded, so they rest on each other and on kept nodes
+  (memo hits) alone, never on a pending node below the mark; that is
+  debug-asserted in `append`. So the kept arena holds the proofs of
+  memoized stable sequents and the final proof, and nothing of a failed
+  branch: before this, one stable sequent of a Petri net pushed 110 MB of
+  nodes a second for left premises whose splits then failed, and nine
+  LLTP runs aborted at 16 GiB. What is not reclaimed: the proofs of
+  entries the memo dropped when it was cleared, and, with the memo off
+  (`memoizes` false), nothing is kept before the root, so the pending
+  stack is the partial proof alone. The kept arena holds at most 2³¹
+  nodes (`keep` panics beyond, 32 GiB of nodes). A proof's node order is
+  the order of keeping, which `core/tests/serialize.rs` pins on one
+  small proof.
 - **A `0` is fatal only without a `⊤`.** The spec calls a `0` in a stable
   sequent fatal, but `⊢ 0, ⊤ ⊕ b` is provable through the `⊕`; the
   immediate failure applies only when no member has a `⊤` below it
@@ -986,13 +1012,20 @@ has no or-choices worth sharing out). What the code relies on:
   record its maintenance as thin, the shards are twenty lines, and the
   speedup table shows no contention worth a dependency. `hits` and `peak`
   are summed over the shards (`peak` is an upper bound).
-- **The arena is shared behind one `Mutex<Vec<Node>>`** (`Arena::Shared`),
-  a push holding the lock for the push: an id is a position in the one
-  arena every `Proved` entry refers to, and a node's premises were
-  pushed before it by whichever worker built them, so the order
+- **The kept arena is shared behind one `Mutex<Vec<Node>>`**
+  (`Kept::Shared`), and every engine of a parallel search has a pending
+  stack of its own. Truncating a shared arena would be unsafe (another
+  worker's nodes lie above one's mark), so nothing pending is shared: a
+  `keep` takes the lock once and appends the whole segment, so a kept id
+  is a position in the one arena every `Proved` entry refers to, a
+  segment's premises are in it or were kept before it, and the order
   `Proof::new` needs holds across threads; the memo insert happens after
-  the push, so a hit always finds a complete subtree. Pushes are as many
-  as rule instances on successful branches, far fewer than nodes visited.
+  the keep, so a hit always finds a complete subtree. A pending id means
+  nothing outside its engine, so a result that leaves a worker (an
+  alternative's, a `&` premise's, the root's) is kept first
+  (`Engine::exported`); the spawning engine wraps kept ids in pending
+  nodes of its own. Failed branches therefore cost the shared arena
+  nothing on the pool either.
 - **Levels never overlap**: `run` deepens the copy bound on the root
   engine, which spawns nothing until its first choice and reads
   `exhausted` after every task of the level has ended (the scope waits),

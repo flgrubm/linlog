@@ -25,7 +25,7 @@
 use super::context::Context;
 use super::counts::{Counts, Tally};
 use super::memo::{Key, Shared, Table};
-use super::{Arena, Engine, NO_DEPENDENCY, Rules, Search};
+use super::{Arena, Engine, Kept, NO_DEPENDENCY, Rules, Search};
 use crate::fragment::{Fragment, Mode};
 use crate::occurrences::{Forest, OccId, OccSet, Reading};
 use crate::proofs::{Node, NodeId, Side};
@@ -70,10 +70,11 @@ pub(crate) fn search_goal(
             options,
             Stop::Flags(flags),
             Table::Shared(&memo),
-            Arena::Shared(&arena),
+            Arena::new(Kept::Shared(&arena)),
         );
         engine.runtime = Some(runtime);
         let result = engine.run(goal);
+        let result = engine.exported(result);
         (result, engine.statistics())
     });
     let nodes = arena
@@ -98,6 +99,8 @@ struct Spawn<'s> {
     memo: &'s Shared,
     /// The shared arena.
     arena: &'s Mutex<Vec<Node>>,
+    /// Whether the memo takes entries.
+    memoizes: bool,
     /// The runtime.
     runtime: &'s Runtime,
     /// The spawning engine's stop flags, which the worker's chain to.
@@ -131,7 +134,8 @@ impl<'s> Spawn<'s> {
             counts: self.counts,
             rules: self.rules,
             memo: Table::Shared(self.memo),
-            nodes: Arena::Shared(self.arena),
+            nodes: Arena::new(Kept::Shared(self.arena)),
+            memoizes: self.memoizes,
             statistics: Statistics::default(),
             depth: self.depth,
             recursion_limit: self.recursion_limit,
@@ -273,8 +277,8 @@ impl<'a> Engine<'a> {
     where
         'a: 's,
     {
-        let (Table::Shared(memo), Arena::Shared(arena), Stop::Flags(flags), Some(runtime)) =
-            (&self.memo, &self.nodes, &self.stop, self.runtime)
+        let (Table::Shared(memo), Kept::Shared(arena), Stop::Flags(flags), Some(runtime)) =
+            (&self.memo, &self.nodes.kept, &self.stop, self.runtime)
         else {
             unreachable!("a parallel choice is met on a worker of the pool")
         };
@@ -285,6 +289,7 @@ impl<'a> Engine<'a> {
             rules: self.rules,
             memo,
             arena,
+            memoizes: self.memoizes,
             runtime,
             flags: *flags,
             stack,
@@ -295,6 +300,12 @@ impl<'a> Engine<'a> {
             seed: self.seed,
             portfolio: self.portfolio,
         }
+    }
+
+    /// A result as it leaves this engine for another: the proof's pending
+    /// nodes kept, since a pending id means nothing outside its engine.
+    fn exported(&mut self, result: Search) -> Search {
+        result.map(|node| node.map(|node| self.nodes.keep(0, node)))
     }
 
     /// Locks what the workers report.
@@ -397,6 +408,7 @@ impl<'a> Engine<'a> {
                 scope.spawn(move |_| {
                     let mut worker = spawn.worker(cancel, i as u64 + 1);
                     let result = worker.alternative(theta, gamma, alternative, budget);
+                    let result = worker.exported(result);
                     Self::lock(collected).take(result, &worker, cancel);
                 });
             }
@@ -404,6 +416,7 @@ impl<'a> Engine<'a> {
             // own so that it polls the choice's flag like the others.
             let mut worker = spawn.worker(&cancel, 0);
             let result = worker.alternative(theta, gamma, first, budget);
+            let result = worker.exported(result);
             Self::lock(&collected).take(result, &worker, &cancel);
         });
         let collected = collected
@@ -517,6 +530,7 @@ impl<'a> Engine<'a> {
             premise_list.extend_from_slice(list);
             premise_list.push(sub);
             let result = worker.asynchronous(theta, &mut premise_gamma, &mut premise_list, budget);
+            let result = worker.exported(result);
             if !matches!(result, Ok(Some(_))) {
                 cancel.store(true, Ordering::Relaxed);
             }

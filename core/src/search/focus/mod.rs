@@ -132,13 +132,15 @@ pub(crate) fn search_goal(
         options,
         Stop::Closure(stop),
         Table::Own(Memo::new(options.memo_limit)),
-        Arena::Own(Vec::new()),
+        Arena::new(Kept::Own(Vec::new())),
     );
-    let result = engine.run(goal);
+    let result = engine
+        .run(goal)
+        .map(|root| root.map(|root| engine.nodes.keep(0, root)));
     let statistics = engine.statistics();
-    let nodes = match engine.nodes {
-        Arena::Own(nodes) => nodes,
-        Arena::Shared(_) => unreachable!("a sequential search owns its arena"),
+    let nodes = match engine.nodes.kept {
+        Kept::Own(nodes) => nodes,
+        Kept::Shared(_) => unreachable!("a sequential search owns its arena"),
     };
     (result, nodes, statistics)
 }
@@ -214,37 +216,95 @@ impl Rules {
 /// it is unprovable, or the reason the whole search stops.
 pub(crate) type Search = Result<Option<NodeId>, Reason>;
 
-/// The proof arena of a run: every node built so far, failed branches
-/// included; the engine's own in a sequential search, shared by every
-/// worker behind a lock in a parallel one, where a push holds the lock
-/// for the time of the push, so that a node's id is its position in the
-/// one arena every memo entry refers to and a premise always precedes its
-/// conclusion.
-pub(crate) enum Arena<'a> {
+/// Where the nodes of a run's proofs are kept: the engine's own arena in
+/// a sequential search, the one arena of a parallel search behind its
+/// lock.
+pub(crate) enum Kept<'a> {
     /// The engine's own arena.
     Own(Vec<Node>),
     /// The arena of a parallel search.
     Shared(&'a Mutex<Vec<Node>>),
 }
 
-impl Arena<'_> {
-    /// Appends a node and returns its id.
+/// The flag in the id of a node that is still pending.
+const PENDING: u32 = 1 << 31;
+
+/// The proof arena of a run, in two parts. A node is first *pending*: it
+/// belongs to the branch being searched, lives in the engine's own
+/// buffer, a stack, and vanishes when the branch fails
+/// ([`release`](Self::release)). Once the stable sequent it helps to prove
+/// is proved, its nodes are *kept* ([`keep`](Self::keep)): moved to the
+/// arena the memo's entries and the final proof refer to, where a node's
+/// id is its position and a premise precedes its conclusion. So the nodes
+/// of failed branches never reach the kept arena, and a refutation's
+/// memory is bounded by what the memo holds, however many branches it
+/// tried. A pending node's id carries the [`PENDING`] flag and is only
+/// valid until its branch is released or kept; in a parallel search no
+/// pending id leaves its worker.
+pub(crate) struct Arena<'a> {
+    /// The nodes kept.
+    kept: Kept<'a>,
+    /// The nodes of the branch being searched.
+    pending: Vec<Node>,
+}
+
+impl<'a> Arena<'a> {
+    /// An arena with nothing pending.
+    pub(crate) fn new(kept: Kept<'a>) -> Self {
+        Self {
+            kept,
+            pending: Vec::new(),
+        }
+    }
+
+    /// Appends a pending node and returns its id.
     fn push(&mut self, node: Node) -> NodeId {
-        match self {
-            Self::Own(nodes) => {
-                let id = NodeId::new(nodes.len() as u32);
-                nodes.push(node);
-                id
-            }
-            Self::Shared(nodes) => {
-                let mut nodes = nodes
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                let id = NodeId::new(nodes.len() as u32);
-                nodes.push(node);
-                id
+        let id = NodeId::new(PENDING | self.pending.len() as u32);
+        self.pending.push(node);
+        id
+    }
+
+    /// Returns the point of the pending nodes to come back to.
+    fn mark(&self) -> usize {
+        self.pending.len()
+    }
+
+    /// Drops the nodes pending since the mark: their branch failed.
+    fn release(&mut self, mark: usize) {
+        self.pending.truncate(mark);
+    }
+
+    /// Keeps the nodes pending since the mark, which must hold everything
+    /// pending that `node` rests on, and returns the id `node` has from now
+    /// on; a node that was kept already keeps its id.
+    fn keep(&mut self, mark: usize, node: NodeId) -> NodeId {
+        match &mut self.kept {
+            Kept::Own(kept) => Self::append(kept, &mut self.pending, mark, node),
+            Kept::Shared(kept) => {
+                let mut kept = kept.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                Self::append(&mut kept, &mut self.pending, mark, node)
             }
         }
+    }
+
+    /// Moves the nodes pending since the mark to the end of the kept ones,
+    /// their premises renamed, and returns the new id of `node`.
+    fn append(kept: &mut Vec<Node>, pending: &mut Vec<Node>, mark: usize, node: NodeId) -> NodeId {
+        let base = kept.len();
+        assert!(
+            base + (pending.len() - mark) <= PENDING as usize,
+            "the proof arena is full"
+        );
+        let renamed = |id: NodeId| {
+            if id.get() & PENDING == 0 {
+                return id;
+            }
+            let index = (id.get() & !PENDING) as usize;
+            debug_assert!(index >= mark, "a pending node below the mark");
+            NodeId::new((base + index - mark) as u32)
+        };
+        kept.extend(pending.drain(mark..).map(|n| n.map_premises(renamed)));
+        renamed(node)
     }
 }
 
@@ -264,6 +324,8 @@ struct Engine<'a> {
     memo: Table<'a>,
     /// The proof arena.
     nodes: Arena<'a>,
+    /// Whether the memo takes entries: a proof it refers to is kept.
+    memoizes: bool,
     /// The counters.
     statistics: Statistics,
     /// The nesting of engine calls right now.
@@ -333,6 +395,7 @@ impl<'a> Engine<'a> {
             rules,
             memo,
             nodes,
+            memoizes: options.memo_limit != 0,
             statistics: Statistics::default(),
             depth: 0,
             recursion_limit: options.recursion_limit,
@@ -482,6 +545,7 @@ impl<'a> Engine<'a> {
         let mut left_list = self.take_list();
         left_list.clone_from(list);
         left_list.push(self.forest.left(o).unwrap());
+        let mark = self.nodes.mark();
         let left = self.asynchronous(theta, &mut left_gamma, &mut left_list, budget);
         self.give_context(left_gamma);
         self.give_list(left_list);
@@ -489,8 +553,11 @@ impl<'a> Engine<'a> {
             return Ok(None);
         };
         list.push(self.forest.right(o).unwrap());
-        let right = self.asynchronous(theta, gamma, list, budget)?;
-        Ok(right.map(|right| self.push(Node::With(o, left, right))))
+        let Some(right) = self.asynchronous(theta, gamma, list, budget)? else {
+            self.nodes.release(mark);
+            return Ok(None);
+        };
+        Ok(Some(self.push(Node::With(o, left, right))))
     }
 
     /// The `?` rule: the subformula joins the unrestricted zone, which is a
@@ -587,7 +654,8 @@ impl<'a> Engine<'a> {
         let saved_dependency = self.dependency;
         self.exhausted = false;
         self.dependency = NO_DEPENDENCY;
-        let result = self.decide(theta, gamma, budget);
+        let mark = self.nodes.mark();
+        let mut result = self.decide(theta, gamma, budget);
         let own_depth = if self.rules.stack {
             self.stack_len -= 1;
             self.stack_len as u32
@@ -605,14 +673,22 @@ impl<'a> Engine<'a> {
         self.exhausted = saved_exhausted || exhausted;
         self.dependency = saved_dependency.min(dependency);
         match result {
-            Ok(Some(node)) => self.memo.insert(&key, Entry::Proved(node)),
-            Ok(None) if dependency == NO_DEPENDENCY => {
-                let failure = if exhausted {
-                    Failure::Exhausted(budget)
-                } else {
-                    Failure::Complete
-                };
-                self.memo.insert(&key, Entry::Failed(failure));
+            Ok(Some(node)) if self.memoizes => {
+                // The entry outlives the branch, so the proof is kept.
+                let node = self.nodes.keep(mark, node);
+                self.memo.insert(&key, Entry::Proved(node));
+                result = Ok(Some(node));
+            }
+            Ok(None) => {
+                self.nodes.release(mark);
+                if dependency == NO_DEPENDENCY {
+                    let failure = if exhausted {
+                        Failure::Exhausted(budget)
+                    } else {
+                        Failure::Complete
+                    };
+                    self.memo.insert(&key, Entry::Failed(failure));
+                }
             }
             _ => {}
         }
@@ -1006,6 +1082,7 @@ impl<'a> Engine<'a> {
                     rest.remove(dual);
                 }
             }
+            let mark = self.nodes.mark();
             let mut nodes: Result<Option<(NodeId, NodeId)>, Reason> = Ok(None);
             {
                 match self.focus(theta, &side, x, budget) {
@@ -1020,14 +1097,16 @@ impl<'a> Engine<'a> {
             }
             self.give_context(side);
             self.give_context(rest);
-            return Ok(nodes?.map(|(x_node, y_node)| {
-                let (left, right) = if x_is_left {
-                    (x_node, y_node)
-                } else {
-                    (y_node, x_node)
-                };
-                self.push(Node::Tensor(f, left, right))
-            }));
+            let Some((x_node, y_node)) = nodes? else {
+                self.nodes.release(mark);
+                return Ok(None);
+            };
+            let (left, right) = if x_is_left {
+                (x_node, y_node)
+            } else {
+                (y_node, x_node)
+            };
+            return Ok(Some(self.push(Node::Tensor(f, left, right))));
         }
 
         let mut members = self.take_list();
@@ -1184,10 +1263,12 @@ impl<'a> Engine<'a> {
         b: OccId,
         budget: u32,
     ) -> Search {
+        let mark = self.nodes.mark();
         let Some(l) = self.focus(theta, left, a, budget)? else {
             return Ok(None);
         };
         let Some(r) = self.focus(theta, right, b, budget)? else {
+            self.nodes.release(mark);
             return Ok(None);
         };
         Ok(Some(self.push(Node::Tensor(f, l, r))))
@@ -1264,10 +1345,12 @@ impl<'a> Engine<'a> {
 
     /// Both parts of a Mix, and the Mix node if both are provable.
     fn parts(&mut self, theta: &OccSet, left: &Context, right: &Context, budget: u32) -> Search {
+        let mark = self.nodes.mark();
         let Some(l) = self.prove(theta, left, budget)? else {
             return Ok(None);
         };
         let Some(r) = self.prove(theta, right, budget)? else {
+            self.nodes.release(mark);
             return Ok(None);
         };
         Ok(Some(self.push(Node::Mix(l, r))))
@@ -1275,7 +1358,7 @@ impl<'a> Engine<'a> {
 
     // Bookkeeping.
 
-    /// Appends a node to the arena and returns its id.
+    /// Appends a node to the pending ones and returns its id.
     fn push(&mut self, node: Node) -> NodeId {
         self.nodes.push(node)
     }
@@ -1417,6 +1500,37 @@ mod tests {
             Verdict::Unprovable => false,
             Verdict::Unknown(reason) => panic!("{input:?}: {reason}"),
         }
+    }
+
+    /// A released branch leaves no node, a kept one moves to the kept
+    /// arena with its premises renamed, and a node kept before keeps its
+    /// id.
+    #[test]
+    fn arena() {
+        let o = OccId::new;
+        let mut arena = Arena::new(Kept::Own(Vec::new()));
+        let ax = arena.push(Node::Ax(o(0), o(1)));
+        let mark = arena.mark();
+        let one = arena.push(Node::One(o(2)));
+        arena.push(Node::Tensor(o(3), ax, one));
+        arena.release(mark);
+        let top = arena.push(Node::Top(o(4)));
+        let top = arena.keep(mark, top);
+        assert_eq!(top, NodeId::new(0));
+        let tensor = arena.push(Node::Tensor(o(5), ax, top));
+        let root = arena.keep(0, tensor);
+        assert_eq!(root, NodeId::new(2));
+        let Kept::Own(kept) = arena.kept else {
+            unreachable!()
+        };
+        assert_eq!(
+            kept,
+            [
+                Node::Top(o(4)),
+                Node::Ax(o(0), o(1)),
+                Node::Tensor(o(5), NodeId::new(1), NodeId::new(0))
+            ]
+        );
     }
 
     /// The classic small sequents, in `MLL` and `MALL`, get the verdicts

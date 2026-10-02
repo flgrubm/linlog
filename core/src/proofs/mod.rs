@@ -357,7 +357,7 @@ impl Proof {
 impl Node {
     /// Returns the node with every premise index replaced by what `f` maps
     /// it to.
-    fn map_premises(self, mut f: impl FnMut(NodeId) -> NodeId) -> Self {
+    pub(crate) fn map_premises(self, mut f: impl FnMut(NodeId) -> NodeId) -> Self {
         use Node::*;
         match self {
             Tensor(o, l, r) => Tensor(o, f(l), f(r)),
