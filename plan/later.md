@@ -388,6 +388,30 @@ from the frontier.
   - *On a pool the threads are split evenly* between the two searches;
     not measured (it needs the machine), and the split is a candidate
     for a measurement in the second baseline's all-core stage.
+  - *The two searches alternate on two threads, and only where threads
+    exist.* The engine recurses on its thread's stack, so a search
+    cannot be suspended and resumed in place; to alternate without
+    starting again, the backward search gets a thread of its own and a
+    baton lets one of the two run at a time. What that costs and where
+    it leaks (the author asked, 2026-10-02): a thread and its stack per
+    call even under `--jobs 1` and `--deterministic` (37 µs against
+    7 µs on a small sequent, which a caller that closes many small
+    goals pays every time); a library user who builds with the
+    `parallel` feature gets a thread started inside `prove` without
+    asking for one; and a build without the feature, wasm above all,
+    runs the other scheme, turns that start again on growing budgets,
+    which costs up to five times the better search where the threaded
+    one costs one and a half to three, and gives other counters for
+    the same input, so a stop that counts work (the web front end's)
+    behaves differently from the command. The fix is a search that can
+    be suspended: the engine's recursion turned into an explicit stack
+    (the net engine has one; for the focused engine it is a rewrite of
+    its control flow, with the counters as the oracle), after which the
+    two alternate on one thread everywhere, the baton and the restarts
+    go, and the same input gives the same counters in every build. It
+    belongs with the code audit's refactoring or with the web front
+    end, whichever comes first. Short of that: an option to choose the
+    scheme, so that a caller can refuse the thread.
   - *The Horn test reads the forest's roots, not the goal* (`chains`,
     found by the planning session's review): for a goal off the roots,
     as `prove_goal` and the interactive `close` hand one over, the
