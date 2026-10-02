@@ -547,6 +547,34 @@ relies on:
   `exhausted`; a later entry only raises `r`, and `Complete` or `Proved`
   replace it. Entries survive across levels; that is where the
   re-exploration of deepening is recovered. Never memoize across forests.
+- **Failures are keyed up to interchangeable members of `Γ`**
+  (`Context::canonical_from`: every member replaced by its class, the
+  canonical key; `Θ` stays as it is). By the lemma on interchangeable
+  occurrences a failure, `Complete` or `Exhausted(r)` (no proof with at
+  most `r` copies left on a branch, and a replacement keeps a proof's
+  shape), holds for every sequent with that canonical key. A proof names
+  occurrences, so `Proved` stays under the sequent's own key; renaming a
+  proof on a hit was not taken, since an occurrence of the proof may lie
+  below a member of `Γ` and below a member of `Θ` at once, and which
+  replacement applies depends on the path it came by. One table holds
+  both: a key that is not canonical can only hold a proof, a canonical
+  key holds a failure or the proof of the canonical sequent itself, which
+  answers for that sequent alone (`Memo::failed` skips it). So
+  `prove_stable` asks `failed` under the canonical key and, unless that
+  is `Complete`, `proved` under its own; when the two keys are equal, or
+  no two occurrences of the forest are interchangeable
+  (`Classes::distinct`, which skips the canonical key altogether), the
+  one `get` of before. A stale `Exhausted` under the canonical key of a
+  sequent proved since can only answer a relative of it with no more
+  budget than it records, which is true of the relative as it was of
+  the sequent. The loop check compares the sequents' own keys, as
+  before. Keying `Θ` by class too would merge more (a `?` below
+  interchangeable members adds different ids) and is not done: it would
+  cost a pass over `Θ` per stable sequent. Measured (stable sequents,
+  memo entries): the unsolvable 3-Partition with bins of four 4 761 and
+  509 before, 2 991 and 296 after; the counter with 16 tokens 473 232
+  and 1 049 before, 392 160 and 349 after; the chain of 64 clauses
+  4 069 and 129 before, 2 147 and 66 after.
 - **The loop check** uses the branch stack of stable sequents (`stack`,
   live up to `stack_len`, entries reused), on with exponentials only: a
   stable sequent equal to an ancestor is pruned, because a smallest proof

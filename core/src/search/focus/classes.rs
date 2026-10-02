@@ -21,6 +21,8 @@ use crate::occurrences::{Forest, OccId, Position, Reading};
 pub(crate) struct Classes {
     /// Per occurrence, the first occurrence of its class.
     class: Box<[OccId]>,
+    /// Whether no two occurrences are interchangeable.
+    distinct: bool,
 }
 
 impl Classes {
@@ -31,7 +33,7 @@ impl Classes {
         const NONE: u32 = u32::MAX;
         // Per term, the first occurrence in input and in output position.
         let mut first = vec![[NONE; 2]; forest.sequent().terms().len()];
-        let class = forest
+        let class: Box<[OccId]> = forest
             .ids()
             .map(|o| {
                 let output = reading.is_some_and(|r| r.position(o) == Position::Output);
@@ -42,7 +44,14 @@ impl Classes {
                 OccId::new(*slot)
             })
             .collect();
-        Self { class }
+        let distinct = forest.ids().all(|o| class[o.index()] == o);
+        Self { class, distinct }
+    }
+
+    /// Returns whether no two occurrences of the forest are
+    /// interchangeable, so that every occurrence is its own class.
+    pub(crate) fn distinct(&self) -> bool {
+        self.distinct
     }
 
     /// Returns the class of an occurrence: its first interchangeable
@@ -81,6 +90,7 @@ mod tests {
         assert!(classes.same(literals[0], literals[1]));
         assert!(!classes.same(tops[0], literals[0]));
         assert_eq!(classes.of(literals[1]), literals[0]);
+        assert!(!classes.distinct());
         let reading = Reading::new(&forest).unwrap();
         let classes = Classes::new(&forest, Some(&reading));
         assert!(!classes.same(tops[0], tops[1]));

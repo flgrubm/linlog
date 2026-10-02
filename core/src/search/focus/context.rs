@@ -7,6 +7,7 @@
 //! zone repeats an occurrence, so that the common case costs a bitset and
 //! only a repeat allocates.
 
+use super::classes::Classes;
 use crate::occurrences::{OccId, OccSet};
 
 /// A multiset of occurrence ids over one forest.
@@ -92,6 +93,21 @@ impl Context {
     pub(crate) fn clone_from(&mut self, other: &Self) {
         self.set.clone_from(&other.set);
         self.extra.clone_from(&other.extra);
+    }
+
+    /// Makes this zone `other` with every member replaced by the first
+    /// occurrence of its class: the same for two zones exactly when one is
+    /// the other up to interchangeable members. Returns whether some
+    /// member was replaced.
+    pub(crate) fn canonical_from(&mut self, other: &Self, classes: &Classes) -> bool {
+        self.clear();
+        let mut replaced = false;
+        for o in other.iter() {
+            let class = classes.of(o);
+            replaced |= class != o;
+            self.insert(class);
+        }
+        replaced
     }
 
     /// Returns whether the zone has no member.

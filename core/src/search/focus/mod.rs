@@ -614,17 +614,35 @@ impl<'a> Engine<'a> {
         }
         let mut key = self.take_key();
         key.assign(theta, gamma);
+        // Failures are recorded up to interchangeable members: under the
+        // canonical key, where it differs from the sequent's own.
+        let mut canonical = self.take_key();
+        let renamed =
+            !self.classes.distinct() && canonical.gamma.canonical_from(gamma, self.classes);
         // A proof or a complete failure from the memo settles it; a
         // failure cut by the budget waits for the loop check, which may
         // give the stronger answer that the branch is redundant.
-        let entry = self.memo.get(&key, budget);
+        let entry = if renamed {
+            canonical.theta.clone_from(theta);
+            match self.memo.failed(&canonical, budget) {
+                Some(Failure::Complete) => Some(Entry::Failed(Failure::Complete)),
+                failed => match self.memo.proved(&key, failed.is_some()) {
+                    Some(node) => Some(Entry::Proved(node)),
+                    None => failed.map(Entry::Failed),
+                },
+            }
+        } else {
+            self.memo.get(&key, budget)
+        };
         match entry {
             Some(Entry::Proved(node)) => {
                 self.give_key(key);
+                self.give_key(canonical);
                 return Ok(Some(node));
             }
             Some(Entry::Failed(Failure::Complete)) => {
                 self.give_key(key);
+                self.give_key(canonical);
                 return Ok(None);
             }
             Some(Entry::Failed(Failure::Exhausted(_))) | None => {}
@@ -643,6 +661,7 @@ impl<'a> Engine<'a> {
                 if self.stack[depth] == key {
                     self.dependency = self.dependency.min(depth as u32);
                     self.give_key(key);
+                    self.give_key(canonical);
                     return Ok(None);
                 }
             }
@@ -651,6 +670,7 @@ impl<'a> Engine<'a> {
             // Cut by the budget at this or a larger remaining budget.
             self.exhausted = true;
             self.give_key(key);
+            self.give_key(canonical);
             return Ok(None);
         }
         if self.rules.stack {
@@ -698,12 +718,14 @@ impl<'a> Engine<'a> {
                     } else {
                         Failure::Complete
                     };
-                    self.memo.insert(&key, Entry::Failed(failure));
+                    let key = if renamed { &canonical } else { &key };
+                    self.memo.insert(key, Entry::Failed(failure));
                 }
             }
             _ => {}
         }
         self.give_key(key);
+        self.give_key(canonical);
         result
     }
 
