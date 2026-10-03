@@ -742,8 +742,9 @@ meets first on a large problem, and come before any new engine:
   JSON output is unaffected (5.5 MB in 0.3 s). The fix is the one "the
   benchmarks" below names for the additive identity (what a node
   derives shared along a branch, or kept only while a premise still
-  needs it); until then the command wants a bound on the derivation it
-  builds, with a message that names `--format json` and `--quiet`.
+  needs it); and the command wants a bound on the derivation it builds
+  whatever the checker does, since the tree itself is that large
+  ("Follow-ups: the command's output" below).
 - **The search's own memory**, where it is the search: four
   Philosophers-10000 nets under `--recursion-limit 16384` (the counts
   of a split allocated per level of the recursion, `Counts::split`),
@@ -838,6 +839,48 @@ inner arc poke through its outer one); colouring a disconnection
 letters as mathematical italic code points to match Typst; and a smaller
 row height for trees without a raised `⊥` (`Style::line_height` is the
 knob).
+
+## Follow-ups: the command's output
+
+**A proof tree that does not fit is not printed** (the author,
+2026-10-03, after the review of step 16 showed the command's default
+output taking gigabytes on a large net): where the tree does not
+reasonably fit the terminal, `prove` prints the verdict and leaves the
+tree out, with a manual override. What to do when the output goes to a
+file the author left open; the rest of this entry is the planning
+session's recommendation, for step 17 and the author to settle.
+
+Two bounds that are different in kind, and one rule for each:
+
+- *Fit*, on a terminal only. When standard output is a terminal and the
+  format is the text tree, the tree is shown if its widest line fits
+  the terminal's columns (a wrapped tree is unreadable at any height)
+  and its height is within some screens. Otherwise the verdict line is
+  followed by one line that says how large the derivation is and names
+  the ways to get it: the override, `--output FILE`, `--format json`.
+  The switch is of the kind `--color` is: `auto` (the default), `always`
+  and `never`, `--quiet` staying what it is.
+- *Safety*, everywhere. Into a file, a pipe or a drawing format there
+  is nothing to fit, the user has asked for the derivation by naming
+  where it goes, and a script must get the same output whatever the
+  terminal: so it is written, unless its size, estimated before
+  anything is built (inferences times the width of their sequents),
+  passes a bound of the order of what an editor or a typesetter can
+  still open. Past that bound the verdict is written without the
+  derivation, a line on standard error says why and names `--format
+  json` and the option that lifts the bound, and the exit status stays
+  the verdict's, which is what scripts read. `always` on a terminal is
+  under the same bound.
+
+The estimate and the bound belong to the library, in the options value
+of the derivation's output (D15), so that the web front end and a batch
+mode decide as the command does; whether a tree fits a terminal is the
+command's own question. The estimate must not build what it measures:
+a pass that counts, not `Derivation::build`. A compact view of a large
+derivation (a run of one structural rule drawn as one inference, the
+65 641 `?` steps of a net as one line) would move both bounds far out
+and is the better answer for teaching; it changes the type the exports
+read, so it goes with the code audit.
 
 ## Follow-ups: parallel search
 
