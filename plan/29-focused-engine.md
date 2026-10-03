@@ -43,10 +43,10 @@ case.
    is linear now, and the memo's keys were laid out again. So the step
    begins with a sampling profile (perf from the flake's nixpkgs, a
    release build with debug symbols set through the environment, pinned
-   to cores of one speed and capped, as step 15 took it; the folded
-   stacks are what you read, a flame graph is the same data drawn) of
-   every row of the target set that takes over a second, and works from
-   its ranking; it ends with the same profile, and the report shows the
+   to cores of one speed and capped, as step 15 took it; read as text,
+   by function and by call path: no flame graph or other drawing is
+   wanted, the author does not need one) of every row of the target set
+   that takes over a second, and works from its ranking; it ends with the same profile, and the report shows the
    two side by side. For a change worth a few percent, times by day are
    too noisy on this machine (one-thread rows whose code did not change
    moved by −6 to +4 % between two runs of step 19): compare instruction

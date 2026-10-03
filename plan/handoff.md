@@ -96,7 +96,8 @@ Profiling (the author asked on 2026-10-03, the planning session
 recommended, the prompts say): a heap profile at the start of step 20,
 a sampling profile at the start and the end of step 29, instruction
 counts where a change is worth less than the day's noise; never a
-standing requirement of every step.
+standing requirement of every step. The profiles are read as text and
+reported as tables; the author needs no flame graph.
 
 What the author decided on 2026-10-03, in a line each: sensible
 defaults, every one an option (D16); quantifiers will come and the
