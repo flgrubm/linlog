@@ -1,14 +1,16 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use crate::argument_parsing::{Format, InteractArgs};
-use crate::prove::{derivation, describe, on_large_stack, polls_per_clock};
+use crate::argument_parsing::InteractArgs;
+use crate::prove::{
+    Show, Shown, bytes_text, derivation, describe, on_large_stack, polls_per_clock,
+};
 use crate::{Status, catch_interrupt, clear_interrupt, interrupted, io};
 use anyhow::{Context, Result, bail};
 use linlog::export::svg::{self, Style};
 use linlog::export::{Form, latex, typst};
 use linlog::search::{Options, Outcome, Reason, Verdict};
-use linlog::{InfId, Interactive, Position, Reading, Rule};
+use linlog::{Error, InfId, Interactive, Position, Reading, Rule, ViewError, ViewOptions};
 use std::fmt::Write as _;
 use std::io::{BufRead, IsTerminal, Write};
 use std::path::Path;
@@ -57,6 +59,7 @@ pub fn interact(args: &InteractArgs) -> Result<Status> {
     let mut session = Session {
         state,
         options,
+        view: args.derivation_limit.into(),
         period: polls_per_clock(if args.deterministic { 1 } else { args.jobs }),
         timeout: args.timeout,
     };
@@ -76,6 +79,8 @@ struct Session {
     state: Interactive,
     /// The search settings of `close`.
     options: Options,
+    /// The bound on the derivation `close` grafts.
+    view: ViewOptions,
     /// How many polls of the stop condition go between two looks at the
     /// clock.
     period: u32,
@@ -205,10 +210,15 @@ impl Session {
                         io::write(Some(Path::new(path)), &serde_json::to_string(&proof)?)?;
                         format!("valid proof written to {path}")
                     }
-                    None => format!(
-                        "valid proof ({mode})\n{}",
-                        derivation(&proof, mode, Format::Text, Form::Fragment)?
-                    ),
+                    None => {
+                        let show = Show::text(self.view);
+                        let stopped = || "stopped".to_owned();
+                        match derivation(&proof, mode, &show, || false, stopped)? {
+                            Shown::Written(tree) => format!("valid proof ({mode})\n{tree}"),
+                            Shown::LeftOut(line) => format!("valid proof ({mode})\n{line}"),
+                            Shown::Nothing => format!("valid proof ({mode})"),
+                        }
+                    }
                 }
             }
             "save" => {
@@ -236,8 +246,23 @@ impl Session {
             polls.is_multiple_of(period)
                 && (interrupted() || deadline.is_some_and(|d| Instant::now() >= d))
         };
-        let outcome = self.state.close(goal, &self.options, stop)?;
-        Ok(outcome)
+        match self.state.close(goal, &self.options, &self.view, stop) {
+            Ok(outcome) => Ok(outcome),
+            Err(Error::View(ViewError::TooLarge { size, limit })) => bail!(
+                "the search proved the goal, but the derivation to graft is too large: its {} \
+                 inferences with {} characters of sequents are estimated at {}, over the \
+                 limit of {}; the goal stays open (--derivation-limit raises the limit)",
+                size.inferences,
+                size.characters,
+                bytes_text(size.bytes()),
+                bytes_text(limit)
+            ),
+            Err(Error::View(ViewError::Stopped)) => bail!(
+                "the search proved the goal, but its derivation was not grafted before the \
+                 time limit or the interrupt; the goal stays open"
+            ),
+            Err(error) => Err(error.into()),
+        }
     }
 
     /// Lists the open goals, or says that none is.

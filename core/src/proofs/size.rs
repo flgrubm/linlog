@@ -9,7 +9,7 @@
 //! before anything is built. All of them saturate.
 
 use super::check::{self, CheckError, Facts, Observer, State};
-use super::{Node, NodeId, Proof, Side};
+use super::{Derivation, Node, NodeId, Proof, Side};
 use crate::fragment::Mode;
 use crate::occurrences::{Forest, OccId, Position, Reading};
 use crate::sequents::Term;
@@ -55,7 +55,8 @@ impl Size {
     /// [`BYTES_PER_CHARACTER`](Self::BYTES_PER_CHARACTER) for each
     /// character of a sequent and
     /// [`BYTES_PER_INFERENCE`](Self::BYTES_PER_INFERENCE) for each
-    /// inference.
+    /// inference. It is what [`ViewOptions::limit`](super::ViewOptions)
+    /// bounds.
     pub fn bytes(&self) -> u64 {
         self.characters
             .saturating_mul(Self::BYTES_PER_CHARACTER)
@@ -76,12 +77,10 @@ impl Proof {
     /// a subproof that several nodes share is counted at every use, as the
     /// derivation repeats it.
     pub fn derivation_size(&self, two_sided: bool) -> Result<Size, CheckError> {
-        // The rules the derivation is built under: every rule a proof
-        // can use.
         let mode = if two_sided {
-            Mode::INTUITIONISTIC.affine()
+            Derivation::TWO_SIDED
         } else {
-            Mode::CLASSICAL.affine().with_mix()
+            Derivation::ONE_SIDED
         };
         let reading = check::reading(self, mode)?;
         measure(self, self.forest().roots(), mode, reading.as_ref())
@@ -465,7 +464,7 @@ pub(crate) fn measure(
 
 #[cfg(all(test, feature = "parse"))]
 mod tests {
-    use crate::proofs::{Derivation, oracle};
+    use crate::proofs::{Derivation, ViewOptions, oracle};
     use crate::search::{Options, Verdict, prove};
     use crate::{Mode, Sequent};
 
@@ -501,6 +500,7 @@ mod tests {
     /// sequent's.
     #[test]
     fn is_the_size_of_the_derivation_built() {
+        let never = || false;
         let mut bounds = 0;
         let mut proofs = oracle::proofs();
         // A `&` whose right premise alone uses two `?` formulas, weakened
@@ -512,9 +512,15 @@ mod tests {
         };
         proofs.push((*proof, Mode::CLASSICAL));
         for (proof, mode) in proofs {
-            let mut views = vec![(false, Derivation::new(&proof).unwrap())];
+            let mut views = vec![(
+                false,
+                Derivation::new(&proof, &ViewOptions::UNBOUNDED, never).unwrap(),
+            )];
             if mode.intuitionistic {
-                views.push((true, Derivation::two_sided(&proof).unwrap()));
+                views.push((
+                    true,
+                    Derivation::two_sided(&proof, &ViewOptions::UNBOUNDED, never).unwrap(),
+                ));
             }
             for (two_sided, derivation) in views {
                 let size = proof.derivation_size(two_sided).unwrap();

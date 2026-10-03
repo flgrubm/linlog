@@ -57,6 +57,10 @@ pub enum Error {
     /// A proof does not prove its sequent.
     #[error("invalid proof: {0}")]
     InvalidProof(#[from] CheckError),
+    /// A proof has no derivation to show: it is larger than the options
+    /// of the view allow, or its building was stopped.
+    #[error("{0}")]
+    View(crate::proofs::ViewError),
     /// A list of links is not a proof structure, or a structure is not a
     /// proof net.
     #[error("not a proof net: {0}")]
@@ -148,4 +152,14 @@ pub enum Error {
         /// The fragment the sequent was detected to lie in.
         detected: Fragment,
     },
+}
+
+impl From<crate::proofs::ViewError> for Error {
+    /// Wraps the reason, an invalid proof as [`Error::InvalidProof`].
+    fn from(error: crate::proofs::ViewError) -> Self {
+        match error {
+            crate::proofs::ViewError::Invalid(error) => Self::InvalidProof(error),
+            other => Self::View(other),
+        }
+    }
 }

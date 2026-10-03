@@ -33,7 +33,7 @@ mod oracle;
 pub mod size;
 
 pub use check::{CheckError, Described, Dyadic, Problem};
-pub use derivation::{Derivation, InfId, Inference, Rule, UnknownRule};
+pub use derivation::{Derivation, InfId, Inference, Rule, UnknownRule, ViewError, ViewOptions};
 #[cfg(feature = "interactive")]
 pub use interactive::{Interactive, Refusal};
 pub use size::Size;
@@ -346,17 +346,42 @@ impl Proof {
     }
 
     /// Unfolds the proof into the derivation of the standard sequent
-    /// calculus it stands for, or reports why it is not a proof; see
-    /// [`Derivation`].
-    pub fn derivation(&self) -> Result<Derivation<'_>, CheckError> {
-        Derivation::new(self)
+    /// calculus it stands for, or reports why it is not a proof, or that
+    /// the derivation is larger than the default [`ViewOptions`] allow;
+    /// see [`Derivation`], and [`derivation_with`](Self::derivation_with)
+    /// for other options.
+    pub fn derivation(&self) -> Result<Derivation<'_>, ViewError> {
+        self.derivation_with(&ViewOptions::default(), || false)
+    }
+
+    /// Unfolds the proof as [`derivation`](Self::derivation) does, within
+    /// the bound of `view` and until `stop` returns true, which is asked
+    /// once per inference.
+    pub fn derivation_with(
+        &self,
+        view: &ViewOptions,
+        stop: impl FnMut() -> bool,
+    ) -> Result<Derivation<'_>, ViewError> {
+        Derivation::new(self, view, stop)
     }
 
     /// Returns the two-sided derivation of intuitionistic linear logic the
-    /// proof stands for, or the checker's complaint in intuitionistic mode.
-    /// See [`Derivation::two_sided`].
-    pub fn two_sided_derivation(&self) -> Result<Derivation<'_>, CheckError> {
-        Derivation::two_sided(self)
+    /// proof stands for, or the checker's complaint in intuitionistic
+    /// mode, or that the derivation is larger than the default
+    /// [`ViewOptions`] allow. See [`Derivation::two_sided`].
+    pub fn two_sided_derivation(&self) -> Result<Derivation<'_>, ViewError> {
+        self.two_sided_derivation_with(&ViewOptions::default(), || false)
+    }
+
+    /// Unfolds the proof as
+    /// [`two_sided_derivation`](Self::two_sided_derivation) does, within
+    /// the bound of `view` and until `stop` returns true.
+    pub fn two_sided_derivation_with(
+        &self,
+        view: &ViewOptions,
+        stop: impl FnMut() -> bool,
+    ) -> Result<Derivation<'_>, ViewError> {
+        Derivation::two_sided(self, view, stop)
     }
 }
 

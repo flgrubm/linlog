@@ -414,6 +414,29 @@ and 106, Typst 59 and 126, the Rocq script 62 and 132, the SVG 212 MB
 written and 855 MB at its peak, against an estimate of 130 MiB: the
 order of magnitude for every format but the SVG's memory.
 
+**Nothing builds a derivation it was not allowed to** (`ViewOptions`,
+the one options value of every path that builds one, plain data with
+serde: `limit`, the most bytes of `Size::bytes()` a derivation may be
+estimated at, `DEFAULT_LIMIT` 64 MiB, `None` or `UNBOUNDED` for no
+bound). `unfold` is the one place derivations are made, for
+`Derivation::new`, `two_sided` and `of_goal` alike: the size first (a
+pass of the checker), `ViewError::TooLarge { size, limit }` past the
+bound with nothing built, then the pass that records what the builder
+reads, then the builder, which polls the caller's `stop` once per node
+and answers `ViewError::Stopped`. So the text tree, the four exports
+(which take a `Derivation`), the graft of `Interactive::close` and a
+front end's check output are all under the bound by construction, and a
+new path that needs a derivation gets it from there or not at all.
+`Proof::derivation()` and `two_sided_derivation()` are the default
+options with no stop; `…_with(&view, stop)` take both. A proof whose
+derivation is refused for its size has passed the checker (the size's
+pass is one). `Interactive::close(goal, options, view, stop)` leaves a
+goal open whose graft is refused (`Error::View`), though the search
+proved it; what it then tells the user is the front end's to say. The
+builder still recurses to the derivation's height, and the bound does
+not limit that: a caller on a small stack (the web front end) needs
+`Size::height` to decide.
+
 `Rule::Open` is the rule of an open goal in the derivation of a proof in
 progress (below) and appears nowhere else; `Rule::classical` maps every
 two-sided name back to the classical rule it is on the one-sided sequent,
@@ -503,7 +526,8 @@ representation with anything. What the code relies on:
   `proof()` runs the checker on the term, always: the layer is not trusted
   more than an engine.
 - **Search from a goal**: `close` calls `prove_goal` on the goal's
-  sequent, and grafts `Derivation::of_goal` of the proof found; the goal's
+  sequent, and grafts `Derivation::of_goal` of the proof found, within
+  the `ViewOptions` it is given and until its stop fires; the goal's
   fragment is its own (`search::goal_fragment`), so the prunes are those
   of the goal, and the net engine never runs off the roots. The outcome
   returned is the search's, its proof the proof of the goal alone.

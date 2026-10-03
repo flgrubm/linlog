@@ -24,6 +24,7 @@
 
 use super::check::{self, CheckError, Facts, Observer, State};
 use super::multiset::Multiset;
+use super::size::{self, Size};
 use super::{Node, NodeId, Proof, Side};
 use crate::fragment::Mode;
 use crate::hash::HashMap;
@@ -295,6 +296,89 @@ impl std::str::FromStr for Rule {
     }
 }
 
+/// How a derivation is shown: the one value that every path which builds
+/// a derivation takes, whatever it then draws or writes. It holds the
+/// bound that keeps a call from building what the machine cannot hold.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serialize", serde(default))]
+pub struct ViewOptions {
+    /// The most bytes a derivation may be estimated to take
+    /// ([`Size::bytes`]) and still be built, or `None` for no bound. A
+    /// proof stores a shared subproof once and its derivation repeats it,
+    /// and every inference carries its whole sequent, so a derivation can
+    /// be larger than its proof by any factor.
+    pub limit: Option<u64>,
+}
+
+impl ViewOptions {
+    /// The bound of the default options, 64 MiB: about what an editor
+    /// still opens and a typesetter still takes.
+    pub const DEFAULT_LIMIT: u64 = 64 << 20;
+
+    /// The options that build a derivation of any size.
+    pub const UNBOUNDED: Self = Self { limit: None };
+
+    /// Returns the options with the bound set, or lifted with `None`.
+    pub const fn limit(self, limit: Option<u64>) -> Self {
+        Self { limit }
+    }
+}
+
+impl Default for ViewOptions {
+    /// A bound of [`DEFAULT_LIMIT`](Self::DEFAULT_LIMIT).
+    fn default() -> Self {
+        Self {
+            limit: Some(Self::DEFAULT_LIMIT),
+        }
+    }
+}
+
+/// Why a proof has no derivation to show.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ViewError {
+    /// The proof does not pass the checker.
+    Invalid(CheckError),
+    /// The derivation is estimated to take more than the options allow;
+    /// nothing was built. The proof is not in doubt: it passed the checker
+    /// on the way to its size.
+    TooLarge {
+        /// The derivation's size.
+        size: Size,
+        /// The bound in force, in bytes.
+        limit: u64,
+    },
+    /// The caller's stop condition fired while the derivation was built.
+    Stopped,
+}
+
+impl From<CheckError> for ViewError {
+    /// Wraps the checker's complaint.
+    fn from(error: CheckError) -> Self {
+        Self::Invalid(error)
+    }
+}
+
+impl Display for ViewError {
+    /// Writes the reason, with the size of a derivation left out.
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            Self::Invalid(error) => write!(f, "{error}"),
+            Self::TooLarge { size, limit } => write!(
+                f,
+                "the derivation is not built: its {} inferences with {} characters of sequents \
+                 are estimated at {} bytes, over the bound of {limit}",
+                size.inferences,
+                size.characters,
+                size.bytes()
+            ),
+            Self::Stopped => f.write_str("the derivation is not built: stopped"),
+        }
+    }
+}
+
+impl std::error::Error for ViewError {}
+
 /// One inference of a derivation: the sequent it concludes, the rule, and
 /// the inferences of its premises.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -330,16 +414,30 @@ pub struct Derivation<'a> {
 
 impl<'a> Derivation<'a> {
     /// Unfolds a proof into the one-sided derivation of classical linear
-    /// logic. The proof must be correct, and the unfolding fails as
-    /// [`check`](Proof::check) would if it is not. Mode is not a question
-    /// here: a derivation shows every rule the proof uses.
-    pub fn new(proof: &'a Proof) -> Result<Self, CheckError> {
-        Self::build(proof, Mode::CLASSICAL.affine().with_mix(), None)
+    /// logic, unless it is larger than `view` allows or `stop` fires on
+    /// the way, once per inference. The proof must be correct, and the
+    /// unfolding fails as [`check`](Proof::check) would if it is not. Mode
+    /// is not a question here: a derivation shows every rule the proof
+    /// uses.
+    pub fn new(
+        proof: &'a Proof,
+        view: &ViewOptions,
+        stop: impl FnMut() -> bool,
+    ) -> Result<Self, ViewError> {
+        Self::build(proof, Self::ONE_SIDED, None, view, stop)
     }
+
+    /// The rules of a one-sided derivation: every rule a proof can use.
+    pub(crate) const ONE_SIDED: Mode = Mode::CLASSICAL.affine().with_mix();
+
+    /// The rules of a two-sided derivation, weakening among them so that
+    /// it shows where used.
+    pub(crate) const TWO_SIDED: Mode = Mode::INTUITIONISTIC.affine();
 
     /// Unfolds a proof into the two-sided derivation of intuitionistic
     /// linear logic, `Γ ⊢ A` at every inference with the intuitionistic
-    /// rule names. The proof must pass the checker in intuitionistic mode
+    /// rule names, unless it is larger than `view` allows or `stop` fires
+    /// on the way. The proof must pass the checker in intuitionistic mode
     /// (affine or not), and the unfolding fails as it would otherwise.
     ///
     /// # Examples
@@ -362,19 +460,13 @@ impl<'a> Derivation<'a> {
     /// );
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    pub fn two_sided(proof: &'a Proof) -> Result<Self, CheckError> {
-        let reading = match Reading::new(proof.forest()) {
-            Ok(reading) => reading,
-            Err(e) => {
-                return Err(CheckError {
-                    node: proof.root(),
-                    rule: proof.node(proof.root()),
-                    premises: vec![],
-                    problem: check::Problem::Shape(e),
-                });
-            }
-        };
-        Self::build(proof, Mode::INTUITIONISTIC.affine(), Some(reading))
+    pub fn two_sided(
+        proof: &'a Proof,
+        view: &ViewOptions,
+        stop: impl FnMut() -> bool,
+    ) -> Result<Self, ViewError> {
+        let reading = check::reading(proof, Self::TWO_SIDED)?;
+        Self::build(proof, Self::TWO_SIDED, reading, view, stop)
     }
 
     /// Checks the proof in `mode` and unfolds it, two-sided when a reading
@@ -383,20 +475,11 @@ impl<'a> Derivation<'a> {
         proof: &'a Proof,
         mode: Mode,
         reading: Option<Reading<'a>>,
-    ) -> Result<Self, CheckError> {
+        view: &ViewOptions,
+        stop: impl FnMut() -> bool,
+    ) -> Result<Self, ViewError> {
         let roots = proof.forest().roots();
-        let mut record = Record::new(proof);
-        check::examine(proof, roots, mode, reading.as_ref(), &mut record)?;
-        let inferences = {
-            let mut build = Build {
-                proof,
-                record: &record,
-                reading: reading.as_ref(),
-                inferences: Vec::with_capacity(proof.nodes().len()),
-            };
-            build.build(proof.root(), Multiset::of(roots.iter().copied()));
-            build.inferences
-        };
+        let inferences = unfold(proof, roots, mode, reading.as_ref(), view, stop)?;
         Ok(Self {
             forest: proof.forest(),
             reading,
@@ -422,25 +505,18 @@ impl<'a> Derivation<'a> {
     /// Unfolds a proof whose root concludes `goal` rather than the roots,
     /// as the search from a goal returns it, into the inferences of its
     /// derivation, premises before conclusions and the root last, two-sided
-    /// in intuitionistic mode. Fails as the checker would on a node that
+    /// in intuitionistic mode, unless it is larger than `view` allows or
+    /// `stop` fires on the way. Fails as the checker would on a node that
     /// misapplies its rule and on a root that does not conclude the goal.
     pub(crate) fn of_goal(
         proof: &'a Proof,
         goal: &[OccId],
         mode: Mode,
-    ) -> Result<Vec<Inference>, CheckError> {
+        view: &ViewOptions,
+        stop: impl FnMut() -> bool,
+    ) -> Result<Vec<Inference>, ViewError> {
         let reading = check::reading(proof, mode)?;
-        let mut record = Record::new(proof);
-        check::examine(proof, goal, mode.affine(), reading.as_ref(), &mut record)?;
-        let goal = Multiset::of(goal.iter().copied());
-        let mut build = Build {
-            proof,
-            record: &record,
-            reading: reading.as_ref(),
-            inferences: Vec::with_capacity(proof.nodes().len()),
-        };
-        build.build(proof.root(), goal);
-        Ok(build.inferences)
+        unfold(proof, goal, mode.affine(), reading.as_ref(), view, stop)
     }
 
     /// Returns the forest the sequents' occurrences index.
@@ -468,6 +544,41 @@ impl<'a> Derivation<'a> {
     pub fn root(&self) -> InfId {
         InfId::new(self.inferences.len() as u32 - 1)
     }
+}
+
+/// Unfolds a proof that concludes `goal` into the inferences of its
+/// derivation, premises before conclusions and the root last: one pass of
+/// the checker for the size, which must be within the bound, a second for
+/// what the translation reads, then the translation.
+fn unfold(
+    proof: &Proof,
+    goal: &[OccId],
+    mode: Mode,
+    reading: Option<&Reading>,
+    view: &ViewOptions,
+    mut stop: impl FnMut() -> bool,
+) -> Result<Vec<Inference>, ViewError> {
+    if let Some(limit) = view.limit {
+        let size = size::measure(proof, goal, mode, reading)?;
+        if size.bytes() > limit {
+            return Err(ViewError::TooLarge { size, limit });
+        }
+    }
+    let mut record = Record::new(proof);
+    check::examine(proof, goal, mode, reading, &mut record)?;
+    let mut build = Build {
+        proof,
+        record: &record,
+        reading,
+        inferences: Vec::with_capacity(proof.nodes().len()),
+        stop: &mut stop,
+        stopped: false,
+    };
+    build.build(proof.root(), Multiset::of(goal.iter().copied()));
+    if build.stopped {
+        return Err(ViewError::Stopped);
+    }
+    Ok(build.inferences)
 }
 
 /// What the translation reads off the checker's pass: for every node a
@@ -548,6 +659,11 @@ struct Build<'a> {
     reading: Option<&'a Reading<'a>>,
     /// The inferences made so far.
     inferences: Vec<Inference>,
+    /// The caller's stop condition, polled once per node.
+    stop: &'a mut dyn FnMut() -> bool,
+    /// Whether the condition fired: the inferences are then worthless and
+    /// every call returns at once.
+    stopped: bool,
 }
 
 impl Build<'_> {
@@ -599,6 +715,10 @@ impl Build<'_> {
     /// standard sequent it derives plus whatever a `⊤` in it absorbs.
     fn build(&mut self, id: NodeId, actual: Multiset) -> InfId {
         use Node::*;
+        if self.stopped || (self.stop)() {
+            self.stopped = true;
+            return InfId::new(0);
+        }
         let f = self.forest();
         let node = self.proof.node(id);
         let (left, right) = (
@@ -734,6 +854,9 @@ impl Build<'_> {
         }
         let pl = self.build(l, up_l.clone());
         let pr = self.build(r, up_r.clone());
+        if self.stopped {
+            return pl;
+        }
         let (rule, principal) = match tensor {
             Some((o, a, b)) => {
                 up_l.remove(a);
@@ -767,6 +890,9 @@ impl Build<'_> {
         let mut sequent = self.standard(id);
         let unused = actual.difference(&sequent);
         let mut inference = self.build(id, sequent.clone());
+        if self.stopped {
+            return inference;
+        }
         for &q in unused.as_slice() {
             sequent.insert(q);
             inference = self.infer(sequent.clone(), Rule::Weakening, Some(q), vec![inference]);

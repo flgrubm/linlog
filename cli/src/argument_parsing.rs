@@ -3,7 +3,7 @@
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use linlog::search::{Engine, Options};
-use linlog::{Bias, Fragment, Mode};
+use linlog::{Bias, Fragment, Mode, ViewOptions};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -218,6 +218,10 @@ pub struct InteractArgs {
     /// Run the sequential engines; see `prove --deterministic`
     #[arg(long)]
     pub deterministic: bool,
+    /// The largest derivation `close` grafts, by its estimated size; see
+    /// `prove --derivation-limit`
+    #[arg(long, value_name = "SIZE", value_parser = parse_limit, default_value_t = Limit::default())]
+    pub derivation_limit: Limit,
 }
 
 /// The default of `--jobs`: the threads the machine runs at once, or one
@@ -355,6 +359,77 @@ pub struct OutputArgs {
     /// paste (latex and typst)
     #[arg(long)]
     pub standalone: bool,
+    /// The largest derivation to build, by its estimated size: a number
+    /// of bytes with a unit such as 64MiB or 2GiB, or `none` for no limit
+    ///
+    /// A derivation writes out the whole sequent at every inference and
+    /// repeats every subproof that the proof shares, so it can be larger
+    /// than the proof by any factor. A derivation estimated above the
+    /// limit is not built, in any format: the verdict is reported without
+    /// it, with a line that says how large it is, and the exit status is
+    /// the verdict's. `--format json` writes the proof itself at any size.
+    #[arg(long, value_name = "SIZE", value_parser = parse_limit, default_value_t = Limit::default())]
+    pub derivation_limit: Limit,
+}
+
+/// The largest derivation a command builds, in bytes of its estimated
+/// size, or none for no limit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Limit(pub Option<u64>);
+
+impl Default for Limit {
+    /// The library's default.
+    fn default() -> Self {
+        Self(Some(ViewOptions::DEFAULT_LIMIT))
+    }
+}
+
+impl std::fmt::Display for Limit {
+    /// Writes the limit as `--derivation-limit` reads it.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            None => f.write_str("none"),
+            Some(bytes) => {
+                let (mut value, mut unit) = (bytes, 0);
+                while unit + 1 < UNITS.len() && value >= 1024 && value.is_multiple_of(1024) {
+                    (value, unit) = (value / 1024, unit + 1);
+                }
+                write!(f, "{value}{}", UNITS[unit])
+            }
+        }
+    }
+}
+
+impl From<Limit> for ViewOptions {
+    /// Returns the options of a derivation built within the limit.
+    fn from(limit: Limit) -> Self {
+        Self::default().limit(limit.0)
+    }
+}
+
+/// The units of a size, each 1024 of the one before.
+const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
+
+/// Parses a size such as `64MiB`, `2GiB` or `1000000` (bytes), or `none`.
+fn parse_limit(text: &str) -> Result<Limit, String> {
+    if text == "none" {
+        return Ok(Limit(None));
+    }
+    let split = text
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(text.len());
+    let (number, unit) = text.split_at(split);
+    let unit = unit.trim();
+    let power = UNITS
+        .iter()
+        .position(|u| u.eq_ignore_ascii_case(unit) || (unit.is_empty() && *u == "B"))
+        .ok_or_else(|| format!("unknown unit {unit:?}; use B, KiB, MiB, GiB or TiB, or `none`"))?;
+    let number: u64 = number
+        .parse()
+        .map_err(|_| format!("{text:?} is not a size such as 64MiB or 2GiB, or `none`"))?;
+    Ok(Limit(Some(
+        number.saturating_mul(1024u64.saturating_pow(power as u32)),
+    )))
 }
 
 /// The output formats of `prove` and `check`.

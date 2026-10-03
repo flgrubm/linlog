@@ -113,6 +113,28 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   `--format json` are checked like the drawn formats; `--no-check`
   switches it off. A proof the checker rejects is `Error::Rejected`, exit
   status 2: a defect to report, not a verdict.
+- **A derivation is made by `derivation(proof, mode, &show, halt, why)`
+  and nowhere else** (`prove.rs`; `Show` is what the output arguments ask
+  for and where the output goes, `Shown` what became of the derivation:
+  `Written`, `LeftOut(line)` or `Nothing`). `--derivation-limit`
+  (`Limit`, default the library's `ViewOptions::DEFAULT_LIMIT`, `none`
+  lifts it) is `ViewOptions::limit`, on `prove`, `check` and `interact`.
+  A derivation past it is not built: the verdict line stands, the exit
+  status is the verdict's, and one line says how large the derivation is
+  and names `--format json` and the flag (`too_large`). That line follows
+  the verdict when the output is a terminal and goes to standard error
+  otherwise (`Show::left_out`), so that a file or a pipe holds what it
+  would hold for a small proof minus the tree. In a session the line is
+  the command's output, and a `close` whose graft is refused leaves the
+  goal open.
+- **The time limit and Ctrl-C hold after the search** (`prove`): the same
+  deadline and flag are polled every `STEPS_PER_CLOCK` (256) inferences
+  built and pieces of text written (`halt`; the text tree goes through
+  `Halting`, a writer that fails once the condition fires). A derivation
+  stopped that way is left out with the reason (`why`), the verdict
+  stands, and nothing of it is written. The LaTeX, Typst, SVG and Rocq
+  emitters return a `String` and cannot be stopped inside; they are
+  linear in their output, which the limit bounds.
 - **Ctrl-C** (`ctrlc`, whose handler runs on a thread of its own once per
   signal): the first sets a flag the search polls, so the outcome is
   unknown and `--stats` still prints; the second exits with 130. The

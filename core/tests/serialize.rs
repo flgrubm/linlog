@@ -10,7 +10,7 @@
 use linlog::search::{Engine, Options, prove, prove_until};
 use linlog::{
     Forest, Fragment, InfId, Interactive, Mode, Node, NodeId, OccId, Proof, ProofStructure, Rule,
-    Sequent, Side,
+    Sequent, Side, ViewOptions,
 };
 
 /// Parses `input` and serializes it as compact JSON.
@@ -456,13 +456,20 @@ fn interactive_json_format_and_round_trip() {
         )
         .unwrap();
     state
-        .close(goals[0], &Options::default(), || false)
+        .close(
+            goals[0],
+            &Options::default(),
+            &ViewOptions::default(),
+            || false,
+        )
         .unwrap();
     let json = serde_json::to_string(&state).unwrap();
     let mut back: Interactive = serde_json::from_str(&json).unwrap();
     assert_eq!(back.inferences(), state.inferences());
     assert_eq!(back.steps(), 5);
-    let closed = back.close_all(&Options::default(), || false).unwrap();
+    let closed = back
+        .close_all(&Options::default(), &ViewOptions::default(), || false)
+        .unwrap();
     assert_eq!(closed.len(), 2);
     assert_eq!(back.proof().unwrap().check(mix), Ok(()));
     while back.undo().is_some() {}

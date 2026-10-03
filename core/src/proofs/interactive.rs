@@ -18,7 +18,7 @@
 //! index than its conclusion, the reverse of a [`Derivation`], which
 //! [`Interactive::derivation`] renumbers.
 
-use super::derivation::{Derivation, InfId, Inference, Rule};
+use super::derivation::{Derivation, InfId, Inference, Rule, ViewOptions};
 use super::multiset::Multiset;
 use super::{Node, NodeId, Proof, Side};
 use crate::Error;
@@ -789,16 +789,21 @@ impl Interactive {
     /// proof found is grafted onto the goal as one step, which
     /// [`undo`](Self::undo) retracts whole; otherwise nothing changes. The
     /// outcome's proof, if any, is the proof of the goal alone.
+    ///
+    /// The derivation grafted is within the bound of `view`: a goal whose
+    /// proof unfolds into a larger one, or whose unfolding `stop` ends, is
+    /// [`Error::View`] and stays open, though the search proved it.
     pub fn close(
         &mut self,
         goal: InfId,
         options: &Options,
-        stop: impl FnMut() -> bool,
+        view: &ViewOptions,
+        mut stop: impl FnMut() -> bool,
     ) -> Result<Outcome, Error> {
         let sequent = self.open(goal)?.to_vec();
-        let outcome = search::prove_goal(&self.forest, &sequent, self.mode, options, stop)?;
+        let outcome = search::prove_goal(&self.forest, &sequent, self.mode, options, &mut stop)?;
         if let Verdict::Proved(proof) = &outcome.verdict {
-            let found = Derivation::of_goal(proof, &sequent, self.mode)?;
+            let found = Derivation::of_goal(proof, &sequent, self.mode, view, &mut stop)?;
             self.graft(goal, found);
             self.history.push(goal);
         }
@@ -811,12 +816,13 @@ impl Interactive {
     pub fn close_all(
         &mut self,
         options: &Options,
+        view: &ViewOptions,
         mut stop: impl FnMut() -> bool,
     ) -> Result<Vec<(InfId, Outcome)>, Error> {
         let goals: Vec<InfId> = self.goals().collect();
         let mut outcomes = Vec::with_capacity(goals.len());
         for goal in goals {
-            let outcome = self.close(goal, options, &mut stop)?;
+            let outcome = self.close(goal, options, view, &mut stop)?;
             outcomes.push((goal, outcome));
         }
         Ok(outcomes)
@@ -1372,12 +1378,16 @@ mod tests {
         let [l, r] = s.apply(g, t, Tensor, &[at(&s, g, "~a ⊕ ~b")]).unwrap()[..] else {
             panic!()
         };
-        let outcome = s.close(l, &options, || false).unwrap();
+        let outcome = s
+            .close(l, &options, &ViewOptions::default(), || false)
+            .unwrap();
         assert!(matches!(outcome.verdict, Verdict::Proved(_)));
         assert_eq!(outcome.engine, crate::search::Engine::Additive);
         assert_eq!(s.goals().collect::<Vec<_>>(), [r]);
         assert_eq!(s.steps(), 2);
-        let outcomes = s.close_all(&options, || false).unwrap();
+        let outcomes = s
+            .close_all(&options, &ViewOptions::default(), || false)
+            .unwrap();
         assert_eq!(outcomes.len(), 1);
         assert_eq!(outcomes[0].0, r);
         assert!(s.is_complete());
@@ -1393,14 +1403,18 @@ mod tests {
         else {
             panic!()
         };
-        let outcome = s.close(l, &options, || false).unwrap();
+        let outcome = s
+            .close(l, &options, &ViewOptions::default(), || false)
+            .unwrap();
         assert!(matches!(outcome.verdict, Verdict::Unprovable));
-        let outcome = s.close(r, &options, || true).unwrap();
+        let outcome = s
+            .close(r, &options, &ViewOptions::default(), || true)
+            .unwrap();
         assert!(matches!(outcome.verdict, Verdict::Unknown(Reason::Stopped)));
         assert_eq!(s.goals().collect::<Vec<_>>(), [l, r]);
         assert!(matches!(s.proof(), Err(Error::OpenGoals(2))));
         assert!(matches!(
-            s.close(g, &options, || false),
+            s.close(g, &options, &ViewOptions::default(), || false),
             Err(Error::Refused(Refusal::NoGoal(_)))
         ));
 
@@ -1409,7 +1423,9 @@ mod tests {
         let [g] = s.apply(g, at(&s, g, "~a ⊕ ~b"), WithLeft1, &[]).unwrap()[..] else {
             panic!()
         };
-        let outcome = s.close(g, &options, || false).unwrap();
+        let outcome = s
+            .close(g, &options, &ViewOptions::default(), || false)
+            .unwrap();
         assert!(matches!(outcome.verdict, Verdict::Proved(_)));
         assert!(s.derivation().to_string().contains("!L"));
         assert_eq!(s.proof().unwrap().check(Mode::INTUITIONISTIC), Ok(()));
@@ -1450,7 +1466,8 @@ mod tests {
         else {
             panic!()
         };
-        s.close(l, &Options::default(), || false).unwrap();
+        s.close(l, &Options::default(), &ViewOptions::default(), || false)
+            .unwrap();
         assert_eq!(s.undo(), Some(l));
         assert_eq!(s.goals().count(), 2);
         assert_eq!(s.undo(), Some(g1));
@@ -1458,7 +1475,9 @@ mod tests {
         assert_eq!(s.undo(), Some(g));
         assert_eq!(s.inferences(), start_state.inferences());
         assert_eq!(s.undo(), None);
-        let outcome = s.close(g, &Options::default(), || false).unwrap();
+        let outcome = s
+            .close(g, &Options::default(), &ViewOptions::default(), || false)
+            .unwrap();
         assert!(matches!(outcome.verdict, Verdict::Proved(_)));
         assert!(s.is_complete());
         assert_eq!(s.undo(), Some(g));
@@ -1508,7 +1527,8 @@ mod tests {
             panic!()
         };
         assert_eq!(s.goal(l), s.goal(r));
-        s.close_all(&Options::default(), || false).unwrap();
+        s.close_all(&Options::default(), &ViewOptions::default(), || false)
+            .unwrap();
         assert!(s.is_complete());
     }
 }

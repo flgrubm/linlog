@@ -1,15 +1,19 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use crate::argument_parsing::{CheckArgs, Format, ProveArgs, SequentFormat};
+use crate::argument_parsing::{CheckArgs, Format, OutputArgs, ProveArgs, SequentFormat};
 use crate::io;
 use crate::{Status, catch_interrupt, interrupted};
 use anyhow::{Context, Result, anyhow, bail};
 use linlog::export::svg::{self, Style};
 use linlog::export::{Form, latex, rocq, typst};
 use linlog::search::{Engine, Options, Outcome, Reason, Statistics, Verdict, prove_until};
-use linlog::{Error, Forest, Fragment, Mode, Proof, ProofStructure, Reading, Sequent};
+use linlog::{
+    Error, Forest, Fragment, Mode, Proof, ProofStructure, Reading, Sequent, Size, ViewError,
+    ViewOptions,
+};
 use std::fmt::Write;
+use std::io::IsTerminal;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -54,27 +58,172 @@ enum Stop {
     Interrupt,
 }
 
-/// Returns the derivation of a proof, two-sided in intuitionistic mode:
-/// a LaTeX or Typst proof tree in `form` for those formats, an SVG
-/// document for SVG, a text tree otherwise; or the checker's complaint
-/// with formulas.
-pub(crate) fn derivation(proof: &Proof, mode: Mode, format: Format, form: Form) -> Result<String> {
-    let derivation = if mode.intuitionistic {
-        proof.two_sided_derivation()
+/// How many inferences are built, or pieces of text written, between two
+/// looks at the clock and the Ctrl-C flag while a derivation is made.
+const STEPS_PER_CLOCK: u32 = 256;
+
+/// How a derivation is to be shown: what the output arguments ask for and
+/// where the output goes.
+pub(crate) struct Show {
+    /// The format.
+    format: Format,
+    /// The form of a LaTeX, Typst or Rocq derivation.
+    form: Form,
+    /// The bound on what is built.
+    view: ViewOptions,
+    /// Whether the output goes to a terminal.
+    terminal: bool,
+}
+
+impl Show {
+    /// Reads the output arguments; `exported` says the format has a
+    /// document form.
+    pub(crate) fn new(output: &OutputArgs) -> Result<Self> {
+        let format = output.format;
+        let form = form(
+            output.standalone,
+            matches!(format, Format::Latex | Format::Typst | Format::Rocq),
+        )?;
+        let terminal = output.output.is_none() && std::io::stdout().is_terminal();
+        Ok(Self {
+            format,
+            form,
+            view: output.derivation_limit.into(),
+            terminal,
+        })
+    }
+
+    /// The text tree of any size within `view`, wherever it goes: what a
+    /// session prints when asked for a proof.
+    pub(crate) fn text(view: ViewOptions) -> Self {
+        Self {
+            format: Format::Text,
+            form: Form::Fragment,
+            view,
+            terminal: false,
+        }
+    }
+
+    /// Writes a line about a derivation that was left out: after the
+    /// verdict when the output is a terminal, to standard error otherwise,
+    /// so that a file or a pipe gets what it would get from a small proof.
+    fn left_out(&self, text: &mut String, line: &str) {
+        if self.terminal {
+            text.push('\n');
+            text.push_str(&note(self.format, line));
+        } else {
+            eprintln!("{line}");
+        }
+    }
+}
+
+/// What became of the derivation of a proof.
+pub(crate) enum Shown {
+    /// It was written, as this text.
+    Written(String),
+    /// It was left out, for the reason this line gives with the ways to
+    /// get it.
+    LeftOut(String),
+    /// It was not asked for.
+    Nothing,
+}
+
+/// A text that takes what is written to it until a stop condition fires.
+struct Halting<'a> {
+    /// What was written.
+    text: String,
+    /// The stop condition.
+    halt: &'a mut dyn FnMut() -> bool,
+}
+
+impl Write for Halting<'_> {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        if (self.halt)() {
+            return Err(std::fmt::Error);
+        }
+        self.text.push_str(s);
+        Ok(())
+    }
+}
+
+/// Returns a number of bytes in the largest binary unit that leaves it at
+/// least one.
+pub(crate) fn bytes_text(bytes: u64) -> String {
+    if bytes == u64::MAX {
+        return "more than 16 EiB".to_owned();
+    }
+    let units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"];
+    let (mut value, mut unit) = (bytes as f64, 0);
+    while value >= 1024.0 && unit + 1 < units.len() {
+        (value, unit) = (value / 1024.0, unit + 1);
+    }
+    if unit == 0 {
+        format!("{bytes} B")
     } else {
-        proof.derivation()
+        format!("{value:.1} {}", units[unit])
+    }
+}
+
+/// Returns the line for a derivation past the limit.
+fn too_large(size: &Size, limit: u64) -> String {
+    format!(
+        "the derivation is not written: its {} inferences with {} characters of sequents are \
+         estimated at {}, over the limit of {}; --format json writes the proof itself, \
+         --derivation-limit SIZE raises the limit and --derivation-limit none lifts it",
+        size.inferences,
+        size.characters,
+        bytes_text(size.bytes()),
+        bytes_text(limit)
+    )
+}
+
+/// Makes the derivation of a proof as `show` asks, two-sided in
+/// intuitionistic mode: a LaTeX or Typst proof tree, a Rocq script, an
+/// SVG document or a text tree; or says why it is left out: a derivation
+/// past the limit, or one that `halt` stopped, which is polled as it is built and written and
+/// whose reason `why` then gives. Fails with the checker's complaint,
+/// with formulas, on a proof that is none.
+pub(crate) fn derivation(
+    proof: &Proof,
+    mode: Mode,
+    show: &Show,
+    mut halt: impl FnMut() -> bool,
+    why: impl Fn() -> String,
+) -> Result<Shown> {
+    let invalid =
+        |e: linlog::CheckError| anyhow!("the proof is invalid: {}", e.describe(proof.forest()));
+    let stopped = || Shown::LeftOut(format!("the derivation is not written: {}", why()));
+    let built = if mode.intuitionistic {
+        proof.two_sided_derivation_with(&show.view, &mut halt)
+    } else {
+        proof.derivation_with(&show.view, &mut halt)
     };
-    let d =
-        derivation.map_err(|e| anyhow!("the proof is invalid: {}", e.describe(proof.forest())))?;
-    Ok(match format {
-        Format::Latex => latex::derivation(&d, form),
-        Format::Typst => typst::derivation(&d, form),
+    let d = match built {
+        Ok(d) => d,
+        Err(ViewError::Invalid(e)) => return Err(invalid(e)),
+        Err(ViewError::TooLarge { size, limit }) => {
+            return Ok(Shown::LeftOut(too_large(&size, limit)));
+        }
+        Err(ViewError::Stopped) => return Ok(stopped()),
+    };
+    Ok(Shown::Written(match show.format {
+        Format::Latex => latex::derivation(&d, show.form),
+        Format::Typst => typst::derivation(&d, show.form),
         Format::Svg => svg::derivation(&d, &Style::default()),
         Format::Rocq => {
-            rocq::derivation(&d, form, &rocq::Options::default()).context("no certificate")?
+            rocq::derivation(&d, show.form, &rocq::Options::default()).context("no certificate")?
         }
-        Format::Text | Format::Json | Format::Net | Format::NetSvg => d.to_string(),
-    })
+        Format::Text | Format::Json | Format::Net | Format::NetSvg => {
+            let mut out = Halting {
+                text: String::new(),
+                halt: &mut halt,
+            };
+            if write!(out, "{d}").is_err() {
+                return Ok(stopped());
+            }
+            out.text
+        }
+    }))
 }
 
 /// Returns a sequent as text: one-sided, or two-sided in intuitionistic
@@ -211,10 +360,7 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
     let period = polls_per_clock(if args.deterministic { 1 } else { args.jobs });
     let format = args.output.format;
     let quiet = args.output.quiet;
-    let form = form(
-        args.output.standalone,
-        matches!(format, Format::Latex | Format::Typst | Format::Rocq),
-    )?;
+    let show = Show::new(&args.output)?;
     catch_interrupt();
 
     let (outcome, stop, elapsed, derivation) = on_large_stack(options.stack_size(), || {
@@ -238,16 +384,38 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         })
         .map_err(|e| describe(e, &sequent))?;
         let elapsed = start.elapsed();
+        // The time limit and Ctrl-C hold for the derivation as for the
+        // search.
+        let over =
+            || interrupted() || deadline.is_some_and(|(deadline, _)| Instant::now() >= deadline);
+        let mut steps = 0u32;
+        let halt = || {
+            steps = steps.wrapping_add(1);
+            steps.is_multiple_of(STEPS_PER_CLOCK) && over()
+        };
+        let why = || match deadline {
+            _ if interrupted() => "interrupted".to_owned(),
+            Some((_, t)) => format!("the time limit of {t:?} was reached"),
+            None => "stopped".to_owned(),
+        };
         let derivation = match (&outcome.verdict, format, quiet) {
             (
                 Verdict::Proved(proof),
                 Format::Text | Format::Latex | Format::Typst | Format::Svg | Format::Rocq,
                 false,
-            ) => Some(derivation(proof, mode, format, form)?),
-            (Verdict::Proved(proof), Format::Net | Format::NetSvg, false) => {
-                Some(net_of(&outcome, proof, mode, format)?)
+            ) if over() => {
+                let _ = proof;
+                Shown::LeftOut(format!("the derivation is not written: {}", why()))
             }
-            _ => None,
+            (
+                Verdict::Proved(proof),
+                Format::Text | Format::Latex | Format::Typst | Format::Svg | Format::Rocq,
+                false,
+            ) => derivation(proof, mode, &show, halt, why)?,
+            (Verdict::Proved(proof), Format::Net | Format::NetSvg, false) => {
+                Shown::Written(net_of(&outcome, proof, mode, format)?)
+            }
+            _ => Shown::Nothing,
         };
         anyhow::Ok((outcome, stop, elapsed, derivation))
     })??;
@@ -265,8 +433,10 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
                 format,
                 &verdict_line(&outcome, args.fragment.is_some(), stop),
             );
-            if let Some(derivation) = derivation {
-                write!(text, "\n{derivation}")?;
+            match derivation {
+                Shown::Written(derivation) => write!(text, "\n{derivation}")?,
+                Shown::LeftOut(line) => show.left_out(&mut text, &line),
+                Shown::Nothing => {}
             }
             if args.stats {
                 let statistics = statistics(outcome.engine, &outcome.statistics, elapsed);
@@ -346,27 +516,18 @@ pub fn check(args: &CheckArgs) -> Result<Status> {
     let text = io::read(args.proof.as_deref(), "proof")?;
     let proof: Proof = serde_json::from_str(&text).context("not a proof in JSON")?;
     let mode = args.mode.mode();
-    let format = args.output.format;
     let quiet = args.output.quiet;
-    let form = form(
-        args.output.standalone,
-        matches!(format, Format::Latex | Format::Typst | Format::Rocq),
-    )?;
+    let show = Show::new(&args.output)?;
     let (valid, text) = on_large_stack(Options::default().stack_size(), || {
-        check_text(&proof, mode, format, form, quiet)
+        check_text(&proof, mode, &show, quiet)
     })??;
     io::write(args.output.output.as_deref(), &text)?;
     Ok(if valid { Status::Yes } else { Status::No })
 }
 
 /// Checks the proof and returns whether it is valid, with the output text.
-fn check_text(
-    proof: &Proof,
-    mode: Mode,
-    format: Format,
-    form: Form,
-    quiet: bool,
-) -> Result<(bool, String)> {
+fn check_text(proof: &Proof, mode: Mode, show: &Show, quiet: bool) -> Result<(bool, String)> {
+    let format = show.format;
     let result = proof.check(mode);
     let text = match format {
         Format::Json => serde_json::json!({
@@ -393,7 +554,16 @@ fn check_text(
                     nets_exist(proof.sequent(), mode)?;
                     format!("{valid}\n{}", net(proof, mode, format)?)
                 }
-                Ok(()) => format!("{valid}\n{}", derivation(proof, mode, format, form)?),
+                Ok(()) => {
+                    let mut text = valid;
+                    let stopped = || "stopped".to_owned();
+                    match derivation(proof, mode, show, || false, stopped)? {
+                        Shown::Written(derivation) => write!(text, "\n{derivation}")?,
+                        Shown::LeftOut(line) => show.left_out(&mut text, &line),
+                        Shown::Nothing => {}
+                    }
+                    text
+                }
                 Err(e) => note(
                     format,
                     &format!(

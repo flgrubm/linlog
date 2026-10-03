@@ -32,6 +32,51 @@ fn linlog(args: &[&str], stdin: &str) -> (i32, String, String) {
     )
 }
 
+/// A derivation estimated above `--derivation-limit` is not written: the
+/// verdict stands with its exit status, standard error says how large the
+/// derivation is and how to get it.
+#[test]
+fn derivation_limit() {
+    let sequent = "A, A -o B |- B";
+    let verdict = "provable (MLL, classical, net engine)\n";
+    let (status, out, err) = linlog(&["prove", "--derivation-limit", "100", sequent], "");
+    assert_eq!((status, out.as_str()), (0, verdict));
+    assert_eq!(
+        err,
+        "the derivation is not written: its 3 inferences with 29 characters of sequents are \
+         estimated at 616 B, over the limit of 100 B; --format json writes the proof itself, \
+         --derivation-limit SIZE raises the limit and --derivation-limit none lifts it\n"
+    );
+    let (status, out, err) = linlog(
+        &[
+            "prove",
+            "--format",
+            "latex",
+            "--derivation-limit",
+            "1KiB",
+            sequent,
+        ],
+        "",
+    );
+    assert_eq!(status, 0);
+    assert!(
+        out.contains("\\begin{prooftree}") && err.is_empty(),
+        "{out}{err}"
+    );
+
+    // `check` is under the same limit.
+    let (_, proof, _) = linlog(&["prove", "--format", "json", sequent], "");
+    let (status, out, err) = linlog(&["check", "--derivation-limit", "100"], &proof);
+    assert_eq!(
+        (status, out.as_str()),
+        (0, "valid proof of ⊢ ~A, A ⊗ ~B, B (classical)\n")
+    );
+    assert!(
+        err.starts_with("the derivation is not written: its 3 inferences"),
+        "{err}"
+    );
+}
+
 /// `prove` prints the verdict line and the derivation, and exits 0 for
 /// provable, 1 for unprovable, 3 for unknown and 2 for an error.
 #[test]
