@@ -577,7 +577,11 @@ representation with anything. What the code relies on:
   contracts below a `⊗`, the user contracted above the root, say); the
   state's derivation is the user's tree, the term's is the checker's.
   `proof()` runs the checker on the term, always: the layer is not trusted
-  more than an engine.
+  more than an engine. The translation walks the derivation with a stack
+  of its own (`Terms::term`: the steps still to take, the terms of the
+  subtrees done), in the order a recursion would, so the nodes are those
+  it always pushed; a state read from a file is as high as its formulas
+  are deep, and a recursion over it overflowed the stack.
 - **Search from a goal**: `close` calls `prove_goal` on the goal's
   sequent, and grafts `Derivation::of_goal` of the proof found, within
   the `ViewOptions` it is given and until its stop fires; the goal's

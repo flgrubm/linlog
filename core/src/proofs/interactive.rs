@@ -944,83 +944,109 @@ impl Terms<'_> {
         NodeId::new(self.nodes.len() as u32 - 1)
     }
 
-    /// Builds the term of the premise `id`, then the `?` nodes of the
-    /// `?` formulas the rule below introduced into it.
-    fn premise(&mut self, id: InfId, introduced: &[OccId]) -> NodeId {
-        let mut node = self.term(id);
-        for &x in introduced {
-            if self.state.forest.kind(x) == Kind::Quest {
-                node = self.push(Node::Quest(x, node));
-            }
-        }
-        node
-    }
-
-    /// Builds the term of the subtree at `id`.
-    fn term(&mut self, id: InfId) -> NodeId {
+    /// Builds the term of the subtree at `root`, without recursion: a
+    /// derivation read from a file can be as high as its formulas are
+    /// deep. The steps still to take wait on a stack and the terms of the
+    /// subtrees done on another, in the order a recursion would take
+    /// them, premises left to right and a rule after its premises.
+    fn term(&mut self, root: InfId) -> NodeId {
         use Rule::*;
-        let f = &self.state.forest;
-        let inference = &self.state.inferences[id.index()];
-        let sequent = &inference.sequent;
-        let premises = &inference.premises;
-        let o = || {
-            sequent[inference
-                .principal
-                .expect("every rule but ax and mix has one")]
-        };
-        let a = || f.left(o()).expect("a connective with a subformula");
-        let b = || f.right(o()).expect("a binary connective");
-        match inference.rule.classical() {
-            Ax => self.push(Node::Ax(sequent[0], sequent[1])),
-            One => self.push(Node::One(o())),
-            Top => self.push(Node::Top(o())),
-            Par => {
-                let p = self.premise(premises[0], &[a(), b()]);
-                self.push(Node::Par(o(), p))
-            }
-            Bot => {
-                let p = self.premise(premises[0], &[]);
-                self.push(Node::Bot(o(), p))
-            }
-            With => {
-                let l = self.premise(premises[0], &[a()]);
-                let r = self.premise(premises[1], &[b()]);
-                self.push(Node::With(o(), l, r))
-            }
-            PlusLeft => {
-                let p = self.premise(premises[0], &[a()]);
-                self.push(Node::Plus(o(), Side::Left, p))
-            }
-            PlusRight => {
-                let p = self.premise(premises[0], &[b()]);
-                self.push(Node::Plus(o(), Side::Right, p))
-            }
-            Promotion => {
-                let p = self.premise(premises[0], &[a()]);
-                self.push(Node::Bang(o(), p))
-            }
-            Dereliction => {
-                let p = self.premise(premises[0], &[a()]);
-                self.push(Node::Copy(a(), p))
-            }
-            Contraction | Weakening => self.term(premises[0]),
-            AffineWeakening => {
-                let p = self.term(premises[0]);
-                self.push(Node::Weaken(o(), p))
-            }
-            Tensor => {
-                let l = self.premise(premises[0], &[a()]);
-                let r = self.premise(premises[1], &[b()]);
-                self.push(Node::Tensor(o(), l, r))
-            }
-            Mix => {
-                let l = self.term(premises[0]);
-                let r = self.term(premises[1]);
-                self.push(Node::Mix(l, r))
-            }
-            Open => unreachable!("no goal is open"),
-            _ => unreachable!("classical rules only"),
+        /// What is left to do.
+        enum Step {
+            /// Build the term of the subtree at an inference.
+            Visit(InfId),
+            /// Put the `?` nodes of the `?` formulas among these, which
+            /// the rule below introduced, on the term just built.
+            Quests([Option<OccId>; 2]),
+            /// Put an inference's own node on the terms of its premises.
+            Build(InfId),
         }
+        let state = self.state;
+        let f = &state.forest;
+        let mut steps = vec![Step::Visit(root)];
+        let mut done: Vec<NodeId> = Vec::new();
+        while let Some(step) = steps.pop() {
+            let id = match step {
+                Step::Visit(id) | Step::Build(id) => id,
+                Step::Quests(introduced) => {
+                    let mut node = done.pop().expect("the premise's term");
+                    for x in introduced.into_iter().flatten() {
+                        if f.kind(x) == Kind::Quest {
+                            node = self.push(Node::Quest(x, node));
+                        }
+                    }
+                    done.push(node);
+                    continue;
+                }
+            };
+            let inference = &state.inferences[id.index()];
+            let sequent = &inference.sequent;
+            let premises = &inference.premises;
+            let o = || {
+                sequent[inference
+                    .principal
+                    .expect("every rule but ax and mix has one")]
+            };
+            let a = || f.left(o()).expect("a connective with a subformula");
+            let b = || f.right(o()).expect("a binary connective");
+            let rule = inference.rule.classical();
+            if matches!(step, Step::Visit(_)) {
+                // What each premise's sequent gains from the rule.
+                let introduced: [[Option<OccId>; 2]; 2] = match rule {
+                    Ax | One | Top => {
+                        let leaf = match rule {
+                            Ax => Node::Ax(sequent[0], sequent[1]),
+                            One => Node::One(o()),
+                            _ => Node::Top(o()),
+                        };
+                        let leaf = self.push(leaf);
+                        done.push(leaf);
+                        continue;
+                    }
+                    // Neither is a node: the subtree's term is the
+                    // premise's.
+                    Contraction | Weakening => {
+                        steps.push(Step::Visit(premises[0]));
+                        continue;
+                    }
+                    Par => [[Some(a()), Some(b())], [None; 2]],
+                    Bot | AffineWeakening | Mix => [[None; 2]; 2],
+                    PlusLeft | Promotion | Dereliction => [[Some(a()), None], [None; 2]],
+                    PlusRight => [[Some(b()), None], [None; 2]],
+                    With | Tensor => [[Some(a()), None], [Some(b()), None]],
+                    Open => unreachable!("no goal is open"),
+                    _ => unreachable!("classical rules only"),
+                };
+                steps.push(Step::Build(id));
+                for (&premise, introduced) in premises.iter().zip(introduced).rev() {
+                    steps.push(Step::Quests(introduced));
+                    steps.push(Step::Visit(premise));
+                }
+                continue;
+            }
+            let mut premise = || done.pop().expect("a premise's term");
+            let node = match rule {
+                Par => Node::Par(o(), premise()),
+                Bot => Node::Bot(o(), premise()),
+                PlusLeft => Node::Plus(o(), Side::Left, premise()),
+                PlusRight => Node::Plus(o(), Side::Right, premise()),
+                Promotion => Node::Bang(o(), premise()),
+                Dereliction => Node::Copy(a(), premise()),
+                AffineWeakening => Node::Weaken(o(), premise()),
+                With | Tensor | Mix => {
+                    let (r, l) = (premise(), premise());
+                    match rule {
+                        With => Node::With(o(), l, r),
+                        Tensor => Node::Tensor(o(), l, r),
+                        _ => Node::Mix(l, r),
+                    }
+                }
+                _ => unreachable!("a rule with premises"),
+            };
+            let node = self.push(node);
+            done.push(node);
+        }
+        done.pop().expect("the root's term")
     }
 }
 
@@ -1039,6 +1065,30 @@ mod tests {
         let state = Interactive::new(&sequent(input), mode).unwrap();
         let goal = state.goals().next().unwrap();
         (state, goal)
+    }
+
+    /// A derivation forty thousand rules high is translated into its
+    /// proof term, and the term checked, on a stack that a recursion over
+    /// its height would overflow.
+    #[test]
+    fn a_high_derivation_needs_no_stack() {
+        const DEPTH: usize = 20_000;
+        let text = format!("|- {}1{}", "bot | (".repeat(DEPTH), ")".repeat(DEPTH));
+        let proved = std::thread::Builder::new()
+            .stack_size(256 * 1024)
+            .spawn(move || {
+                let (mut state, mut goal) = start(&text, Mode::CLASSICAL);
+                for _ in 0..DEPTH {
+                    goal = state.apply(goal, 0, Rule::Par, &[]).unwrap()[0];
+                    goal = state.apply(goal, 0, Rule::Bot, &[]).unwrap()[0];
+                }
+                assert!(state.apply(goal, 0, Rule::One, &[]).unwrap().is_empty());
+                state.proof().unwrap().nodes().len()
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        assert_eq!(proved, 2 * DEPTH + 1);
     }
 
     /// Returns the position in the goal of the first formula printed as
