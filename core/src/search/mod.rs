@@ -14,6 +14,8 @@ pub mod focus;
 /// Random provable sequents for the tests.
 #[cfg(test)]
 pub(crate) mod generate;
+/// The count of the bytes a search holds.
+pub(crate) mod memory;
 /// The proof-net engine.
 pub mod net;
 #[cfg(feature = "parallel")]
@@ -291,6 +293,8 @@ pub fn prove_goal(
             net: None,
         });
     }
+    // What the search allocates is counted against the bound.
+    let account = memory::Account::new(options.memory_limit);
     // Several threads run the focused engine and the net engine on pools
     // of their own; the additive path is sequential in every case.
     #[cfg(feature = "parallel")]
@@ -304,7 +308,7 @@ pub fn prove_goal(
         Engine::Net => net::search(forest, mode, options, &mut stop),
         Engine::Focus | Engine::TwoSided | Engine::Additive => {
             let (result, nodes, statistics) = if engine == Engine::Additive {
-                additive::search_goal(forest, goal, options, &mut stop)
+                additive::search_goal(forest, goal, options, &account, &mut stop)
             } else {
                 #[cfg(feature = "parallel")]
                 if options.jobs > 1 {
@@ -315,6 +319,7 @@ pub fn prove_goal(
                         mode,
                         reading.as_ref(),
                         options,
+                        &account,
                         &mut stop,
                     )?
                 } else {
@@ -325,6 +330,7 @@ pub fn prove_goal(
                         mode,
                         reading.as_ref(),
                         options,
+                        &account,
                         &mut stop,
                     )
                 }
@@ -336,6 +342,7 @@ pub fn prove_goal(
                     mode,
                     reading.as_ref(),
                     options,
+                    &account,
                     &mut stop,
                 )
             };
@@ -479,6 +486,8 @@ pub struct Options {
     /// Whether a proof of the sequent passes the checker before it is
     /// returned.
     check: bool,
+    /// The most bytes the search may hold at once, or `None` for no bound.
+    memory_limit: Option<u64>,
 }
 
 impl Default for Options {
@@ -489,8 +498,9 @@ impl Default for Options {
     /// at its default cadence, a copy bound of
     /// [`DEFAULT_COPIES`](Self::DEFAULT_COPIES), one of
     /// [`DEFAULT_FORWARD_COPIES`](Self::DEFAULT_FORWARD_COPIES) for the
-    /// forward search of the default bias, one thread, and every proof
-    /// checked ([`DEFAULT_CHECK`](Self::DEFAULT_CHECK)).
+    /// forward search of the default bias, one thread, every proof
+    /// checked ([`DEFAULT_CHECK`](Self::DEFAULT_CHECK)), and a memory
+    /// bound of [`DEFAULT_MEMORY_LIMIT`](Self::DEFAULT_MEMORY_LIMIT).
     fn default() -> Self {
         Self {
             memo_limit: Self::DEFAULT_MEMO_LIMIT,
@@ -503,6 +513,7 @@ impl Default for Options {
             bias: Bias::Auto,
             forward_copies: Self::DEFAULT_FORWARD_COPIES,
             check: Self::DEFAULT_CHECK,
+            memory_limit: Some(Self::DEFAULT_MEMORY_LIMIT),
         }
     }
 }
@@ -531,6 +542,30 @@ impl Options {
     /// do. The check is one pass over the proof, in memory proportional to
     /// it.
     pub const DEFAULT_CHECK: bool = true;
+
+    /// The memory bound of the default options, in bytes: one gibibyte,
+    /// which a laptop and a browser tab both have to spare.
+    pub const DEFAULT_MEMORY_LIMIT: u64 = 1 << 30;
+
+    /// Sets the most bytes the search may hold at once, or `None` for no
+    /// bound. Counted are the structures that grow with the search: the
+    /// memo of the focused engine and of the additive path, the proof
+    /// arena, the buffers every level of recursion takes, and the count
+    /// invariants set up before the search; not the forest, which is the
+    /// caller's, nor the proof returned. A memo that no longer fits is
+    /// emptied first, as it is when it reaches
+    /// [`memo_limit`](Self::memo_limit), and the proofs only it referred
+    /// to are given back; the search gives up with
+    /// [`Reason::MemoryLimit`] when what is left still passes the bound,
+    /// or leaves the memo no room at all. The two searches that
+    /// [`Bias::Auto`] runs on a sequent with exponentials have half the
+    /// bound each. The check of a proof found is under the same bound.
+    pub fn memory_limit(self, limit: Option<u64>) -> Self {
+        Self {
+            memory_limit: limit,
+            ..self
+        }
+    }
 
     /// Sets whether a proof of the sequent passes the checker
     /// ([`Proof::check`], which shares no code with the engines) before
@@ -572,7 +607,10 @@ impl Options {
     /// Sets the most stable sequents the memo holds at once; when the memo
     /// is full it is emptied, which costs time but not correctness. Zero
     /// switches the memo off. The two searches that [`Bias::Auto`] runs
-    /// on a sequent with exponentials hold a memo of this size each.
+    /// on a sequent with exponentials hold a memo of this size each. This
+    /// is the finer knob beside [`memory_limit`](Self::memory_limit),
+    /// which bounds the memo in bytes: a table that fits the processor's
+    /// cache can be faster than one that fits the memory.
     pub fn memo_limit(self, limit: usize) -> Self {
         Self {
             memo_limit: limit,
@@ -736,6 +774,14 @@ pub enum Reason {
     /// bound on some branch, so a proof with more copies of a `?` formula
     /// per branch may exist.
     CopyBound(u32),
+    /// The search held [`Options::memory_limit`] bytes, which is this
+    /// value, with its memo already emptied, or had no room left for a
+    /// memo at all.
+    MemoryLimit(u64),
+    /// A structure of the search outgrew what its indices address: the
+    /// proof arena at 2³¹ nodes, the count invariants at 2³² row entries.
+    /// Only a search without a memory bound gets this far.
+    IndexLimit,
 }
 
 impl Display for Reason {
@@ -747,6 +793,27 @@ impl Display for Reason {
             Reason::CopyBound(n) => {
                 write!(f, "the copy bound of {n} was reached")
             }
+            Reason::MemoryLimit(bytes) => {
+                write!(f, "the memory limit of {} was reached", Bytes(*bytes))
+            }
+            Reason::IndexLimit => f.write_str("the search outgrew what its indices address"),
+        }
+    }
+}
+
+/// A number of bytes, written in the largest binary unit that divides it:
+/// `1 GiB`, `512 MiB`, `1500 B`.
+struct Bytes(u64);
+
+impl Display for Bytes {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        let units = [(30, "GiB"), (20, "MiB"), (10, "KiB")];
+        match units
+            .into_iter()
+            .find(|&(shift, _)| self.0 != 0 && self.0.is_multiple_of(1 << shift))
+        {
+            Some((shift, unit)) => write!(f, "{} {unit}", self.0 >> shift),
+            None => write!(f, "{} B", self.0),
         }
     }
 }

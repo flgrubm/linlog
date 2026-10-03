@@ -8,7 +8,8 @@
 
 use crate::occurrences::{Bias, Forest, OccId, Sign};
 use crate::proofs::Side;
-use crate::search::set_up_stopped;
+use crate::search::memory::{Account, bytes_of};
+use crate::search::{Reason, set_up_stopped};
 use crate::sequents::{Atom, Kind};
 
 /// What a formula occurrence can contribute to the per-atom balance of a
@@ -43,21 +44,28 @@ use crate::sequents::{Atom, Kind};
 /// provable with `b` unbalanced, and a `⊤` closes any sequent.
 #[derive(Clone, Debug)]
 pub(crate) struct Counts {
-    /// Where each occurrence's row starts in the entry arrays; the last
-    /// entry is the total.
-    row_start: Box<[u32]>,
-    /// The atom of each row entry.
+    /// Where the rows end in the entry arrays, in the order the rows were
+    /// computed, the last occurrence's first: the row of occurrence `o` of
+    /// `n` lies between the entries `n − 1 − o` and `n − o`. Every bound
+    /// fits a `u32`: a set-up whose rows have more entries is refused.
+    bound: Box<[u32]>,
+    /// The atom of each row entry: its rank among the atoms that have rows
+    /// at all, in the order of the sequent's atoms.
     atom: Box<[Atom]>,
-    /// The least balance of each row entry's atom.
+    /// The least balance of each row entry's atom. A sum of ±1 over the
+    /// literals below an occurrence, of which a forest that gets counts has
+    /// fewer than 2³¹: within an `i32`.
     lo: Box<[i32]>,
-    /// The greatest balance of each row entry's atom.
+    /// The greatest balance of each row entry's atom, bounded as the least.
     hi: Box<[i32]>,
     /// Per occurrence, whether a `⊤` lies at or below it.
     absorbs: Box<[bool]>,
-    /// Per occurrence, `t − p − u + b` over its subtree.
+    /// Per occurrence, `t − p − u + b` over its subtree: at most its
+    /// connectives in absolute value, fewer than 2³¹.
     weight: Box<[i32]>,
-    /// The number of atoms of the sequent, the width of a [`Tally`].
-    num_atoms: usize,
+    /// The number of atoms that have rows, the width of a [`Tally`]: those
+    /// with no literal below a `!` or `?`.
+    row_atoms: usize,
     /// Whether a `⊤` lies below a `?` or `!` somewhere in the problem, so
     /// that a copy can absorb any imbalance and the intervals prune
     /// nothing.
@@ -72,7 +80,7 @@ pub(crate) struct Counts {
 /// One entry of a row: the atom and the interval of its balance.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Entry {
-    /// The atom.
+    /// The atom, as its rank among the atoms that have rows.
     pub(crate) atom: Atom,
     /// The least balance.
     pub(crate) lo: i32,
@@ -80,22 +88,95 @@ pub(crate) struct Entry {
     pub(crate) hi: i32,
 }
 
+/// The rows of the occurrences computed so far, one after another.
+#[derive(Default)]
+struct Rows {
+    /// The atom of each entry.
+    atom: Vec<Atom>,
+    /// The least balance of each entry.
+    lo: Vec<i32>,
+    /// The greatest balance of each entry.
+    hi: Vec<i32>,
+}
+
+impl Rows {
+    /// The entry at a place.
+    fn at(&self, i: usize) -> Entry {
+        Entry {
+            atom: self.atom[i],
+            lo: self.lo[i],
+            hi: self.hi[i],
+        }
+    }
+
+    /// Appends an entry.
+    fn push(&mut self, e: Entry) {
+        self.atom.push(e.atom);
+        self.lo.push(e.lo);
+        self.hi.push(e.hi);
+    }
+
+    /// The bytes the entries' allocations take.
+    fn bytes(&self) -> usize {
+        bytes_of(&self.atom) + bytes_of(&self.lo) + bytes_of(&self.hi)
+    }
+
+    /// Appends the merge of two rows that lie among the entries, each
+    /// sorted by atom: the sum of the intervals for `⊗` and `⅋`, their
+    /// hull for `&` and `⊕`, with an atom missing from one side
+    /// contributing `0 ..= 0` there. Returns how many entries it read.
+    fn merge(&mut self, a: std::ops::Range<usize>, b: std::ops::Range<usize>, sum: bool) -> usize {
+        let (mut i, mut j) = (a.start, b.start);
+        let zero = |atom| Entry { atom, lo: 0, hi: 0 };
+        while i < a.end || j < b.end {
+            let (x, y) = match (i < a.end, j < b.end) {
+                (true, true) if self.atom[i] == self.atom[j] => {
+                    i += 1;
+                    j += 1;
+                    (self.at(i - 1), self.at(j - 1))
+                }
+                (true, other) if !other || self.atom[i] < self.atom[j] => {
+                    i += 1;
+                    (self.at(i - 1), zero(self.atom[i - 1]))
+                }
+                _ => {
+                    j += 1;
+                    (zero(self.atom[j - 1]), self.at(j - 1))
+                }
+            };
+            self.push(Entry {
+                atom: x.atom,
+                lo: if sum { x.lo + y.lo } else { x.lo.min(y.lo) },
+                hi: if sum { x.hi + y.hi } else { x.hi.max(y.hi) },
+            });
+        }
+        a.len() + b.len()
+    }
+}
+
 impl Counts {
     /// Computes the rows and weights of every occurrence of a forest, and
     /// the literals that are positive under the bias given.
     pub(crate) fn new(forest: &Forest, bias: Bias) -> Self {
-        Self::new_until(forest, bias, &mut || false).expect("nothing stops it")
+        Self::new_until(forest, bias, &Account::new(None), &mut || false).expect("nothing stops it")
     }
 
-    /// Computes what [`Self::new`] does, polling `stop` on a large forest
-    /// once every so many occurrences visited, as the passes around it
-    /// are polled between them: this one is several, and the longest of
-    /// a search's set-up. Returns `None` when the condition fired.
+    /// Computes the rows and weights of every occurrence of a forest, and
+    /// the literals that are positive under the bias given, polling `stop`
+    /// on a large forest once every so many occurrences and row entries
+    /// visited, as the passes around it are polled between them: this one
+    /// is several, and the longest of a search's set-up. The rows together
+    /// can be quadratic in the forest (a nest of `⊗` and `⅋` over distinct
+    /// atoms has a row as long as its subtree at every level), so their
+    /// memory is charged to `account` as it grows. Returns the reason the
+    /// set-up gave up: the condition fired, the account is over its bound,
+    /// or the forest or the rows are more than the counts can index.
     pub(crate) fn new_until(
         forest: &Forest,
         bias: Bias,
+        account: &Account,
         stop: &mut dyn FnMut() -> bool,
-    ) -> Option<Self> {
+    ) -> Result<Self, Reason> {
         /// How many occurrences are visited between two polls.
         const PERIOD: usize = 1 << 16;
         let mut visited = 0;
@@ -106,28 +187,51 @@ impl Counts {
                 set_up_stopped(forest, stop)
             }
         };
-        let positive = forest.bias_under(bias);
         let n = forest.len();
+        // The balances and weights are sums over an occurrence's subtree.
+        if n > i32::MAX as usize {
+            return Err(Reason::IndexLimit);
+        }
+        let positive = forest.bias_under(bias);
         // An atom with a literal below a `?` or `!` anywhere in the problem
         // can be copied or discarded any number of times, so its balance
         // says nothing: such atoms get no row entries at all.
         let num_atoms = forest.sequent().atom_names().len();
+        let fixed = n * (size_of::<u32>() + size_of::<i32>() + 2 * size_of::<bool>())
+            + num_atoms * (2 * size_of::<bool>() + size_of::<u32>() + size_of::<Sign>());
+        account.charge(fixed);
+        if account.over() {
+            return Err(Reason::MemoryLimit(account.limit()));
+        }
         let mut exponential = vec![false; num_atoms];
         let mut absorbs_from_copies = false;
+        // An occurrence's subtree is the ids that follow it, so one pass
+        // that remembers where the outermost `!` or `?` it is inside ends
+        // knows of every occurrence whether it lies below one: a walk of
+        // each one's subtree was quadratic in a nest of them.
+        let mut inside = 0;
         for o in forest.ids() {
-            let mut steps = 1;
-            if matches!(forest.kind(o), Kind::Bang | Kind::Quest) {
-                for below in forest.subtree(o) {
-                    if let Some(atom) = forest.atom(below) {
-                        exponential[atom.index()] = true;
-                    }
-                    absorbs_from_copies |= forest.kind(below) == Kind::Top;
-                    steps += 1;
+            if o.index() < inside {
+                if let Some(atom) = forest.atom(o) {
+                    exponential[atom.index()] = true;
                 }
+                absorbs_from_copies |= forest.kind(o) == Kind::Top;
             }
-            if stopped(steps) {
-                return None;
+            if matches!(forest.kind(o), Kind::Bang | Kind::Quest) {
+                inside = inside.max(o.index() + forest.size(o) as usize);
             }
+            if stopped(1) {
+                return Err(Reason::Stopped);
+            }
+        }
+        // The atoms that have rows, numbered in their own order: a tally
+        // is as wide as they are many, and a Petri net has tens of
+        // thousands of atoms and none with a row.
+        let mut rank = vec![0u32; num_atoms];
+        let mut row_atoms = 0;
+        for (atom, rank) in rank.iter_mut().enumerate() {
+            *rank = row_atoms as u32;
+            row_atoms += usize::from(!exponential[atom]);
         }
         // The literals that a `?` can put into the unrestricted zone: those
         // directly under one.
@@ -149,55 +253,53 @@ impl Counts {
         };
         let mut literal_tensor = vec![false; n];
         // Every descendant has a larger id than its ancestor, so a pass from
-        // the last id down sees the children before the parent.
-        let mut rows: Vec<Vec<Entry>> = vec![Vec::new(); n];
+        // the last id down sees the children before the parent, and a row
+        // is merged from two that are written already.
+        let mut rows = Rows::default();
+        let mut bound = Vec::with_capacity(n + 1);
+        bound.push(0u32);
+        let row = |bound: &[u32], o: OccId| {
+            let at = n - 1 - o.index();
+            bound[at] as usize..bound[at + 1] as usize
+        };
         let mut absorbs = vec![false; n];
         let mut weight = vec![0i32; n];
+        let mut charged = 0;
         for o in forest.ids().rev() {
             use Kind::*;
-            if stopped(1) {
-                return None;
-            }
             let kind = forest.kind(o);
-            let (row, absorb, w) = match kind {
+            let mut steps = 1;
+            let (absorb, w) = match kind {
                 Var | DualVar => {
                     let sign = if kind == Var { 1 } else { -1 };
                     let atom = forest.atom(o).unwrap();
-                    let row = if exponential[atom.index()] {
-                        Vec::new()
-                    } else {
-                        vec![Entry {
-                            atom,
+                    if !exponential[atom.index()] {
+                        rows.push(Entry {
+                            atom: Atom::new(rank[atom.index()]),
                             lo: sign,
                             hi: sign,
-                        }]
-                    };
-                    (row, false, 0)
+                        });
+                    }
+                    (false, 0)
                 }
-                One => (Vec::new(), false, -1),
-                Bot => (Vec::new(), false, 1),
-                Top => (Vec::new(), true, 0),
-                Zero => (Vec::new(), false, 0),
+                One => (false, -1),
+                Bot => (false, 1),
+                Top => (true, 0),
+                Zero => (false, 0),
                 Bang | Quest => {
-                    // The subformula's row, which is empty: its atoms are
+                    // The subformula's row is empty: its atoms are
                     // exponential.
                     let c = forest.left(o).unwrap();
-                    (
-                        rows[c.index()].clone(),
-                        absorbs[c.index()],
-                        weight[c.index()],
-                    )
+                    (absorbs[c.index()], weight[c.index()])
                 }
                 Tensor | Par | With | Plus => {
                     let (l, r) = (forest.left(o).unwrap(), forest.right(o).unwrap());
                     let (li, ri) = (l.index(), r.index());
-                    let sum = matches!(kind, Tensor | Par);
                     let absorb = absorbs[li] || absorbs[ri];
-                    let row = if absorb {
-                        Vec::new()
-                    } else {
-                        merge(&rows[li], &rows[ri], sum)
-                    };
+                    if !absorb {
+                        let sum = matches!(kind, Tensor | Par);
+                        steps += rows.merge(row(&bound, l), row(&bound, r), sum);
+                    }
                     let w = weight[li]
                         + weight[ri]
                         + if kind == Tensor {
@@ -207,41 +309,53 @@ impl Counts {
                         } else {
                             0
                         };
-                    (row, absorb, w)
+                    (absorb, w)
                 }
             };
-            rows[o.index()] = row;
+            let Ok(end) = u32::try_from(rows.atom.len()) else {
+                return Err(Reason::IndexLimit);
+            };
+            bound.push(end);
             absorbs[o.index()] = absorb;
             weight[o.index()] = w;
             literal_tensor[o.index()] = kind == Tensor
                 && forest
                     .children(o)
                     .all(|c| linear(c) || literal_tensor[c.index()]);
-        }
-
-        let mut row_start = Vec::with_capacity(n + 1);
-        let (mut atom, mut lo, mut hi) = (Vec::new(), Vec::new(), Vec::new());
-        for row in &rows {
-            row_start.push(atom.len() as u32);
-            for e in row {
-                atom.push(e.atom);
-                lo.push(e.lo);
-                hi.push(e.hi);
+            if rows.bytes() != charged {
+                account.resize(charged, rows.bytes());
+                charged = rows.bytes();
+                if account.over() {
+                    return Err(Reason::MemoryLimit(account.limit()));
+                }
+            }
+            if stopped(steps) {
+                return Err(Reason::Stopped);
             }
         }
-        row_start.push(atom.len() as u32);
-        Some(Self {
-            row_start: row_start.into_boxed_slice(),
-            atom: atom.into_boxed_slice(),
-            lo: lo.into_boxed_slice(),
-            hi: hi.into_boxed_slice(),
+        let counts = Self {
+            bound: bound.into_boxed_slice(),
+            atom: rows.atom.into_boxed_slice(),
+            lo: rows.lo.into_boxed_slice(),
+            hi: rows.hi.into_boxed_slice(),
             absorbs: absorbs.into_boxed_slice(),
             weight: weight.into_boxed_slice(),
-            num_atoms,
+            row_atoms,
             absorbs_from_copies,
             literal_tensor: literal_tensor.into_boxed_slice(),
             positive,
-        })
+        };
+        account.resize(
+            charged,
+            counts.atom.len() * (size_of::<Atom>() + 2 * size_of::<i32>()),
+        );
+        Ok(counts)
+    }
+
+    /// The places of an occurrence's row in the entry arrays.
+    fn span(&self, o: OccId) -> (usize, usize) {
+        let at = self.absorbs.len() - 1 - o.index();
+        (self.bound[at] as usize, self.bound[at + 1] as usize)
     }
 
     /// Returns whether the occurrence is a positive literal: the literal
@@ -264,10 +378,7 @@ impl Counts {
     /// Returns the row of an occurrence: its interval per atom occurring
     /// below it, in ascending atom order. Empty when the occurrence absorbs.
     pub(crate) fn row(&self, o: OccId) -> impl Iterator<Item = Entry> + '_ {
-        let (start, end) = (
-            self.row_start[o.index()] as usize,
-            self.row_start[o.index() + 1] as usize,
-        );
+        let (start, end) = self.span(o);
         (start..end).map(move |i| Entry {
             atom: self.atom[i],
             lo: self.lo[i],
@@ -297,26 +408,37 @@ impl Counts {
     /// `u32::MAX` when the row is empty: members of a context sorted by it
     /// have every atom's members next to each other.
     pub(crate) fn first_atom(&self, o: OccId) -> u32 {
-        let (start, end) = (self.row_start[o.index()], self.row_start[o.index() + 1]);
+        let (start, end) = self.span(o);
         if start == end {
             u32::MAX
         } else {
-            self.atom[start as usize].index() as u32
+            self.atom[start].index() as u32
         }
     }
 
     /// Returns the number of atoms in the occurrence's row.
     pub(crate) fn row_len(&self, o: OccId) -> u32 {
-        self.row_start[o.index() + 1] - self.row_start[o.index()]
+        let (start, end) = self.span(o);
+        (end - start) as u32
+    }
+
+    /// Returns the bytes a [`Tally`] of this forest allocates.
+    pub(crate) fn tally_bytes(&self) -> usize {
+        2 * self.row_atoms * size_of::<i32>()
+    }
+
+    /// Returns the bytes the counts of a [`Split`] of this forest take.
+    pub(crate) fn split_bytes(&self) -> usize {
+        size_of::<Split>() + 6 * self.row_atoms * size_of::<i32>()
     }
 
     /// Returns the counts of a split with no member yet.
     pub(crate) fn split(&self) -> Split {
         Split {
-            lo: [vec![0; self.num_atoms], vec![0; self.num_atoms]],
-            hi: [vec![0; self.num_atoms], vec![0; self.num_atoms]],
-            below: vec![0; self.num_atoms],
-            above: vec![0; self.num_atoms],
+            lo: [vec![0; self.row_atoms], vec![0; self.row_atoms]],
+            hi: [vec![0; self.row_atoms], vec![0; self.row_atoms]],
+            below: vec![0; self.row_atoms],
+            above: vec![0; self.row_atoms],
             bad: [0; 2],
             absorbers: [0; 2],
             open_absorbers: 0,
@@ -338,8 +460,8 @@ impl Counts {
     /// Returns an empty tally of this forest's width.
     pub(crate) fn tally(&self) -> Tally {
         Tally {
-            lo: vec![0; self.num_atoms],
-            hi: vec![0; self.num_atoms],
+            lo: vec![0; self.row_atoms],
+            hi: vec![0; self.row_atoms],
             touched: Vec::new(),
             bad: 0,
             absorbers: 0,
@@ -347,39 +469,6 @@ impl Counts {
             weight: 0,
         }
     }
-}
-
-/// Merges two rows sorted by atom: the sum of the intervals for `⊗` and
-/// `⅋`, their hull for `&` and `⊕`, with an atom missing from one side
-/// contributing `0 ..= 0` there.
-fn merge(a: &[Entry], b: &[Entry], sum: bool) -> Vec<Entry> {
-    let mut out = Vec::with_capacity(a.len() + b.len());
-    let (mut i, mut j) = (0, 0);
-    let zero = |atom| Entry { atom, lo: 0, hi: 0 };
-    while i < a.len() || j < b.len() {
-        let (x, y) = match (a.get(i), b.get(j)) {
-            (Some(&x), Some(&y)) if x.atom == y.atom => {
-                i += 1;
-                j += 1;
-                (x, y)
-            }
-            (Some(&x), y) if y.is_none_or(|y| x.atom < y.atom) => {
-                i += 1;
-                (x, zero(x.atom))
-            }
-            (_, Some(&y)) => {
-                j += 1;
-                (zero(y.atom), y)
-            }
-            (_, None) => unreachable!("a side still has entries"),
-        };
-        out.push(Entry {
-            atom: x.atom,
-            lo: if sum { x.lo + y.lo } else { x.lo.min(y.lo) },
-            hi: if sum { x.hi + y.hi } else { x.hi.max(y.hi) },
-        });
-    }
-    out
 }
 
 /// The running sums of a set of occurrences: the summed interval per atom,

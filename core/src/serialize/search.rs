@@ -69,7 +69,7 @@ impl<'a> Deserialize<'a> for Mode {
 }
 
 /// The serialized form of a reason: a tag, with the bound for the copy
-/// bound.
+/// bound and for the memory limit.
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 enum Why {
@@ -79,6 +79,10 @@ enum Why {
     RecursionLimit,
     /// Every level up to this copy bound hit it.
     CopyBound(u32),
+    /// The search held this many bytes with its memo emptied.
+    MemoryLimit(u64),
+    /// A structure of the search outgrew its indices.
+    IndexLimit,
 }
 
 impl From<Reason> for Why {
@@ -88,6 +92,8 @@ impl From<Reason> for Why {
             Reason::Stopped => Why::Stopped,
             Reason::RecursionLimit => Why::RecursionLimit,
             Reason::CopyBound(n) => Why::CopyBound(n),
+            Reason::MemoryLimit(bytes) => Why::MemoryLimit(bytes),
+            Reason::IndexLimit => Why::IndexLimit,
         }
     }
 }

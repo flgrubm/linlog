@@ -55,7 +55,8 @@ pub(crate) mod parallel;
 use self::classes::Classes;
 use self::context::Context;
 use self::counts::{Counts, Split, Tally};
-use self::memo::{Entry, Failure, Key, Memo, Table};
+use self::memo::{Entry, Failure, Inserted, Key, Memo, Table};
+use super::memory::{Account, Charged, bytes_of};
 use super::{Options, Reason, Statistics, Stop, Verdict, set_up_stopped};
 use crate::fragment::{Fragment, Mode};
 use crate::occurrences::{Bias, Forest, OccId, OccSet, Position, Reading};
@@ -117,6 +118,7 @@ pub(crate) fn search(
         mode,
         reading,
         options,
+        &Account::new(options.memory_limit),
         stop,
     );
     let verdict = match result {
@@ -138,7 +140,9 @@ pub(crate) fn search(
 /// over an open goal (with exactly one occurrence in output position when
 /// a reading is given). Returns the node proving the goal (`None` when it
 /// is unprovable, or the reason the search gave up), the arena the node
-/// lives in, and the statistics.
+/// lives in, and the statistics. What the search allocates is charged to
+/// `account`; two searches that decide the goal together have half its
+/// bound each.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn search_goal(
     forest: &Forest,
@@ -147,21 +151,24 @@ pub(crate) fn search_goal(
     mode: Mode,
     reading: Option<&Reading>,
     options: &Options,
+    account: &Account,
     stop: &mut dyn FnMut() -> bool,
 ) -> (Search, Vec<Node>, Statistics) {
     // On a large forest every pass of the set-up is followed by a poll.
-    let stopped = || (Err(Reason::Stopped), Vec::new(), Statistics::default());
+    let gave_up = |r| (Err(reason(r, options)), Vec::new(), Statistics::default());
     let classes = Classes::new(forest, reading);
     if set_up_stopped(forest, stop) {
-        return stopped();
+        return gave_up(Reason::Stopped);
     }
     let (first, second) = plan(forest, fragment, mode, options);
     if set_up_stopped(forest, stop) {
-        return stopped();
+        return gave_up(Reason::Stopped);
     }
     let Some(second) = second else {
-        let Some(counts) = Counts::new_until(forest, first.bias, stop) else {
-            return stopped();
+        account.charge(classes.bytes());
+        let counts = match Counts::new_until(forest, first.bias, account, stop) {
+            Ok(counts) => counts,
+            Err(reason) => return gave_up(reason),
         };
         let (result, nodes, statistics, _) = first.search(
             forest,
@@ -171,17 +178,28 @@ pub(crate) fn search_goal(
             reading,
             (&counts, &classes),
             options,
+            account,
             Stop::Closure(stop),
         );
         return (result.map_err(|r| reason(r, options)), nodes, statistics);
     };
-    let Some(first_counts) = Counts::new_until(forest, first.bias, stop) else {
-        return stopped();
+    // Each search is charged what it reads, the classes included.
+    let accounts = [account.share(2), account.share(2)];
+    for account in &accounts {
+        account.charge(classes.bytes());
+    }
+    let first_counts = match Counts::new_until(forest, first.bias, &accounts[0], stop) {
+        Ok(counts) => counts,
+        Err(reason) => return gave_up(reason),
     };
-    let Some(second_counts) = Counts::new_until(forest, second.bias, stop) else {
-        return stopped();
+    let second_counts = match Counts::new_until(forest, second.bias, &accounts[1], stop) {
+        Ok(counts) => counts,
+        Err(reason) => return gave_up(reason),
     };
-    let searches = [(first, &first_counts), (second, &second_counts)];
+    let searches = [
+        (first, &first_counts, &accounts[0]),
+        (second, &second_counts, &accounts[1]),
+    ];
     // With threads the two searches alternate in slices and none starts
     // again; without them, or when a thread cannot start, they take
     // turns from their start.
@@ -211,14 +229,14 @@ fn turns(
     reading: Option<&Reading>,
     classes: &Classes,
     options: &Options,
-    searches: [(Rule, &Counts); 2],
+    searches: [(Rule, &Counts, &Account); 2],
     stop: &mut dyn FnMut() -> bool,
 ) -> (Search, Vec<Node>, Statistics) {
     let mut ended: [Option<Reason>; 2] = [None, None];
     let mut statistics = Statistics::default();
     let mut turn = FIRST_TURN;
     loop {
-        for (i, (rule, counts)) in searches.into_iter().enumerate() {
+        for (i, (rule, counts, account)) in searches.into_iter().enumerate() {
             if ended[i].is_some() {
                 continue;
             }
@@ -237,6 +255,8 @@ fn turns(
                 reading,
                 (counts, classes),
                 options,
+                // A turn's memo and arena go when it ends.
+                &account.fork(),
                 stop,
             );
             statistics.add(&run);
@@ -299,6 +319,7 @@ impl Rule {
         reading: Option<&'a Reading<'a>>,
         (counts, classes): (&'a Counts, &'a Classes),
         options: &Options,
+        account: &'a Account,
         stop: Stop<'a>,
     ) -> (Search, Vec<Node>, Statistics, bool) {
         let rules = Rules::new(fragment, mode, counts);
@@ -310,11 +331,11 @@ impl Rule {
             &options.clone().copies(self.copies),
             stop,
             Table::Own(Memo::new(options.memo_limit)),
-            Arena::new(Kept::Own(Vec::new())),
+            Arena::new(Kept::Own(Vec::new()), account),
         );
         let result = engine
             .run(goal)
-            .map(|root| root.map(|root| engine.nodes.keep(0, root)));
+            .and_then(|root| root.map(|root| engine.nodes.keep(0, root)).transpose());
         let statistics = engine.statistics();
         let over = matches!(engine.stop, Stop::Turn(_, 0));
         let nodes = match engine.nodes.kept {
@@ -426,10 +447,12 @@ fn chains(forest: &Forest) -> bool {
 
 /// The reason a search of the options gives up with, given the reason one
 /// of its searches did: a copy bound is [`Options::copies`], the bound
-/// every search ran within at the least.
-fn reason(reason: Reason, options: &Options) -> Reason {
+/// every search ran within at the least, and a memory limit is
+/// [`Options::memory_limit`], of which a search may have had a part.
+pub(crate) fn reason(reason: Reason, options: &Options) -> Reason {
     match reason {
         Reason::CopyBound(_) => Reason::CopyBound(options.copies),
+        Reason::MemoryLimit(bytes) => Reason::MemoryLimit(options.memory_limit.unwrap_or(bytes)),
         reason => reason,
     }
 }
@@ -527,26 +550,63 @@ const PENDING: u32 = 1 << 31;
 /// tried. A pending node's id carries the [`PENDING`] flag and is only
 /// valid until its branch is released or kept; in a parallel search no
 /// pending id leaves its worker.
+///
+/// When an engine's own memo is emptied, the kept nodes that only its
+/// entries referred to are dropped and the others move up
+/// ([`collect`](Self::collect)). What still refers to a kept node then
+/// is a pending node, or a rule that holds the proof of one premise while
+/// it searches the other: such an id is *held* ([`hold`](Self::hold))
+/// for the time of that search and read back afterwards, since it may
+/// have moved.
 pub(crate) struct Arena<'a> {
     /// The nodes kept.
     kept: Kept<'a>,
     /// The nodes of the branch being searched.
     pending: Vec<Node>,
+    /// The ids that rules of the branch hold across a search: the proof
+    /// of a first premise while the second is searched.
+    held: Vec<NodeId>,
+    /// The most nodes either part may hold, at most [`PENDING`]: ids
+    /// beyond would read as the flag.
+    most: usize,
+    /// Whether a node was pushed that the pending part had no id for: no
+    /// proof resting on it is kept.
+    overflowed: bool,
+    /// Who is charged the memory of the kept part.
+    account: &'a Account,
+    /// What the pending part was charged, which goes with the engine.
+    own: Charged<'a>,
 }
 
 impl<'a> Arena<'a> {
-    /// An arena with nothing pending.
-    pub(crate) fn new(kept: Kept<'a>) -> Self {
+    /// An arena with nothing pending, charging `account`.
+    pub(crate) fn new(kept: Kept<'a>, account: &'a Account) -> Self {
         Self {
             kept,
             pending: Vec::new(),
+            held: Vec::new(),
+            most: PENDING as usize,
+            overflowed: false,
+            account,
+            own: Charged::new(account),
         }
     }
 
-    /// Appends a pending node and returns its id.
+    /// Appends a pending node and returns its id. When the pending part
+    /// is full the node is dropped and the arena remembers it: the id
+    /// returned is no node's, and [`keep`](Self::keep) refuses whatever
+    /// would rest on it.
     fn push(&mut self, node: Node) -> NodeId {
+        if self.pending.len() >= self.most {
+            self.overflowed = true;
+            return NodeId::new(PENDING);
+        }
         let id = NodeId::new(PENDING | self.pending.len() as u32);
+        let before = bytes_of(&self.pending);
         self.pending.push(node);
+        if bytes_of(&self.pending) != before {
+            self.own.resize(before, bytes_of(&self.pending));
+        }
         id
     }
 
@@ -560,27 +620,55 @@ impl<'a> Arena<'a> {
         self.pending.truncate(mark);
     }
 
+    /// Holds an id across a search that may empty the memo, and returns
+    /// the point to read it back from.
+    fn hold(&mut self, node: NodeId) -> usize {
+        self.held.push(node);
+        self.held.len() - 1
+    }
+
+    /// Reads back the id held at the point given, which may have moved,
+    /// and lets go of it and of everything held after it.
+    fn unhold(&mut self, point: usize) -> NodeId {
+        let node = self.held[point];
+        self.held.truncate(point);
+        node
+    }
+
     /// Keeps the nodes pending since the mark, which must hold everything
     /// pending that `node` rests on, and returns the id `node` has from now
-    /// on; a node that was kept already keeps its id.
-    fn keep(&mut self, mark: usize, node: NodeId) -> NodeId {
+    /// on; a node that was kept already keeps its id. Fails when the kept
+    /// part would outgrow its ids, or a node of the branch was dropped
+    /// because the pending part had.
+    fn keep(&mut self, mark: usize, node: NodeId) -> Result<NodeId, Reason> {
+        if self.overflowed {
+            return Err(Reason::IndexLimit);
+        }
+        let (most, account) = (self.most, self.account);
         match &mut self.kept {
-            Kept::Own(kept) => Self::append(kept, &mut self.pending, mark, node),
+            Kept::Own(kept) => Self::append(kept, &mut self.pending, mark, node, most, account),
             Kept::Shared(kept) => {
                 let mut kept = kept.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                Self::append(&mut kept, &mut self.pending, mark, node)
+                Self::append(&mut kept, &mut self.pending, mark, node, most, account)
             }
         }
     }
 
     /// Moves the nodes pending since the mark to the end of the kept ones,
-    /// their premises renamed, and returns the new id of `node`.
-    fn append(kept: &mut Vec<Node>, pending: &mut Vec<Node>, mark: usize, node: NodeId) -> NodeId {
+    /// their premises renamed, and returns the new id of `node`, unless
+    /// that would make more than `most` kept nodes.
+    fn append(
+        kept: &mut Vec<Node>,
+        pending: &mut Vec<Node>,
+        mark: usize,
+        node: NodeId,
+        most: usize,
+        account: &Account,
+    ) -> Result<NodeId, Reason> {
         let base = kept.len();
-        assert!(
-            base + (pending.len() - mark) <= PENDING as usize,
-            "the proof arena is full"
-        );
+        if base + (pending.len() - mark) > most {
+            return Err(Reason::IndexLimit);
+        }
         let renamed = |id: NodeId| {
             if id.get() & PENDING == 0 {
                 return id;
@@ -589,8 +677,86 @@ impl<'a> Arena<'a> {
             debug_assert!(index >= mark, "a pending node below the mark");
             NodeId::new((base + index - mark) as u32)
         };
+        let before = bytes_of(kept);
         kept.extend(pending.drain(mark..).map(|n| n.map_premises(renamed)));
-        renamed(node)
+        if bytes_of(kept) != before {
+            account.resize(before, bytes_of(kept));
+        }
+        Ok(renamed(node))
+    }
+
+    /// Drops every kept node that nothing refers to any more, once the
+    /// engine's own memo is emptied: what stays is what the pending nodes,
+    /// the ids held and `root` rest on. The nodes that stay move up in
+    /// their order, so a premise still precedes its conclusion; the
+    /// pending nodes and the ids held are renamed in place, and the new
+    /// id of `root` is returned. The memory freed is given back when it
+    /// is three quarters of the allocation, down to twice what stays, so
+    /// that the nodes to come have room and a collection never costs a
+    /// reallocation at the next node; with `tight`, all of it. The arena
+    /// of a parallel search is left alone: its workers hold ids that
+    /// nobody could rename.
+    fn collect(&mut self, root: Option<NodeId>, tight: bool) -> Option<NodeId> {
+        /// A node that goes.
+        const DEAD: u32 = u32::MAX;
+        /// A node that stays, before its place is known.
+        const LIVE: u32 = 0;
+        let Kept::Own(kept) = &mut self.kept else {
+            return root;
+        };
+        let before = bytes_of(kept);
+        // Where each kept node moves to: four bytes a node for the time
+        // of the collection, which the account does not see.
+        let mut moved = vec![DEAD; kept.len()];
+        let is_kept = |id: &NodeId| id.get() & PENDING == 0;
+        for id in self
+            .pending
+            .iter()
+            .flat_map(|node| node.premises())
+            .chain(self.held.iter().copied())
+            .chain(root)
+            .filter(is_kept)
+        {
+            moved[id.index()] = LIVE;
+        }
+        // A premise has a smaller id than its conclusion.
+        for i in (0..kept.len()).rev() {
+            if moved[i] == LIVE {
+                for premise in kept[i].premises() {
+                    moved[premise.index()] = LIVE;
+                }
+            }
+        }
+        let mut next = 0;
+        for i in 0..kept.len() {
+            if moved[i] == LIVE {
+                kept[next] = kept[i].map_premises(|p| NodeId::new(moved[p.index()]));
+                moved[i] = next as u32;
+                next += 1;
+            }
+        }
+        kept.truncate(next);
+        let renamed = |id: NodeId| {
+            if is_kept(&id) {
+                NodeId::new(moved[id.index()])
+            } else {
+                id
+            }
+        };
+        for node in &mut self.pending {
+            *node = node.map_premises(renamed);
+        }
+        for id in &mut self.held {
+            *id = renamed(*id);
+        }
+        let root = root.map(renamed);
+        if tight {
+            kept.shrink_to_fit();
+        } else if kept.capacity() > 4 * kept.len().max(1024) {
+            kept.shrink_to(2 * kept.len().max(1024));
+        }
+        self.account.resize(before, bytes_of(kept));
+        root
     }
 }
 
@@ -612,6 +778,11 @@ struct Engine<'a> {
     memo: Table<'a>,
     /// The proof arena.
     nodes: Arena<'a>,
+    /// The search's account, which the memo is charged to.
+    account: &'a Account,
+    /// What the engine's own buffers were charged: the branch stack and
+    /// the pools, which go with the engine.
+    scratch: Charged<'a>,
     /// Whether the memo takes entries: a proof it refers to is kept.
     memoizes: bool,
     /// The counters.
@@ -664,7 +835,7 @@ struct Engine<'a> {
     /// Spare memo keys of the forest's width.
     keys: Vec<Key>,
     /// Spare lists of occurrences.
-    lists: Vec<Vec<OccId>>,
+    lists: Vec<Pooled<OccId>>,
     /// Spare tallies of the forest's atoms.
     tallies: Vec<Tally>,
     /// Spare counts of splits, boxed so that a split search holds a
@@ -673,9 +844,9 @@ struct Engine<'a> {
     #[allow(clippy::vec_box)]
     splits: Vec<Box<Split>>,
     /// Spare trails of split searches.
-    trails: Vec<Vec<Side>>,
+    trails: Vec<Pooled<Side>>,
     /// Spare lists of the links of a chain of forced splits.
-    links: Vec<Vec<(OccId, NodeId, bool)>>,
+    links: Vec<Pooled<(OccId, NodeId, bool)>>,
     /// Spare cursors of a chain of forced splits.
     cursors: Vec<Cursors>,
     /// Per list of a literal's occurrences, twice the atom plus the sign
@@ -710,6 +881,8 @@ impl<'a> Engine<'a> {
             classes,
             rules,
             memo,
+            account: nodes.account,
+            scratch: Charged::new(nodes.account),
             nodes,
             memoizes: options.memo_limit != 0,
             statistics: Statistics::default(),
@@ -901,7 +1074,10 @@ impl<'a> Engine<'a> {
             return Ok(None);
         };
         list.push(self.forest.right(o).unwrap());
-        let Some(right) = self.asynchronous(theta, gamma, list, budget)? else {
+        let held = self.nodes.hold(left);
+        let right = self.asynchronous(theta, gamma, list, budget)?;
+        let left = self.nodes.unhold(held);
+        let Some(right) = right else {
             self.nodes.release(mark);
             return Ok(None);
         };
@@ -927,6 +1103,9 @@ impl<'a> Engine<'a> {
             + std::mem::take(&mut self.work);
         if self.stop.fired(work) {
             return Err(Reason::Stopped);
+        }
+        if self.account.over() {
+            self.relieve()?;
         }
         let mut key = self.take_key();
         key.assign(theta, gamma);
@@ -992,9 +1171,12 @@ impl<'a> Engine<'a> {
         }
         if self.rules.stack {
             if self.stack_len < self.stack.len() {
-                self.stack[self.stack_len].clone_from(&key);
+                // Into the entry's own buffers: a derived `clone_from`
+                // would allocate both zones anew.
+                self.stack[self.stack_len].assign(&key.theta, &key.gamma);
                 self.hashes[self.stack_len] = hash;
             } else {
+                self.scratch.charge(self.key_bytes() + size_of::<u64>());
                 self.stack.push(key.clone());
                 self.hashes.push(hash);
             }
@@ -1025,9 +1207,11 @@ impl<'a> Engine<'a> {
         match result {
             Ok(Some(node)) if self.memoizes => {
                 // The entry outlives the branch, so the proof is kept.
-                let node = self.nodes.keep(mark, node);
-                self.memo.insert(&key, Entry::Proved(node));
-                result = Ok(Some(node));
+                let node = self.nodes.keep(mark, node)?;
+                result = match self.remember(&key, Entry::Proved(node))? {
+                    Entry::Proved(node) => Ok(Some(node)),
+                    Entry::Failed(_) => unreachable!("the entry of a proof"),
+                };
             }
             Ok(None) => {
                 self.nodes.release(mark);
@@ -1035,11 +1219,10 @@ impl<'a> Engine<'a> {
                     // A complete failure answers for every relative; one
                     // cut by the budget stays the sequent's own.
                     if exhausted {
-                        self.memo
-                            .insert(&key, Entry::Failed(Failure::Exhausted(budget)));
+                        self.remember(&key, Entry::Failed(Failure::Exhausted(budget)))?;
                     } else {
                         let key = if renamed { &canonical } else { &key };
-                        self.memo.insert(key, Entry::Failed(Failure::Complete));
+                        self.remember(key, Entry::Failed(Failure::Complete))?;
                     }
                 }
             }
@@ -1048,6 +1231,81 @@ impl<'a> Engine<'a> {
         self.give_key(key);
         self.give_key(canonical);
         result
+    }
+
+    /// Records what the search found out about a stable sequent. A memo
+    /// of the engine's own that has no room is emptied first, and the
+    /// kept proofs that only its entries referred to go with it; the
+    /// entry comes back as recorded, a proof's node under the id it has
+    /// after that. Fails when even the emptied memo has no room: the
+    /// search's memory is at its bound without it.
+    fn remember(&mut self, key: &Key, entry: Entry) -> Result<Entry, Reason> {
+        if self.memo.insert(key, entry, self.account) == Inserted::Done {
+            return Ok(entry);
+        }
+        self.memo.clear();
+        let entry = match entry {
+            Entry::Proved(node) => Entry::Proved(
+                self.nodes
+                    .collect(Some(node), false)
+                    .expect("the root given"),
+            ),
+            failed => {
+                self.nodes.collect(None, false);
+                failed
+            }
+        };
+        if self.memo.insert(key, entry, self.account) == Inserted::Done {
+            return Ok(entry);
+        }
+        // Not even the first entry fits: what the proofs dropped leave
+        // free is the last memory there is.
+        let entry = match entry {
+            Entry::Proved(node) => Entry::Proved(
+                self.nodes
+                    .collect(Some(node), true)
+                    .expect("the root given"),
+            ),
+            failed => {
+                self.nodes.collect(None, true);
+                failed
+            }
+        };
+        match self.memo.insert(key, entry, self.account) {
+            Inserted::Done => Ok(entry),
+            _ => Err(Reason::MemoryLimit(self.account.limit())),
+        }
+    }
+
+    /// Makes room when the search holds more than its bound: the memo is
+    /// emptied, and the kept proofs that only its entries referred to are
+    /// dropped; if that is not enough, the memo's own memory is given
+    /// back, which it takes again as far as the rest leaves room. Fails
+    /// when what is left, the branch's own buffers and proofs as they are
+    /// allocated, is still over the bound: squeezing those would be undone
+    /// by the next node.
+    fn relieve(&mut self) -> Result<(), Reason> {
+        self.memo.clear();
+        self.nodes.collect(None, false);
+        if !self.account.over() {
+            return Ok(());
+        }
+        self.memo.release(self.account);
+        if self.account.over() {
+            Err(Reason::MemoryLimit(self.account.limit()))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// The bytes a memo key of the forest's width allocates.
+    fn key_bytes(&self) -> usize {
+        2 * self.set_bytes()
+    }
+
+    /// The bytes a set of the forest's width allocates.
+    fn set_bytes(&self) -> usize {
+        self.forest.len().div_ceil(64) * size_of::<u64>()
     }
 
     /// Decides a stable sequent the memo does not know.
@@ -1889,7 +2147,10 @@ impl<'a> Engine<'a> {
         let Some(l) = self.focus(theta, left, a, budget)? else {
             return Ok(None);
         };
-        let Some(r) = self.focus(theta, right, b, budget)? else {
+        let held = self.nodes.hold(l);
+        let r = self.focus(theta, right, b, budget)?;
+        let l = self.nodes.unhold(held);
+        let Some(r) = r else {
             self.nodes.release(mark);
             return Ok(None);
         };
@@ -1944,7 +2205,10 @@ impl<'a> Engine<'a> {
         let Some(l) = self.prove(theta, left, budget)? else {
             return Ok(None);
         };
-        let Some(r) = self.prove(theta, right, budget)? else {
+        let held = self.nodes.hold(l);
+        let r = self.prove(theta, right, budget)?;
+        let l = self.nodes.unhold(held);
+        let Some(r) = r else {
             self.nodes.release(mark);
             return Ok(None);
         };
@@ -1979,7 +2243,10 @@ impl<'a> Engine<'a> {
                 set.clear();
                 set
             }
-            None => self.forest.empty_set(),
+            None => {
+                self.scratch.charge(self.set_bytes());
+                self.forest.empty_set()
+            }
         }
     }
 
@@ -1995,7 +2262,10 @@ impl<'a> Engine<'a> {
                 context.clear();
                 context
             }
-            None => Context::empty(self.forest.len()),
+            None => {
+                self.scratch.charge(self.set_bytes());
+                Context::empty(self.forest.len())
+            }
         }
     }
 
@@ -2006,9 +2276,12 @@ impl<'a> Engine<'a> {
 
     /// Takes a memo key from the pool, with any contents.
     fn take_key(&mut self) -> Key {
-        self.keys.pop().unwrap_or_else(|| Key {
-            theta: self.forest.empty_set(),
-            gamma: Context::empty(self.forest.len()),
+        self.keys.pop().unwrap_or_else(|| {
+            self.scratch.charge(self.key_bytes());
+            Key {
+                theta: self.forest.empty_set(),
+                gamma: Context::empty(self.forest.len()),
+            }
         })
     }
 
@@ -2018,14 +2291,15 @@ impl<'a> Engine<'a> {
     }
 
     /// Takes an empty list from the pool.
-    fn take_list(&mut self) -> Vec<OccId> {
+    fn take_list(&mut self) -> Pooled<OccId> {
         let mut list = self.lists.pop().unwrap_or_default();
         list.clear();
         list
     }
 
     /// Returns a list to the pool.
-    fn give_list(&mut self, list: Vec<OccId>) {
+    fn give_list(&mut self, mut list: Pooled<OccId>) {
+        list.settle(&mut self.scratch);
         self.lists.push(list);
     }
 
@@ -2036,7 +2310,10 @@ impl<'a> Engine<'a> {
                 tally.clear();
                 tally
             }
-            None => self.counts.tally(),
+            None => {
+                self.scratch.charge(self.counts.tally_bytes());
+                self.counts.tally()
+            }
         }
     }
 
@@ -2052,7 +2329,10 @@ impl<'a> Engine<'a> {
                 split.clear();
                 split
             }
-            None => Box::new(self.counts.split()),
+            None => {
+                self.scratch.charge(self.counts.split_bytes());
+                Box::new(self.counts.split())
+            }
         }
     }
 
@@ -2062,34 +2342,40 @@ impl<'a> Engine<'a> {
     }
 
     /// Takes an empty trail from the pool.
-    fn take_trail(&mut self) -> Vec<Side> {
+    fn take_trail(&mut self) -> Pooled<Side> {
         let mut trail = self.trails.pop().unwrap_or_default();
         trail.clear();
         trail
     }
 
     /// Returns a trail to the pool.
-    fn give_trail(&mut self, trail: Vec<Side>) {
+    fn give_trail(&mut self, mut trail: Pooled<Side>) {
+        trail.settle(&mut self.scratch);
         self.trails.push(trail);
     }
 
     /// Takes an empty list of links from the pool.
-    fn take_links(&mut self) -> Vec<(OccId, NodeId, bool)> {
+    fn take_links(&mut self) -> Pooled<(OccId, NodeId, bool)> {
         let mut links = self.links.pop().unwrap_or_default();
         links.clear();
         links
     }
 
     /// Returns a list of links to the pool.
-    fn give_links(&mut self, links: Vec<(OccId, NodeId, bool)>) {
+    fn give_links(&mut self, mut links: Pooled<(OccId, NodeId, bool)>) {
+        links.settle(&mut self.scratch);
         self.links.push(links);
     }
 
     /// Takes cursors at the head of every list from the pool.
     fn take_cursors(&mut self) -> Cursors {
-        self.cursors.pop().unwrap_or_else(|| Cursors {
-            passed: vec![0; 2 * self.forest.sequent().atom_names().len()],
-            moved: Vec::new(),
+        self.cursors.pop().unwrap_or_else(|| {
+            let lists = 2 * self.forest.sequent().atom_names().len();
+            self.scratch.charge(lists * size_of::<u32>());
+            Cursors {
+                passed: vec![0; lists],
+                moved: Vec::new(),
+            }
         })
     }
 
@@ -2099,6 +2385,53 @@ impl<'a> Engine<'a> {
             cursors.passed[list as usize] = 0;
         }
         self.cursors.push(cursors);
+    }
+}
+
+/// A list from one of the engine's pools, which knows how much of its
+/// allocation the search's account was charged: a list grows while a rule
+/// uses it, and the growth is charged when the rule gives it back, so the
+/// lists a branch has taken count as far as they had grown when they
+/// were last returned.
+struct Pooled<T> {
+    /// The list.
+    items: Vec<T>,
+    /// The bytes of its allocation that were charged.
+    charged: usize,
+}
+
+impl<T> Default for Pooled<T> {
+    fn default() -> Self {
+        Self {
+            items: Vec::new(),
+            charged: 0,
+        }
+    }
+}
+
+impl<T> Pooled<T> {
+    /// Charges the account what the list's allocation grew by since it
+    /// was last charged.
+    fn settle(&mut self, account: &mut Charged<'_>) {
+        let bytes = bytes_of(&self.items);
+        if bytes != self.charged {
+            account.resize(self.charged, bytes);
+            self.charged = bytes;
+        }
+    }
+}
+
+impl<T> std::ops::Deref for Pooled<T> {
+    type Target = Vec<T>;
+
+    fn deref(&self) -> &Vec<T> {
+        &self.items
+    }
+}
+
+impl<T> std::ops::DerefMut for Pooled<T> {
+    fn deref_mut(&mut self) -> &mut Vec<T> {
+        &mut self.items
     }
 }
 
@@ -2189,17 +2522,18 @@ mod tests {
     #[test]
     fn arena() {
         let o = OccId::new;
-        let mut arena = Arena::new(Kept::Own(Vec::new()));
+        let account = Account::new(None);
+        let mut arena = Arena::new(Kept::Own(Vec::new()), &account);
         let ax = arena.push(Node::Ax(o(0), o(1)));
         let mark = arena.mark();
         let one = arena.push(Node::One(o(2)));
         arena.push(Node::Tensor(o(3), ax, one));
         arena.release(mark);
         let top = arena.push(Node::Top(o(4)));
-        let top = arena.keep(mark, top);
+        let top = arena.keep(mark, top).unwrap();
         assert_eq!(top, NodeId::new(0));
         let tensor = arena.push(Node::Tensor(o(5), ax, top));
-        let root = arena.keep(0, tensor);
+        let root = arena.keep(0, tensor).unwrap();
         assert_eq!(root, NodeId::new(2));
         let Kept::Own(kept) = arena.kept else {
             unreachable!()
@@ -2212,6 +2546,72 @@ mod tests {
                 Node::Tensor(o(5), NodeId::new(1), NodeId::new(0))
             ]
         );
+    }
+
+    /// A collection drops the kept nodes that neither a pending node, nor
+    /// an id held, nor the root given rests on; the others move up in
+    /// their order and whoever refers to them is renamed, and the memory
+    /// freed is no longer charged.
+    #[test]
+    fn collection() {
+        let o = OccId::new;
+        let account = Account::new(None);
+        let mut arena = Arena::new(Kept::Own(Vec::new()), &account);
+        let kept = |arena: &mut Arena, node| {
+            let id = arena.push(node);
+            arena.keep(0, id).unwrap()
+        };
+        let dead = kept(&mut arena, Node::One(o(0)));
+        let below = kept(&mut arena, Node::Top(o(1)));
+        let held = kept(&mut arena, Node::Bot(o(2), below));
+        kept(&mut arena, Node::Bot(o(3), dead));
+        let rooted = kept(&mut arena, Node::One(o(4)));
+        let under = kept(&mut arena, Node::Top(o(5)));
+        let pending = arena.push(Node::Bot(o(6), under));
+        let point = arena.hold(held);
+        let before = account.used();
+        let rooted = arena.collect(Some(rooted), true).unwrap();
+        assert!(account.used() < before);
+        assert_eq!(arena.unhold(point), NodeId::new(1));
+        assert_eq!(rooted, NodeId::new(2));
+        let root = arena.keep(0, pending).unwrap();
+        assert_eq!(root, NodeId::new(4));
+        let Kept::Own(kept) = arena.kept else {
+            unreachable!()
+        };
+        assert_eq!(
+            kept,
+            [
+                Node::Top(o(1)),
+                Node::Bot(o(2), NodeId::new(0)),
+                Node::One(o(4)),
+                Node::Top(o(5)),
+                Node::Bot(o(6), NodeId::new(3))
+            ]
+        );
+    }
+
+    /// An arena whose kept part is full refuses to keep more, and one
+    /// whose pending part is full refuses whatever rests on the node it
+    /// had no id for: an answer, where there was a panic.
+    #[test]
+    fn full_arena() {
+        let o = OccId::new;
+        let account = Account::new(None);
+        let mut arena = Arena::new(Kept::Own(Vec::new()), &account);
+        arena.most = 2;
+        for id in 0..2 {
+            let node = arena.push(Node::One(o(id)));
+            assert!(arena.keep(0, node).is_ok());
+        }
+        let third = arena.push(Node::One(o(2)));
+        assert_eq!(arena.keep(0, third), Err(Reason::IndexLimit));
+        let mut arena = Arena::new(Kept::Own(Vec::new()), &account);
+        arena.most = 2;
+        let first = arena.push(Node::One(o(0)));
+        arena.push(Node::One(o(1)));
+        arena.push(Node::One(o(2)));
+        assert_eq!(arena.keep(0, first), Err(Reason::IndexLimit));
     }
 
     /// The classic small sequents, in `MLL` and `MALL`, get the verdicts
@@ -2517,6 +2917,7 @@ mod tests {
             let (first, second) = plan(&forest, sequent.fragment(), m, &options);
             let second = second.expect("two searches");
             let counts = [first, second].map(|rule| Counts::new(&forest, rule.bias));
+            let account = Account::new(None);
             let (result, _, statistics) = turns(
                 &forest,
                 forest.roots(),
@@ -2525,7 +2926,10 @@ mod tests {
                 None,
                 &classes,
                 &options,
-                [(first, &counts[0]), (second, &counts[1])],
+                [
+                    (first, &counts[0], &account),
+                    (second, &counts[1], &account),
+                ],
                 &mut || false,
             );
             assert!(matches!(result, Ok(Some(_))));
@@ -2552,6 +2956,118 @@ mod tests {
             assert_eq!(slices.splits, forward.splits + backward.splits);
             assert_eq!(run(&text, m, &options).1, slices);
         }
+    }
+
+    /// Under a memory bound that the memo does not fit, the memo is
+    /// emptied whenever it reaches the bound and the search still decides,
+    /// in more stable sequents; under a bound that leaves the memo no room
+    /// the search gives up and names the bound.
+    #[test]
+    fn memory_bound() {
+        let (sequent, copies) = crate::families::counter(8, false);
+        let text = sequent.to_string();
+        let options = Options::default().copies(copies).bias(Bias::Rarer);
+        let bounded = |bytes| {
+            run(
+                &text,
+                Mode::CLASSICAL,
+                &options.clone().memory_limit(Some(bytes)),
+            )
+        };
+        let (verdict, whole) = run(&text, Mode::CLASSICAL, &options);
+        assert!(verdict.proof().is_some());
+        let (verdict, tight) = bounded(8 << 10);
+        assert!(verdict.proof().is_some());
+        assert!(
+            tight.memo_entries < whole.memo_entries && tight.nodes > whole.nodes,
+            "{tight:?} within 8 KiB, {whole:?} without a bound that binds"
+        );
+        let (verdict, _) = bounded(1 << 10);
+        assert!(matches!(
+            verdict,
+            Verdict::Unknown(Reason::MemoryLimit(1024))
+        ));
+    }
+
+    /// A memo of a few entries is emptied at nearly every insertion, and
+    /// the kept proofs are collected as often: whatever such a search
+    /// proves is a proof the checker accepts (an id that a collection
+    /// moved and no one renamed would make it none), and its verdict never
+    /// contradicts the one a memo of the default size gives. A search is
+    /// given up after so many polls: with a memo this small some take
+    /// minutes.
+    #[test]
+    fn proofs_survive_collections() {
+        let mut proved = 0;
+        let within = |text: &str, mode: Mode, options: &Options| {
+            let s: Sequent = text.parse().unwrap();
+            let forest = Forest::new(&s).unwrap();
+            let reading = mode.intuitionistic.then(|| Reading::new(&forest).unwrap());
+            let mut polls = 0;
+            let (verdict, _) = search(
+                &forest,
+                s.fragment(),
+                mode,
+                reading.as_ref(),
+                options,
+                &mut || {
+                    polls += 1;
+                    polls > 20_000
+                },
+            );
+            match verdict {
+                Verdict::Proved(proof) => {
+                    proof
+                        .check(mode)
+                        .unwrap_or_else(|e| panic!("{text:?}: the proof is wrong: {e}"));
+                    Some(true)
+                }
+                Verdict::Unprovable => Some(false),
+                Verdict::Unknown(_) => None,
+            }
+        };
+        let mut check = |text: &str, mode: Mode, options: &Options| {
+            for bias in [Bias::Rarer, Bias::Factors] {
+                let options = options.clone().bias(bias);
+                let whole = within(text, mode, &options);
+                for limit in [1, 2, 5] {
+                    let small = within(text, mode, &options.clone().memo_limit(limit));
+                    assert!(
+                        small.is_none() || whole.is_none() || small == whole,
+                        "{text:?} in {mode} mode: {small:?} with a memo of {limit}, {whole:?}"
+                    );
+                    proved += u64::from(small == Some(true));
+                }
+            }
+        };
+        for (i, rules) in Rules::ALL.into_iter().enumerate() {
+            let mut rng = Rng::new(700 + i as u64);
+            for _ in 0..20 {
+                let generate::Provable {
+                    mut formulas,
+                    copies,
+                } = generate::provable(&mut rng, rules, 3, 8);
+                let options = Options::default().copies(copies);
+                check(&generate::sequent(&formulas), mode_for(rules), &options);
+                if generate::mutate(&mut rng, &mut formulas, 3) {
+                    check(&generate::sequent(&formulas), mode_for(rules), &options);
+                }
+            }
+        }
+        for (n, rules) in generate::IllRules::ALL.into_iter().enumerate() {
+            let mut rng = Rng::new(800 + n as u64);
+            for _ in 0..20 {
+                let generate::Ill {
+                    hypotheses,
+                    goal,
+                    copies,
+                } = generate::ill(&mut rng, rules, 3, 8);
+                let options = Options::default().copies(copies);
+                let text = generate::two_sided(&hypotheses, &goal);
+                check(&text, Mode::INTUITIONISTIC, &options);
+            }
+        }
+        assert!(proved > 1000, "{proved} proofs");
     }
 
     /// The contract of the default bias: on a sequent with exponentials it

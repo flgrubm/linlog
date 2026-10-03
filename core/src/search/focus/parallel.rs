@@ -31,6 +31,7 @@ use crate::Error;
 use crate::fragment::{Fragment, Mode};
 use crate::occurrences::{Forest, OccId, OccSet, Reading};
 use crate::proofs::{Node, NodeId, Side};
+use crate::search::memory::{Account, Charged};
 use crate::search::parallel::{Flags, Runtime};
 use crate::search::{Options, Reason, Statistics, Stop, set_up_stopped};
 use std::hash::BuildHasher as _;
@@ -64,6 +65,7 @@ pub(crate) fn search_goal(
     mode: Mode,
     reading: Option<&Reading>,
     options: &Options,
+    account: &Account,
     stop: &mut dyn FnMut() -> bool,
 ) -> Result<(Search, Vec<Node>, Statistics), Error> {
     // On a large forest the passes of the set-up are followed by a poll;
@@ -78,15 +80,16 @@ pub(crate) fn search_goal(
     if set_up_stopped(forest, stop) {
         return stopped();
     }
-    let search = |rule: Rule, runtime: &Runtime, flags: Flags<'_>| {
+    let search = |rule: Rule, runtime: &Runtime, account: &Account, flags: Flags<'_>| {
+        account.charge(classes.bytes());
         rule.search_on(
-            forest, goal, fragment, mode, reading, &classes, options, runtime, flags,
+            forest, goal, fragment, mode, reading, &classes, options, account, runtime, flags,
         )
     };
     let Some(second) = second else {
         let runtime = Runtime::new(options.jobs, stack)?;
         let (result, nodes, statistics) =
-            runtime.drive(stop, |flags| search(first, &runtime, flags));
+            runtime.drive(stop, |flags| search(first, &runtime, account, flags));
         let result = result.map_err(|r| super::reason(r, options));
         return Ok((result, nodes, statistics));
     };
@@ -97,12 +100,14 @@ pub(crate) fn search_goal(
         Runtime::new(threads, stack)?,
         Runtime::new(options.jobs - threads, stack)?,
     );
+    // Each search has half the memory, as each has its own memo.
+    let accounts = (account.share(2), account.share(2));
     let (forward, backward) = crate::search::parallel::race(
         (&runtimes.0, &runtimes.1),
         stop,
         (
-            |flags: Flags<'_>| search(first, &runtimes.0, flags),
-            |flags: Flags<'_>| search(second, &runtimes.1, flags),
+            |flags: Flags<'_>| search(first, &runtimes.0, &accounts.0, flags),
+            |flags: Flags<'_>| search(second, &runtimes.1, &accounts.1, flags),
         ),
         |(result, _, _)| result.is_ok(),
     );
@@ -292,7 +297,10 @@ pub(super) fn alternate(
     reading: Option<&Reading>,
     classes: &Classes,
     options: &Options,
-    [(first, first_counts), (second, second_counts)]: [(Rule, &Counts); 2],
+    [
+        (first, first_counts, first_account),
+        (second, second_counts, second_account),
+    ]: [(Rule, &Counts, &Account); 2],
     stop: &mut dyn FnMut() -> bool,
 ) -> Option<(Search, Vec<Node>, Statistics)> {
     let baton = Baton::default();
@@ -319,6 +327,7 @@ pub(super) fn alternate(
                     reading,
                     (second_counts, classes),
                     options,
+                    second_account,
                     Stop::Slice(&mut give_way, slice, slice),
                 );
                 if result.is_ok() {
@@ -339,6 +348,7 @@ pub(super) fn alternate(
                 reading,
                 (first_counts, classes),
                 options,
+                first_account,
                 Stop::Slice(&mut give_way, SLICE, SLICE),
             );
             if !matches!(result, Err(reason) if reason != Reason::Stopped) {
@@ -407,12 +417,14 @@ impl Rule {
         reading: Option<&Reading>,
         classes: &Classes,
         options: &Options,
+        account: &Account,
         runtime: &Runtime,
         flags: Flags<'_>,
     ) -> (Search, Vec<Node>, Statistics) {
         // The longest pass of the set-up reads the flags too.
-        let Some(counts) = Counts::new_until(forest, self.bias, &mut || flags.raised()) else {
-            return (Err(Reason::Stopped), Vec::new(), Statistics::default());
+        let counts = match Counts::new_until(forest, self.bias, account, &mut || flags.raised()) {
+            Ok(counts) => counts,
+            Err(reason) => return (Err(reason), Vec::new(), Statistics::default()),
         };
         let rules = Rules::new(fragment, mode, &counts);
         let memo = Shared::new(options.memo_limit);
@@ -426,7 +438,7 @@ impl Rule {
                 &options.clone().copies(self.copies),
                 Stop::Flags(flags),
                 Table::Shared(&memo),
-                Arena::new(Kept::Shared(&arena)),
+                Arena::new(Kept::Shared(&arena), account),
             );
             engine.runtime = (runtime.threads() > 1).then_some(runtime);
             let result = engine.run(goal);
@@ -458,6 +470,8 @@ struct Spawn<'s> {
     memo: &'s Shared,
     /// The shared arena.
     arena: &'s Mutex<Vec<Node>>,
+    /// The search's account.
+    account: &'s Account,
     /// Whether the memo takes entries.
     memoizes: bool,
     /// The runtime.
@@ -487,7 +501,9 @@ impl<'s> Spawn<'s> {
             classes: self.classes,
             rules: self.rules,
             memo: Table::Shared(self.memo),
-            nodes: Arena::new(Kept::Shared(self.arena)),
+            nodes: Arena::new(Kept::Shared(self.arena), self.account),
+            account: self.account,
+            scratch: Charged::new(self.account),
             memoizes: self.memoizes,
             statistics: Statistics::default(),
             steps: 0,
@@ -650,6 +666,7 @@ impl<'a> Engine<'a> {
             rules: self.rules,
             memo,
             arena,
+            account: self.account,
             memoizes: self.memoizes,
             runtime,
             flags: *flags,
@@ -664,7 +681,7 @@ impl<'a> Engine<'a> {
     /// A result as it leaves this engine for another: the proof's pending
     /// nodes kept, since a pending id means nothing outside its engine.
     fn exported(&mut self, result: Search) -> Search {
-        result.map(|node| node.map(|node| self.nodes.keep(0, node)))
+        result.and_then(|node| node.map(|node| self.nodes.keep(0, node)).transpose())
     }
 
     /// Locks what the workers report.

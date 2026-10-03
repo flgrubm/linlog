@@ -22,6 +22,7 @@
 //! sequent of two formulas, so the procedure is the same in every mode.
 
 use super::focus::Search;
+use super::memory::{Account, bytes_of};
 use super::{Options, Reason, Statistics, Verdict};
 use crate::fragment::Mode;
 use crate::hash::HashMap;
@@ -38,7 +39,8 @@ pub(crate) fn search(
     options: &Options,
     stop: &mut dyn FnMut() -> bool,
 ) -> (Verdict, Statistics) {
-    let (result, nodes, statistics) = search_goal(forest, forest.roots(), options, stop);
+    let account = Account::new(options.memory_limit);
+    let (result, nodes, statistics) = search_goal(forest, forest.roots(), options, &account, stop);
     let verdict = match result {
         Ok(Some(root)) => {
             let proof = Proof::new(forest.clone(), nodes, root)
@@ -58,11 +60,13 @@ pub(crate) fn search(
 /// when it is unprovable, or the reason the search gave up), the arena the
 /// node lives in, and the statistics. The mode plays no part: the additive
 /// rules keep one goal by themselves, and neither weakening nor Mix can
-/// help a sequent of two formulas.
+/// help a sequent of two formulas. The memo and the arena are charged to
+/// `account`.
 pub(crate) fn search_goal(
     forest: &Forest,
     goal: &[OccId],
     options: &Options,
+    account: &Account,
     stop: &mut dyn FnMut() -> bool,
 ) -> (Search, Vec<Node>, Statistics) {
     let [x, y] = goal else {
@@ -77,9 +81,13 @@ pub(crate) fn search_goal(
         statistics: Statistics::default(),
         depth: 0,
         recursion_limit: options.recursion_limit,
+        account,
+        charged: 0,
         stop,
     };
-    let result = engine.pair(*x, *y);
+    let result = engine
+        .pair(*x, *y)
+        .map_err(|r| super::focus::reason(r, options));
     let statistics = Statistics {
         memo_entries: engine.memo_peak,
         ..engine.statistics
@@ -106,6 +114,10 @@ struct Engine<'a> {
     depth: u32,
     /// The deepest nesting allowed.
     recursion_limit: u32,
+    /// Who is charged the memo and the arena.
+    account: &'a Account,
+    /// The bytes of the memo and the arena that were charged.
+    charged: usize,
     /// The caller's stop condition.
     stop: &'a mut dyn FnMut() -> bool,
 }
@@ -118,6 +130,7 @@ impl Engine<'_> {
         if (self.stop)() {
             return Err(Reason::Stopped);
         }
+        self.settle()?;
         if let Some(&node) = self.memo.get(&(x, y)) {
             self.statistics.memo_hits += 1;
             return Ok(node);
@@ -203,6 +216,33 @@ impl Engine<'_> {
         } else {
             self.pair(other, sub)
         }
+    }
+
+    /// Charges the account what the memo and the arena grew by, and makes
+    /// room when that passes the bound: the memo goes first. Fails when
+    /// the arena alone is over the bound, or holds as many nodes as an id
+    /// can name; a pair adds one node at most.
+    fn settle(&mut self) -> Result<(), Reason> {
+        /// The bytes of a slot of the memo: a pair, a node, a control byte.
+        const SLOT: usize = size_of::<((OccId, OccId), Option<NodeId>)>() + 1;
+        if self.nodes.len() >= u32::MAX as usize {
+            return Err(Reason::IndexLimit);
+        }
+        let held = self.memo.capacity() * SLOT + bytes_of(&self.nodes);
+        if held == self.charged {
+            return Ok(());
+        }
+        self.account.resize(self.charged, held);
+        self.charged = held;
+        if self.account.over() {
+            self.memo = HashMap::default();
+            self.account.resize(self.charged, bytes_of(&self.nodes));
+            self.charged = bytes_of(&self.nodes);
+            if self.account.over() {
+                return Err(Reason::MemoryLimit(self.account.limit()));
+            }
+        }
+        Ok(())
     }
 
     /// Appends a node to the arena and returns its id.

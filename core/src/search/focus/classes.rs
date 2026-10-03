@@ -54,6 +54,11 @@ impl Classes {
         self.distinct
     }
 
+    /// Returns the bytes the classes allocate.
+    pub(crate) fn bytes(&self) -> usize {
+        self.class.len() * size_of::<OccId>()
+    }
+
     /// Returns the class of an occurrence: its first interchangeable
     /// occurrence.
     pub(crate) fn of(&self, o: OccId) -> OccId {
