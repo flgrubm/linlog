@@ -102,8 +102,9 @@ pub(crate) fn set_up_stopped(forest: &Forest, stop: &mut dyn FnMut() -> bool) ->
 /// but two additive-only formulas ([`Error::NotAdditive`]); and a sequent
 /// that unfolds to more subformula occurrences than
 /// [`Options::occurrence_limit`] allows ([`Error::TooManyOccurrences`]). A proof that the checker rejects is
-/// [`Error::Rejected`]: every proof returned has passed it, unless
-/// [`Options::check`] says otherwise.
+/// [`Error::Rejected`], and one whose check would hold more than
+/// [`Options::memory_limit`] is [`Error::Unchecked`]: every proof returned
+/// has passed the checker, unless [`Options::check`] says otherwise.
 ///
 /// # Examples
 ///
@@ -365,8 +366,14 @@ pub fn prove_goal(
         && let Verdict::Proved(proof) = &verdict
     {
         proof
-            .check(mode)
-            .map_err(|e| Error::Rejected(Box::new(e)))?;
+            .check_within(mode, options.memory_limit)
+            .map_err(|e| {
+                if e.is_refusal() {
+                    Error::Unchecked(e)
+                } else {
+                    Error::Rejected(Box::new(e))
+                }
+            })?;
     }
     Ok(Outcome {
         verdict,
@@ -551,7 +558,7 @@ impl Options {
 
     /// The memory bound of the default options, in bytes: one gibibyte,
     /// which a laptop and a browser tab both have to spare.
-    pub const DEFAULT_MEMORY_LIMIT: u64 = 1 << 30;
+    pub const DEFAULT_MEMORY_LIMIT: u64 = crate::proofs::DEFAULT_MEMORY_LIMIT;
 
     /// The most subformula occurrences of a sequent under the default
     /// options: [`Forest::DEFAULT_LIMIT`].

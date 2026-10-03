@@ -275,6 +275,14 @@ pub(crate) fn jobs(asked: usize, deterministic: bool) -> usize {
 /// The arguments of `check`.
 #[derive(Args, Debug)]
 pub struct CheckArgs {
+    /// The most memory the check may hold: a number of bytes with a unit
+    /// such as 512MiB or 4GiB, or `none` for no limit
+    ///
+    /// A proof whose check would pass it is neither valid nor invalid:
+    /// the command ends with an error. A derivation estimated above it
+    /// is left out, as past `--derivation-limit`.
+    #[arg(long, value_name = "SIZE", value_parser = parse_limit, default_value_t = Limit(Some(Options::DEFAULT_MEMORY_LIMIT)))]
+    pub memory_limit: Limit,
     /// The proof file, or standard input when absent or `-`
     #[arg(value_name = "PROOF")]
     pub proof: Option<PathBuf>,

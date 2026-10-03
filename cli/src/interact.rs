@@ -59,7 +59,10 @@ pub fn interact(args: &InteractArgs) -> Result<Status> {
     let mut session = Session {
         state,
         options,
-        view: args.derivation_limit.into(),
+        view: ViewOptions {
+            memory: args.memory_limit.0,
+            ..args.derivation_limit.into()
+        },
         timeout: args.timeout,
     };
     on_large_stack(stack_size, move || session.run())?

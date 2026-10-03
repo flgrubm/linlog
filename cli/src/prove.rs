@@ -102,6 +102,13 @@ impl Show {
         })
     }
 
+    /// The same, with every derivation and the check behind it within
+    /// `memory` bytes.
+    pub(crate) fn within(mut self, memory: Option<u64>) -> Self {
+        self.view.memory = memory;
+        self
+    }
+
     /// The text tree of any size within `view`, wherever it goes: what a
     /// session prints when asked for a proof.
     pub(crate) fn text(view: ViewOptions) -> Self {
@@ -220,6 +227,19 @@ fn too_large(size: &Size, limit: u64) -> String {
     )
 }
 
+/// Returns the line for a derivation past the memory limit.
+fn over_memory(size: &Size, limit: u64) -> String {
+    format!(
+        "the derivation is not written: its {} inferences with {} characters of sequents are \
+         estimated at {}, over the memory limit of {}; --format json writes the proof itself, \
+         and --memory-limit SIZE raises the limit",
+        count_text(size.inferences),
+        count_text(size.characters),
+        bytes_text(size.bytes()),
+        bytes_text(limit)
+    )
+}
+
 /// Makes the derivation of a proof as `show` asks, two-sided in
 /// intuitionistic mode: a LaTeX or Typst proof tree, a Rocq script, an
 /// SVG document or a text tree; or says why it is left out: a text tree
@@ -268,6 +288,18 @@ pub(crate) fn derivation(
         Err(ViewError::Invalid(e)) => return Err(invalid(e)),
         Err(ViewError::TooLarge { size, limit }) => {
             return Ok(Shown::LeftOut(too_large(&size, limit)));
+        }
+        Err(ViewError::Memory {
+            size: Some(size),
+            limit,
+        }) => return Ok(Shown::LeftOut(over_memory(&size, limit))),
+        Err(ViewError::Memory { size: None, limit }) => {
+            return Ok(Shown::LeftOut(format!(
+                "the derivation is not written: reading the proof for it takes more than the \
+                 memory limit of {}; --format json writes the proof itself, and --memory-limit \
+                 SIZE raises the limit",
+                bytes_text(limit)
+            )));
         }
         Err(ViewError::Stopped) => return Ok(stopped()),
         // Any other bound of the view's: the error says which.
@@ -375,6 +407,10 @@ pub(crate) fn describe(error: Error, sequent: &Sequent) -> anyhow::Error {
         (Error::NotIntuitionistic(e), Ok(forest)) => {
             anyhow!("not an intuitionistic sequent: {}", e.describe(&forest))
         }
+        (Error::Unchecked(_), _) => anyhow!(
+            "the search found a proof, but {error}; raise the limit with --memory-limit, or take \
+             the proof unchecked with --no-check"
+        ),
         _ => error.into(),
     }
 }
@@ -468,7 +504,7 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         .jobs(jobs(args.jobs, args.deterministic));
     let format = args.output.format;
     let quiet = args.output.quiet;
-    let show = Show::new(&args.output)?;
+    let show = Show::new(&args.output)?.within(args.memory_limit.0);
     catch_interrupt();
 
     let (outcome, stop, elapsed, derivation) = on_large_stack(options.stack_size(), || {
@@ -620,7 +656,7 @@ pub fn check(args: &CheckArgs) -> Result<Status> {
     let proof: Proof = serde_json::from_str(&text).context("not a proof in JSON")?;
     let mode = args.mode.mode();
     let quiet = args.output.quiet;
-    let show = Show::new(&args.output)?;
+    let show = Show::new(&args.output)?.within(args.memory_limit.0);
     let (valid, text) = on_large_stack(Options::default().stack_size(), || {
         check_text(&proof, mode, &show, quiet)
     })??;
@@ -631,7 +667,12 @@ pub fn check(args: &CheckArgs) -> Result<Status> {
 /// Checks the proof and returns whether it is valid, with the output text.
 fn check_text(proof: &Proof, mode: Mode, show: &Show, quiet: bool) -> Result<(bool, String)> {
     let format = show.format;
-    let result = proof.check(mode);
+    let result = proof.check_within(mode, show.view.memory);
+    if let Err(refusal) = &result
+        && refusal.is_refusal()
+    {
+        bail!("the proof is not checked: {refusal}; raise the limit with --memory-limit");
+    }
     let text = match format {
         Format::Json => serde_json::json!({
             "valid": result.is_ok(),
