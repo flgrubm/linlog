@@ -1981,7 +1981,20 @@ has no or-choices worth sharing out). What the code relies on:
   first failed premise alone set it off, long before the limit.
   `a_cancelled_premise_starts_no_other` pins it on forty roots `a & b`
   (2⁴⁰ premises without the poll). A new rule that fans out on the pool
-  polls before it spawns. Mix stays sequential after the
+  polls before it spawns. **So does every task of a choice, before it
+  builds its worker** (`choose_parallel`, `Collected::skip`): a choice
+  queues a task per alternative, hundreds on a stable sequent of a
+  Petri net, and a worker copies the branch's stack of keys, each two
+  bitsets of the forest's width, so the tasks the pool reached after a
+  stop or a sibling's proof spent seconds before their first poll. On
+  `GlobalResAllocation_galloc_res-5_100_1` on four threads a stop came
+  21 s late and a proof that one thread finds in 0.14 s took 17 s;
+  with the poll, 0.5 s and 0.13 s. A task skipped for an ancestor's
+  flag records a stop, never a failure, since what was never searched
+  cannot have failed (`a_skipped_alternative_is_no_failure`); one
+  skipped for the choice's own flag records nothing, because that flag
+  is raised only under the choice's lock once a proof or an error (a
+  skip's stop included) is recorded. Mix stays sequential after the
   parallel alternatives failed (`last_resort`).
 - **A worker is a copy of the branch, not of the engine** (`Spawn`,
   `Spawn::worker`): the shared parts by reference (forest, reading,

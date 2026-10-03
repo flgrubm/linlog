@@ -615,6 +615,21 @@ impl Collected {
             }
         }
     }
+
+    /// Takes an alternative that was never started because a flag of its
+    /// chain was raised: the choice's own, which is raised only once a
+    /// proof or an error is recorded (a skip's stop included), or an
+    /// ancestor's, a stop that the choice records as its error, since
+    /// what was never searched cannot have failed.
+    fn skip(&mut self, cancel: &AtomicBool) {
+        if cancel.load(Ordering::Relaxed) {
+            return;
+        }
+        if self.error.is_none() {
+            self.error = Some(Reason::Stopped);
+        }
+        cancel.store(true, Ordering::Relaxed);
+    }
 }
 
 /// A premise of a `&` searched on a worker.
@@ -780,6 +795,17 @@ impl<'a> Engine<'a> {
             for &alternative in rest {
                 let (spawn, cancel, collected) = (&spawn, &cancel, &collected);
                 scope.spawn(move |_| {
+                    // A task the pool reaches after its choice was settled
+                    // or a flag above it was raised (the caller's stop, a
+                    // proof at an enclosing choice, the other premise of
+                    // a `&`) ends before it builds a worker, which copies
+                    // the branch's stack of keys: a stable sequent of a
+                    // Petri net queues a task per transition, and each
+                    // copy is the forest's width times the depth.
+                    if spawn.flags.child(cancel).raised() {
+                        Self::lock(collected).skip(cancel);
+                        return;
+                    }
                     let mut worker = spawn.worker(cancel);
                     let result = worker.alternative(theta, gamma, alternative, budget);
                     let result = worker.exported(result);
@@ -1161,5 +1187,18 @@ mod tests {
                 outcome.statistics.nodes
             );
         }
+    }
+
+    /// An alternative that a choice skips because an ancestor's flag was
+    /// raised is a stop, never a failure: the choice cannot answer that
+    /// every alternative failed, and its siblings are cancelled.
+    #[test]
+    fn a_skipped_alternative_is_no_failure() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let cancel = AtomicBool::new(false);
+        let mut collected = super::Collected::new();
+        collected.skip(&cancel);
+        assert_eq!(collected.error, Some(Reason::Stopped));
+        assert!(cancel.load(Ordering::Relaxed));
     }
 }
