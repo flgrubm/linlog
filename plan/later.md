@@ -320,6 +320,63 @@ Only if a use case appears: Hughes–van Glabbeek nets or conflict nets are
 non-canonical or exponentially large, so they are a display feature, not a
 search vehicle. Assess first.
 
+## A batch mode for the CLI
+
+The CLI decides one sequent per call (the author's question,
+2026-10-03): `prove` takes it as an argument, from `--file` or from
+standard input, and `check`, `interact` and `seq` likewise take one. The
+only thing that runs many is `linlog-bench run`, which is not published,
+measures rather than answers, and pays a child process per run. Someone
+with a file of sequents, a directory of problems or a program that asks
+many questions writes a shell loop and pays the process start, the
+thread sized from `--recursion-limit` and, with `--jobs` above one, a
+pool per sequent, which on the small sequents that are the common case
+is most of the time.
+
+What is wanted is `prove` over many sequents in one call, in the form
+practical use takes:
+
+- **Input.** A file or standard input with one sequent per line (blank
+  lines and comments skipped, an optional name per line), several
+  `--file` arguments, a directory; and the formats that exist already:
+  the harness's problem files (`name; mode; expected; copies; sequent`)
+  and LLTP problems, which `lltp::read` reads in the core crate but the
+  CLI cannot take today. Whether a line may carry its own mode and copy
+  bound, as the problem files do, or the flags hold for the whole batch.
+- **Output.** One result per sequent, in input order, as it is decided:
+  a line of text (name, verdict, reason, time) or a JSON Lines record
+  with what `--format json` and `--stats` carry now, the proof included
+  on request; for the drawing formats a directory with one file per
+  sequent. A malformed line is that line's error, not the batch's end.
+  The exit status needs a rule for many verdicts (the worst, by the
+  order error, unknown, unprovable, proved, is the obvious one). By D15
+  the options are one value that the web front end and other wrappers
+  use too, so the batch is a library notion (an iterator of problems to
+  an iterator of results) with the CLI as its first caller.
+- **Limits.** `--timeout` per sequent, and one for the whole batch.
+- **Cores.** With many sequents the cores belong across them (one
+  sequent per worker on the sequential engines, deterministic and
+  without a pool's set-up), and within one only when the batch is short
+  or a sequent is hard; which of the two a default takes is the same
+  question as the CLI's default `--jobs` ("Follow-ups: parallel search")
+  and should be decided with it.
+- **Isolation.** In one process a sequent that exhausts memory or the
+  stack takes the batch with it, which is why the harness starts a child
+  per run. The search thread per sequent stays; whether a memory bound
+  per sequent is needed (the memo and the arena are the growing parts,
+  and the additive memo has a cap already) or `--isolate` falls back to
+  children is the design's to say.
+- **A stream.** Reading standard input line by line and flushing each
+  answer makes the same command a server for an editor plug-in or a
+  script that asks, waits and asks again, without a start per question;
+  it costs nothing if the batch is built as a stream from the start.
+
+One session. It touches `cli/` and a small entry point in the core
+crate, no engine. It is checked by the batch's results being those of
+the single calls on the problem file and on a sample of the LLTP
+library, in both orders of cores, and by a timing that shows what the
+loop paid.
+
 ## The web front end
 
 `linlog-web`: the `core` crate compiled to wasm without the `parallel`
