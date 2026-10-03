@@ -75,6 +75,36 @@ impl Sequent {
             .map(|i| Atom::new(i as u32))
     }
 
+    /// Returns, per arena term, the number of subformula occurrences of the
+    /// formula it is the top of, itself included: a subterm counts once
+    /// for every place it stands in. A number that passes `u64::MAX` is
+    /// that.
+    pub(crate) fn sizes(&self) -> Vec<u64> {
+        // A subterm precedes its parent, so its size is there when the
+        // parent's is added up.
+        let mut sizes = vec![0u64; self.terms.len()];
+        for (n, term) in self.terms.iter().enumerate() {
+            sizes[n] = term
+                .subterms()
+                .fold(1u64, |sum, k| sum.saturating_add(sizes[k.index()]));
+        }
+        sizes
+    }
+
+    /// Returns the number of subformula occurrences of the sequent, which
+    /// is the number of nodes of its formulas written out as trees: a
+    /// term that several terms or root formulas share counts once for
+    /// each. That is how many occurrences a [`Forest`](crate::Forest) of
+    /// the sequent has, and it can be exponentially more than the arena
+    /// has terms; a number that passes `u64::MAX` is returned as that.
+    /// One pass over the arena.
+    pub fn occurrences(&self) -> u64 {
+        let sizes = self.sizes();
+        self.roots
+            .iter()
+            .fold(0u64, |sum, r| sum.saturating_add(sizes[r.index()]))
+    }
+
     /// Check whether the internal data structure is correct
     pub fn verify_integrity(&self) -> Result<(), crate::Error> {
         let num_atoms = self.atoms.len() as u32;

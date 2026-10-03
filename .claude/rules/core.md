@@ -46,9 +46,10 @@ Only the parser's lowering holds a table with repeats (one entry per
 occurrence, joined by the crate-private `append`), until its `optimize`.
 
 The public surface is read-only accessors (`terms`, `term`, `roots`,
-`atom_names`, `atom_name`, `atom`, `formula`) plus `optimize`, `add` and
-`verify_integrity`; construction goes through the parser or serde. Tests inside
-the crate build arenas as struct literals.
+`atom_names`, `atom_name`, `atom`, `formula`, and `occurrences`, the size
+of the unfolding) plus `optimize`, `add` and `verify_integrity`;
+construction goes through the parser or serde. Tests inside the crate
+build arenas as struct literals.
 
 ## One-sided, negation normal form
 
@@ -133,9 +134,24 @@ of terms. Invariants the code relies on:
 - Two occurrences of one arena term (a shared subterm, or repeated roots)
   are distinct ids with the same `TermId`.
 - `parent` is stored raw as `u32` with `u32::MAX` for a root; the accessor
-  returns `Option<OccId>`. That is why a forest refuses a sequent with
-  `u32::MAX` or more occurrences (`Error::TooManyOccurrences`), which only a
-  deeply shared arena from JSON can produce.
+  returns `Option<OccId>`. That is why no forest has `u32::MAX` or more
+  occurrences (`Forest::MOST`, crate-private, is the most).
+- **A forest is refused before it is built** when the sequent unfolds to
+  more occurrences than a limit (`Error::TooManyOccurrences { occurrences,
+  limit }`): `Forest::new` and `TryFrom<Sequent>` within
+  `Forest::DEFAULT_LIMIT` (50 million: the largest problem of the LLTP
+  library has 27.8 million, and a forest takes about 25 bytes per
+  occurrence), `Forest::within(&sequent, limit)` within another, which
+  `Forest::MOST` caps. `Sequent::occurrences()` is the count: one pass
+  over the arena (`Sequent::sizes`, the occurrences below every term),
+  saturating, since an arena that shares its subterms unfolds
+  exponentially: a JSON sequent of a few hundred bytes whose subterm is
+  shared 25 times over has 67 million occurrences, a forest of 1.9 GiB.
+  The check comes before the sequent is cloned or any per-occurrence
+  array is reserved. Every path that makes a forest of a sequent it was
+  handed (the search's front door, the proofs, nets and interactive
+  states read from JSON) goes through one of the two, so the default
+  limit holds wherever no caller names another.
 - **Atom bias** (`Forest::bias`, computed once in `Forest::new`, a
   function of the sequent alone, so a run stays deterministic; the
   focused engine is its only reader, through `polarity(o)`). Focusing is

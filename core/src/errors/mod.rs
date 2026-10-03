@@ -29,12 +29,21 @@ pub enum Error {
     /// (second).
     #[error("term {1} refers to term {0}, but a subterm must come before the terms that use it")]
     SubtermIndexNotDecreasing(usize, usize),
-    /// A sequent has at least this many subformula occurrences, more than a
-    /// forest can index.
+    /// A sequent has more subformula occurrences than the limit its forest
+    /// was to be built within, or than the parser reads.
     #[error(
-        "the sequent unfolds to at least {0} subformula occurrences, more than a forest can index (2³² − 1)"
+        "the sequent unfolds to at least {occurrences} subformula occurrences, more than the \
+         limit of {limit}; Forest::within builds a forest within another limit, of at most {}",
+        crate::occurrences::Forest::MOST
     )]
-    TooManyOccurrences(u64),
+    TooManyOccurrences {
+        /// How many occurrences the sequent has, or a number of them at
+        /// which the count ended: the parser stops at the first beyond
+        /// the limit, and the count of an arena saturates at `u64::MAX`.
+        occurrences: u64,
+        /// The most occurrences that were allowed.
+        limit: u64,
+    },
     /// The input is not a sequent, for each of the reasons listed.
     #[cfg(feature = "parse")]
     #[error("cannot parse the sequent: {}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join("; "))]

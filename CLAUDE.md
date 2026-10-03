@@ -81,7 +81,10 @@ The core API the CLI builds on: `"…".parse::<Sequent>()`, `Display` for
 pretty-printing, serde behind `serialize`, `Sequent::fragment()` for the
 fragment a sequent lives in (`Fragment::name_in(mode)` for its
 intuitionistic name), `Forest::new(&sequent)` for the occurrence forest
-that proof search works on, `Reading::new(&forest)` for the intuitionistic
+that proof search works on (refused with `Error::TooManyOccurrences` when
+the sequent unfolds to more than `Forest::DEFAULT_LIMIT` occurrences,
+which `Sequent::occurrences()` counts; `Forest::within(&sequent, limit)`
+for another limit), `Reading::new(&forest)` for the intuitionistic
 reading of a sequent (the `Position` of every occurrence, the goal, and
 two-sided printing `Γ ⊢ A`, or a `ShapeError`), and `Proof` for a proof
 term over the forest: `Proof::new(forest, nodes, root)`, `check(mode)` for

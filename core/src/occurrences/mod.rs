@@ -216,11 +216,54 @@ pub struct Forest {
 }
 
 impl Forest {
-    /// Builds the forest of a sequent, keeping a copy of it. Fails only if
-    /// the sequent has more subformula occurrences than a `u32` can index,
-    /// which needs an arena that shares subterms deeply.
+    /// The most occurrences a sequent may have for [`new`](Self::new) to
+    /// build its forest. A forest takes about 25 bytes per occurrence, and
+    /// an arena that shares its subterms unfolds to exponentially more
+    /// occurrences than it has terms, so a sequent of a few hundred bytes
+    /// can ask for gigabytes. The default is well above the largest
+    /// problem of the library this crate measures itself on, which has
+    /// under 28 million occurrences; [`within`](Self::within) takes
+    /// another limit.
+    pub const DEFAULT_LIMIT: u64 = 50_000_000;
+
+    /// The most occurrences a forest can hold: the ids are `u32`, and the
+    /// last one stands for "no occurrence".
+    pub(crate) const MOST: u64 = NONE as u64 - 1;
+
+    /// Builds the forest of a sequent, keeping a copy of it. Fails with
+    /// [`Error::TooManyOccurrences`] if the sequent has more subformula
+    /// occurrences than [`DEFAULT_LIMIT`](Self::DEFAULT_LIMIT), which
+    /// needs an arena that shares subterms deeply or a very large input,
+    /// before anything of that size is built.
     pub fn new(sequent: &Sequent) -> Result<Self, Error> {
-        Self::try_from(sequent.clone())
+        Self::within(sequent, Self::DEFAULT_LIMIT)
+    }
+
+    /// Builds the forest of a sequent of at most `limit` subformula
+    /// occurrences ([`Sequent::occurrences`] counts them), keeping a copy
+    /// of the sequent, and fails with [`Error::TooManyOccurrences`] if it
+    /// has more, before anything of that size is built. A forest indexes
+    /// its occurrences with a `u32`, so no limit admits more than
+    /// 2³² − 2 of them.
+    pub fn within(sequent: &Sequent, limit: u64) -> Result<Self, Error> {
+        let sizes = Self::measure(sequent, limit)?;
+        Ok(Self::build(sequent.clone(), &sizes))
+    }
+
+    /// Returns the number of occurrences below every arena term of a
+    /// sequent, itself included, if the sequent has at most `limit`
+    /// occurrences and no more than a forest can hold.
+    fn measure(sequent: &Sequent, limit: u64) -> Result<Vec<u64>, Error> {
+        let sizes = sequent.sizes();
+        let occurrences = sequent
+            .roots()
+            .iter()
+            .fold(0u64, |sum, r| sum.saturating_add(sizes[r.index()]));
+        let limit = limit.min(Self::MOST);
+        if occurrences > limit {
+            return Err(Error::TooManyOccurrences { occurrences, limit });
+        }
+        Ok(sizes)
     }
 
     /// Returns the sequent the forest was built from.
@@ -472,28 +515,26 @@ impl Forest {
 impl TryFrom<Sequent> for Forest {
     type Error = Error;
 
-    /// Builds the forest of a sequent, taking ownership of it. Fails only if
-    /// the sequent has more subformula occurrences than a `u32` can index.
+    /// Builds the forest of a sequent, taking ownership of it. Fails as
+    /// [`Forest::new`] does if the sequent has more subformula occurrences
+    /// than [`Forest::DEFAULT_LIMIT`].
     fn try_from(sequent: Sequent) -> Result<Self, Error> {
-        let terms = sequent.terms();
+        let sizes = Self::measure(&sequent, Self::DEFAULT_LIMIT)?;
+        Ok(Self::build(sequent, &sizes))
+    }
+}
 
-        // The subtree size of every arena term, in one pass over the arena:
-        // a subterm precedes its parent. Saturation keeps a deep DAG from
-        // overflowing; anything at or beyond NONE is too large either way.
-        let mut term_size = vec![0u64; terms.len()];
-        for (n, term) in terms.iter().enumerate() {
-            term_size[n] = term
-                .subterms()
-                .fold(1u64, |sum, k| sum.saturating_add(term_size[k.index()]));
-        }
-        let total = sequent
+impl Forest {
+    /// Builds the forest of a sequent from the number of occurrences below
+    /// each of its arena terms, itself included, which add up to no more
+    /// than a forest can hold.
+    fn build(sequent: Sequent, term_size: &[u64]) -> Self {
+        let terms = sequent.terms();
+        let n = sequent
             .roots()
             .iter()
-            .fold(0u64, |sum, r| sum.saturating_add(term_size[r.index()]));
-        if total >= u64::from(NONE) {
-            return Err(Error::TooManyOccurrences(total));
-        }
-        let n = total as usize;
+            .map(|r| term_size[r.index()] as usize)
+            .sum();
 
         let mut roots = Vec::with_capacity(sequent.roots().len());
         let mut term = Vec::with_capacity(n);
@@ -569,7 +610,7 @@ impl TryFrom<Sequent> for Forest {
             });
         }
 
-        Ok(Self {
+        Self {
             sequent,
             roots: roots.into_boxed_slice(),
             term: term.into_boxed_slice(),
@@ -582,7 +623,7 @@ impl TryFrom<Sequent> for Forest {
             bias,
             literals: literals.into_boxed_slice(),
             literal_start: literal_start.into_boxed_slice(),
-        })
+        }
     }
 }
 
@@ -901,19 +942,59 @@ mod tests {
             [o(1), o(2), o(3), o(5), o(6)]
         );
 
-        // A chain of 40 tensors of the term below doubles 40 times.
+        // A limit admits a sequent of exactly that many occurrences.
+        assert_eq!(s.occurrences(), 7);
+        assert_eq!(Forest::within(&s, 7).unwrap().len(), 7);
+        assert!(matches!(
+            Forest::within(&s, 6),
+            Err(Error::TooManyOccurrences {
+                occurrences: 7,
+                limit: 6
+            })
+        ));
+
+        // No limit admits more occurrences than a `u32` numbers.
+        let s = doubling(40);
+        assert_eq!(s.occurrences(), (1 << 41) - 1);
+        assert!(matches!(
+            Forest::within(&s, u64::MAX),
+            Err(Error::TooManyOccurrences { occurrences, limit })
+                if occurrences == (1 << 41) - 1 && limit == (1 << 32) - 2
+        ));
+        assert_eq!(doubling(100).occurrences(), u64::MAX, "the count saturates");
+    }
+
+    /// Returns `⊢ 1` under `levels` tensors, each of the term below with
+    /// itself: `levels + 1` terms that unfold to `2^(levels + 1) − 1`
+    /// occurrences.
+    fn doubling(levels: u32) -> Sequent {
         let mut terms = vec![Term::One];
-        for k in 0..40u32 {
+        for k in 0..levels {
             terms.push(Term::Tensor(TermId::new(k), TermId::new(k)));
         }
-        let s = Sequent {
+        Sequent {
             terms,
-            roots: vec![TermId::new(40)],
+            roots: vec![TermId::new(levels)],
             atoms: vec![],
+        }
+    }
+
+    /// A small arena that unfolds past the default limit is refused before
+    /// anything of the unfolding's size is built, borrowed or owned: the
+    /// forest of this one would take gigabytes and seconds.
+    #[test]
+    fn refuses_an_unfolding_past_the_default_limit() {
+        let s = doubling(26);
+        let refused = |result: Result<Forest, Error>| {
+            matches!(
+                result,
+                Err(Error::TooManyOccurrences { occurrences, limit })
+                    if occurrences == (1 << 27) - 1 && limit == Forest::DEFAULT_LIMIT
+            )
         };
-        assert!(matches!(
-            Forest::try_from(s),
-            Err(Error::TooManyOccurrences(n)) if n == (1u64 << 41) - 1
-        ));
+        let start = std::time::Instant::now();
+        assert!(refused(Forest::new(&s)));
+        assert!(refused(Forest::try_from(s)));
+        assert!(start.elapsed() < std::time::Duration::from_secs(1));
     }
 }
