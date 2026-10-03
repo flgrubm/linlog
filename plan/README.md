@@ -1568,3 +1568,25 @@ publishing are the author's acts.
   checker's pass to 23; every integer argument under 32 bits to 27,
   where wasm32 is the first such target; the hasher's fixed seed before
   untrusted proof files deferred in `plan/later.md`. Next: step 21.
+- 2026-10-03: step 21, by its own session (this entry is the step's; its
+  report is `reports/21-defaults.md`): a call without flags deepens the
+  copy bound with no upper end (`Options::copies(None)`; the library's
+  own default keeps 3, since `prove` has no stop) within a time limit of
+  2 s (`--timeout`), on one thread first and after 100 ms with a pool of
+  the other cores beside it (`--pool-after`; `--jobs N` and
+  `--deterministic` as before). An "unknown" names the limit, the time
+  and the copy bound reached, with the flag to try; an "unprovable"
+  carries a `Refutation` (an atom whose literals cannot pair up, the
+  count equation, or the exhausted search), in the text and the JSON.
+  The harness runs `--copies none` and `--pool-after`, every LLTP pass
+  of the baseline and the target set names `--copies 3`, and the
+  baseline has a pass under the default for step 31. Measured at 5 s on
+  two cores: 485 of the 1 003 problems of `lltp-copies-10` and 822 of the
+  1 342 that the Maude prover's files cover (Maude: 659, two only by
+  it), no row of today's default lost on the second set and one on the
+  first, three rows of the larger bounds missed. The first version
+  restarted the search on the pool and lost three problems to it; the
+  single thread now stays beside the pool, each with the whole memory
+  bound. The author allowed a probe, a rerun of 681 problems and a
+  recheck of eight beyond the two named runs. A fresh-context reviewer
+  found the refutations sound. Awaiting review.
