@@ -39,14 +39,19 @@ Workspace crates:
   `--no-check` skips the check every proof otherwise passes. The tree and its
   `--help` text are the doc comments in `argument_parsing.rs`; `prove.rs`
   runs the search on a thread sized from `--recursion-limit` and owns the
-  output; `--copies` bounds the copies of `?` formulas per branch and
+  output; `--copies N|none` bounds the copies of `?` formulas per branch
+  (default none: the deepening goes on while the time limit lasts) and
   `--bias` picks the focused engines' atom bias (`--forward-copies` the
-  bound of the forward search that the default runs on Horn programs);
-  `--jobs N` (default: every core, which is also the most a search uses;
-  more is taken as that with a note) runs the search on a pool and
-  `--deterministic` the sequential engines; `--timeout` counts from the
-  command's start, reading and parsing included (`limit.rs`: a flag a
-  timer thread raises, read at every poll); `--memory-limit SIZE|none`
+  bound of the forward search that the default runs on Horn programs
+  under a `--copies` bound); by default one thread searches for
+  `--pool-after` (100 ms) and then every core takes over afresh, `--jobs
+  N` runs N threads from the start (the most a search uses is every
+  core; more is taken as that with a note) and `--deterministic` the
+  sequential engines; `--timeout DURATION|none` (default 2 s) counts from
+  the command's start, reading and parsing included (`limit.rs`: a flag a
+  timer thread raises, read at every poll); an "unknown" says which bound
+  or limit ended the search, after how long and at which copy bound, an
+  "unprovable" why where the counts tell (`Refutation`); `--memory-limit SIZE|none`
   (default one gibibyte) bounds what a search holds, and
   `--occurrence-limit N|none` (default fifty million, on every command
   that reads a sequent) what a sequent may unfold to; exit status 0 proved/valid,
@@ -108,7 +113,9 @@ and `prove(&sequent, mode,
 polls wherever it can spend time: `.claude/rules/core.md` lists the
 places) for proof search, which
 dispatches on the fragment and the mode and returns an `Outcome` with a
-three-valued `Verdict`, its proof checked before it is returned
+three-valued `Verdict` (`Unprovable` with a `Refutation`: the atom
+whose literals cannot pair up, the count equation, or the exhausted
+search), its proof checked before it is returned
 (`Options::check`), within `Options::memory_limit` bytes (the memo is
 emptied first; `Reason::MemoryLimit` when that is not enough:
 "The memory bound" in `.claude/rules/core.md` says what counts) on a
@@ -118,7 +125,9 @@ when no literal occurs more than twice, in intuitionistic mode by the
 embedding of IMLL into MLL, whose `Outcome` also carries the net found),
 `search::focus` (the focused sequent engine for everything else: MLL with
 units, MALL, MELL and full LL on dyadic sequents with a per-branch copy
-bound that deepens iteratively, `Options::copies`, answering
+bound that deepens iteratively, `Options::copies` (3 in the library's
+default, `None` to deepen until decided or stopped, how far in
+`Statistics::copies`), answering
 `Reason::CopyBound` when it binds, and `Options::bias` for how each atom's
 positive literal is picked, `Bias::Rarer` or `Factors`, which
 changes speed and the copies a proof needs, never provability, or
@@ -203,7 +212,7 @@ cargo run -p linlog-cli -- <args>
 cargo run --release -p linlog-bench -- run --family partition-no=3,4 --engines focus,net
 nix build .#lltp -o bench/lltp   # the LLTP library (1.1 GB, GPL-3.0, fetched at a pinned commit)
 bench/targets.sh LABEL            # the focused engine's target set into bench/targets/LABEL.csv (two cores, about 20 min, detached)
-bench/baseline.sh --arm --fresh   # the whole baseline, unattended from 20:00 to 07:00 (about 10.5 h): bench/results/DAY/, bench/RESULTS.md
+bench/baseline.sh --arm --fresh   # the whole baseline, unattended from 20:00 to 07:00 (about 11.5 h, so it may need a second night): bench/results/DAY/, bench/RESULTS.md
 
 nix flake check   # build, clippy, test, test-debug-assertions (the tests with debug_assert! on, which the release profile drops), doc, deny, features (cargo-hack), export (the LaTeX and Typst output compiles, the SVG renders), rocq (NanoYalla checks the certificates), bench (the harness on the smallest problems), deadnix, actionlint, treefmt, claude-hooks
 nix build .#checks.x86_64-linux.rocq   # the certificates alone: Rocq is a 1.2 GB closure from the binary cache

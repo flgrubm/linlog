@@ -49,10 +49,13 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   refusal of
   sequents outside unit-free MLL and of affine mode (`nets_exist`), before
   the search runs; in intuitionistic mode the net printed is the one of
-  the one-sided sequent. `--copies` (default
-  `Options::DEFAULT_COPIES`) is the per-branch copy bound of the focused
-  engine's iterative deepening; `unknown … the copy bound of N was reached`
-  is exit status 3 like every other unknown. `--bias auto|rarer|factors`
+  the one-sided sequent. `--copies N|none` (`Bound`, default `none`,
+  on `prove` and `interact`) is `Options::copies`: by default the
+  focused engine's deepening goes on until it decides or the time limit
+  passes, and with a number it ends there with `unknown … the copy
+  bound of N was reached after …`, exit status 3 like every other
+  unknown. The library's own default stays a bound of 3, since a library
+  call without a stop condition must end; the command has a time limit. `--bias auto|rarer|factors`
   (`BiasArg`, on `prove` and `interact`) is `Options::bias`: how the
   focused engines pick each atom's positive literal, never what is
   provable; `auto` on a sequent with exponentials runs a search under
@@ -60,7 +63,8 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   `Options::DEFAULT_FORWARD_COPIES`, on both commands too) is
   `Options::forward_copies`, the forward search's own copy bound on
   Horn programs. A test that pins a copy bound's message sets both
-  bounds, or names a bias. `--format net` prints the net the
+  bounds, or names a bias. `--stats` prints `copy bound reached`
+  (`Statistics::copies`) where the fragment has exponentials. `--format net` prints the net the
   net engine found (`Outcome::net`) and otherwise the net read off the
   proof; `--stats` prints the counters of the engine that ran
   (`statistics`, one arm per engine with its own counters). `--format
@@ -125,14 +129,45 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   sequent is read outside any limit: its `--timeout` is a `close`'s.
   The CLI knows why the search stopped (`Stop`), so the verdict line
   says "the time limit of 10s was reached" or "interrupted" instead of
-  `Reason::Stopped`'s generic phrase. `cli/tests/cli.rs::timeout` pins
+  `Reason::Stopped`'s generic phrase. A session's `close` records its
+  `Stop` the same way. `cli/tests/cli.rs::timeout` pins
   the line and the status on one thread, on a pool and during the read.
-- **`--jobs` defaults to the machine's parallelism** (`default_jobs`) and
-  `--deterministic` overrides it with one thread, on `prove` and
-  `interact`: the sequential engines are what a pinned output (a test's
-  `--stats` counts, a proof compared across runs) needs, since a parallel
-  run's counts add every thread's and its proof is the first found. The
-  CLI enables core's `parallel` feature in `cli/Cargo.toml`.
+- **The defaults of a call without flags**, on `prove` and on a
+  session's `close` alike: no copy bound, the time limit
+  `DEFAULT_TIMEOUT` (2 s; `--timeout DURATION|none`, `Time`), and one
+  thread first (`threads` in `argument_parsing.rs` makes `Threads`:
+  without `--jobs` every thread the machine runs at once after
+  `DEFAULT_POOL_AFTER`, 100 ms; `--jobs N` from the start unless
+  `--pool-after` is given; `--deterministic` one thread throughout).
+  `alone_first` in `prove.rs` runs the search on one thread with the
+  command's stop or the pool's timer, and if that answered
+  `Reason::Stopped` by the timer alone, afresh with the threads, adding
+  the first run's counters to the second's (`copies` and `memo_entries`
+  by the maximum). Nothing of the first run is handed on: what it can
+  save is the first budget, a tenth of a second. The sequential engines
+  are what a pinned output (a test's `--stats` counts, a proof compared
+  across runs) needs, since a parallel run's counts add every thread's
+  and its proof is the first found; a test that pins such output names
+  `--deterministic`, and one whose verdict could depend on the
+  machine's speed names `--copies` or `--timeout`. The CLI enables
+  core's `parallel` feature in `cli/Cargo.toml`.
+- **A wait is never silent on a terminal** (`limit.rs`: `Notice`): when
+  standard error is a terminal and the search runs longer than
+  `NOTICE_AFTER` (half a second), a thread writes one line there (how
+  long the search may run, whether it deepens its bound, the flag that
+  changes it, `notice_line`) and takes it back with `\r` and a clear of
+  the line when the search ends; the notice is dropped, and its thread
+  joined, before anything else is written. Nothing is written into a
+  pipe or a file.
+- **What "unknown" says** (`unknown`, shared by `verdict_line` and the
+  session's `verdict`, with `Ended`: the command's `Stop`, the time the
+  search took and the recursion limit): for every `Reason` the bound or
+  limit with its value, after how long (except at the time limit, which
+  says it), at which copy bound where the engine deepened one (the
+  fragment has exponentials, the engine is `focus` or `two-sided`), and
+  the flag to try. The tests compare such lines through `timeless` in
+  `cli/tests/cli.rs`, which writes every time after "after " as `…`.
+  An "unprovable" prints the library's `Refutation`.
 - **Every proof reported has passed the checker**: the library checks it
   before `prove_until` returns (`Options::check`), so `--quiet` and
   `--format json` are checked like the drawn formats; `--no-check`
@@ -243,11 +278,12 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   format builds the net in `net_in`, and one
   whose output is a source file writes the verdict as its comment
   (`note`), so that the output still compiles.
-- **A new `Reason`**: its arm in `verdict_line` and in the session's
-  `close`, which turn a generic phrase into advice (`RecursionLimit`,
-  `CopyBound` and `MemoryLimit` name the flag to raise); the default
-  arm prints `Reason`'s `Display`, as for `IndexLimit`, which no flag
-  raises.
+- **A new `Reason`**: its arm in `unknown` (`prove.rs`), which turns a
+  generic phrase into advice (`RecursionLimit`, `CopyBound` and
+  `MemoryLimit` name the flag to raise); the default arm prints
+  `Reason`'s `Display` with the time, as for `IndexLimit`, which no flag
+  raises. A new `Refutation` needs nothing here: its `Display` is the
+  line.
 - Stay out of `core`'s way: no clap types or exit statuses in `core`, and
   the CLI never re-implements what `core` computes (fragment names, the
   mode's words, the JSON form).

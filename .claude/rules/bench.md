@@ -359,7 +359,23 @@ beyond clap and anyhow, which the CLI already has.
   absent it is the library's default, 0 is no bound, and a file from
   before the column ran without one, which is how `finished` and the
   summary read an empty field. The reasons `memory_limit` and
-  `index_limit` are the two the bound added.
+  `index_limit` are the two the bound added. After it come
+  `copies_reached` (`Statistics::copies`: how far the deepening got) and
+  `pool_after` (`--pool-after SECONDS`: the child searches on one thread
+  that long and then afresh on `--jobs` threads, adding the counters of
+  both runs, as the command does by default; empty for threads from the
+  start, which is what a file from before the column ran). `--copies
+  none` (`run::Bound`) is a search without a bound, written `none` in
+  the `copies` column; without the flag the copy bound is still the
+  problem's, else 3, so the harness's own defaults did not move when the
+  command's did. Every LLTP pass of `baseline.sh` and `targets.sh` names
+  `--copies 3` all the same, so that a later change of the harness's
+  default leaves them the passes of the earlier baselines; the families
+  keep their own bounds. `baseline.sh`'s stage 3 ends with
+  `lltp-default`: the intuitionistic library under the command's
+  default (`--copies none --jobs all --pool-after 0.1 --timeout 2`),
+  about an hour and a quarter, since some two thousand problems wait the
+  whole limit.
 
 ## Heap profiles
 

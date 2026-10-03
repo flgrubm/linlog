@@ -36,8 +36,16 @@ provable (ALL, classical, additive engine)
 ⊢ ~A ⊕ ~B, A ⊕ B
 
 $ linlog prove "|- A par B, ~A, ~B"
-unprovable (MLL, classical, net engine): the search was exhaustive
+unprovable (MLL, classical, net engine): the count equation fails: a provable one-sided sequent of MLL with 0 ⊗, 1 ⅋, 0 1 and 0 ⊥ has exactly 0 − 1 − 0 + 0 + 2 = 1 formulas, and this one has 3
+$ linlog prove "A |- B"
+unprovable (MLL, classical, net engine): ~A occurs 1 more time than A, so they cannot all meet in axioms
 ```
+
+An unprovable verdict says why where the counts of the sequent tell: an
+atom whose literals cannot all meet their duals in axioms (whichever
+additive alternatives a proof takes), or the count equation of the
+multiplicatives; otherwise it says that the search was exhaustive. The
+JSON output carries the same as `refutation`.
 
 Three engines serve classical logic: for MLL without units whose literals
 occur at most twice each, the *net engine* searches for an axiom linking
@@ -47,8 +55,8 @@ everything else the *focus engine* runs a focused sequent search over
 bitsets (on repeated literals its count-based pruning beats the linking
 search by orders of magnitude). `--mix`, `--affine` and `--intuitionistic`
 choose the logic, `--fragment` and `--engine focus|net|two-sided|additive`
-override what detection picks, `--timeout 10s`,
-`--copies N` and `--forward-copies N` bound the search, `--quiet` prints the verdict line only
+override what detection picks, `--timeout`, `--copies N` and
+`--forward-copies N` bound the search (below), `--quiet` prints the verdict line only
 and `--stats` what the search cost, in the counters of the engine that
 ran:
 
@@ -93,9 +101,12 @@ error: proof nets exist for MLL without units only, not for ALL
 ```
 
 With exponentials (MELL and full LL) the focus engine searches dyadic
-sequents, copying a `?` formula at most `--copies` times on any branch
-(3 by default) and deepening that bound from zero. The derivation shows the
-standard rules: dereliction, contraction, weakening and promotion.
+sequents under a bound on how often a `?` formula is copied on one branch,
+which it deepens from zero: by default it goes on to the next bound until
+it decides or the time limit passes, two seconds unless `--timeout` says
+otherwise (`--timeout none` lifts it), and `--copies N` caps the bound at
+N. The derivation shows the standard rules: dereliction, contraction,
+weakening and promotion.
 
 ```console
 $ linlog prove "!A |- A * A"
@@ -122,23 +133,53 @@ provable (MELL, classical, focus engine)
   ⊢ ?~A, ?(A ⊗ ~B), ?(B ⊗ ~C), C
 ```
 
-Provability in MELL has no known decision procedure, so the verdict is
-three-valued: "unprovable" is reported only when a bound was searched
-exhaustively without ever hitting it, and "unknown" when every bound up to
-`--copies` was hit:
+Provability in MELL has no known decision procedure, and full linear logic
+is undecidable, so the verdict is three-valued: "unprovable" is reported
+only when a bound was searched exhaustively without ever hitting it, and
+"unknown" when the time limit, the bound of `--copies` or another limit
+ended the search first. The line says which, after how long, at which copy
+bound, and which flag changes it; `--stats` adds the copy bound reached:
 
 ```console
+$ linlog prove -q "!(A & B) |- A * B"
+provable (LL, classical, focus engine)
 $ linlog prove -q --copies 1 "!(A & B) |- A * B"
-unknown (LL, classical, focus engine): the copy bound of 1 was reached; raise it with --copies
+unknown (LL, classical, focus engine): the copy bound of 1 was reached after 54.08µs; raise it with --copies N, or lift it with --copies none to deepen it while the time limit lasts
 $ linlog prove -q "A |- !A"
 unprovable (MELL, classical, focus engine): the search was exhaustive
-$ linlog prove -q "!(A -o A * A), A |- ?B"
-unknown (MELL, classical, focus engine): the copy bound of 3 was reached; raise it with --copies
+$ linlog prove -q "!(A -o A * A), !(B * B -o C), A, B |- C"
+unknown (MELL, classical, focus engine): the time limit of 2s was reached at a copy bound of 512; --timeout DURATION gives the search longer
 ```
+
+The deepening is why a call without flags answers within its time limit
+whatever it is given, and why an answer near the limit depends on the
+machine: a script that must get the same answer everywhere names its
+bound (`--copies`) or lifts the limit (`--timeout none`), and
+`--deterministic` (below) makes the statistics a function of the input:
+
+```console
+$ linlog prove -q --deterministic --stats --bias rarer --copies 3 "!(A -o B), !(B -o C), !(C -o D), !(D -o E), A |- E"
+unknown (MELL, classical, focus engine): the copy bound of 3 was reached after 36.65µs; raise it with --copies N, or lift it with --copies none to deepen it while the time limit lasts
+stable sequents visited: 10 (0 from the memo)
+memo entries at most: 4
+splits examined: 24
+copy bound reached: 3
+time: 36.65µs
+$ linlog prove -q --deterministic --stats --bias rarer --timeout none "!(A -o B), !(B -o C), !(C -o D), !(D -o E), A |- E"
+provable (MELL, classical, focus engine)
+stable sequents visited: 15 (0 from the memo)
+memo entries at most: 5
+splits examined: 28
+copy bound reached: 4
+time: 60.01µs
+```
+
+While a search runs longer than half a second, a line on standard error
+says so when that is a terminal, and goes again when the answer comes.
 
 `--affine` allows weakening: a hypothesis may go unused, which the
 derivation shows as `wk` below the leaf that leaves it over. With
-exponentials the affine search is bounded by `--copies` like the linear
+exponentials the affine search deepens its copy bound like the linear
 one:
 
 ```console
@@ -149,7 +190,7 @@ provable (MLL, classical affine, focus engine)
 ─────────── wk
 ⊢ ~A, ~B, A
 $ linlog prove -q -a "!(A -o A * A), A |- ?B"
-unknown (MELL, classical affine, focus engine): the copy bound of 3 was reached; raise it with --copies
+unknown (MELL, classical affine, focus engine): the time limit of 2s was reached at a copy bound of 18; --timeout DURATION gives the search longer
 ```
 
 The focused engines treat one literal of every atom as positive, which
@@ -164,8 +205,9 @@ but a forward chain takes one copy per step on a single branch, where
 `rarer` chains backward from the goal within a few. So on a sequent with
 exponentials `auto` runs both searches and answers with the first that
 decides: alternating in slices of work on one core, so that the run stays
-a function of the input, and side by side on several. The backward search is
-bounded by `--copies`; so is the forward one, except on a Horn program
+a function of the input, and side by side on several. By default both
+deepen while the time limit lasts. Under `--copies N` the backward search
+keeps to the bound; so does the forward one, except on a Horn program
 (clauses such as `!(a * b -o c * d)`, a marking and a goal of atoms, which
 is what a Petri net is), where it runs within `--forward-copies` (30 by
 default), a bound in steps of the chain:
@@ -176,23 +218,26 @@ provable (MELL, classical, focus engine)
 stable sequents visited: 47 (5 from the memo)
 memo entries at most: 9
 splits examined: 151
-time: 66.19µs
+copy bound reached: 7
+time: 136.45µs
 $ linlog prove -q --deterministic --stats --bias rarer "!(a * a -o b), !(b * b -o c), !(c * c -o d), a, a, a, a, a, a, a, a |- d"
 provable (MELL, classical, focus engine)
 stable sequents visited: 14228 (13935 from the memo)
 memo entries at most: 190
 splits examined: 42105
-time: 2.11ms
-$ linlog prove -q --deterministic --stats --bias factors "!(a * a -o b), !(b * b -o c), !(c * c -o d), a, a, a, a, a, a, a, a |- d"
-unknown (MELL, classical, focus engine): the copy bound of 3 was reached; raise it with --copies
+copy bound reached: 3
+time: 1.79ms
+$ linlog prove -q --deterministic --stats --bias factors --copies 3 "!(a * a -o b), !(b * b -o c), !(c * c -o d), a, a, a, a, a, a, a, a |- d"
+unknown (MELL, classical, focus engine): the copy bound of 3 was reached after 55.51µs; raise it with --copies N, or lift it with --copies none to deepen it while the time limit lasts
 stable sequents visited: 11 (0 from the memo)
 memo entries at most: 5
 splits examined: 31
-time: 31.60µs
+copy bound reached: 3
+time: 55.51µs
 $ linlog prove -q --copies 1 "!A, !(A -o B), !(B -o C) |- C"
 provable (MELL, classical, focus engine)
 $ linlog prove -q --copies 1 --forward-copies 1 "!A, !(A -o B), !(B -o C) |- C"
-unknown (MELL, classical, focus engine): the copy bound of 1 was reached; raise it with --copies
+unknown (MELL, classical, focus engine): the copy bound of 1 was reached after 149.56µs; raise it with --copies N, or lift it with --copies none to deepen it while the time limit lasts
 ```
 
 `--timeout` counts from the start of the command, so it covers reading
@@ -201,7 +246,7 @@ within a fraction of a second of it, on one thread and on several:
 
 ```console
 $ linlog prove -q --copies 12 --forward-copies 12 --timeout 1s "!(A -o A * A), !(B * B -o C), A, B |- C"
-unknown (MELL, classical, focus engine): the time limit of 1s was reached
+unknown (MELL, classical, focus engine): the time limit of 1s was reached at a copy bound of 12; --timeout DURATION gives the search longer
 $ linlog prove -q -i --timeout 1s --file SYJ212+1.020.txt
 unknown: the time limit of 1s was reached while the sequent was read
 ```
@@ -210,10 +255,15 @@ The second sequent is the largest problem of the LLTP library in linlog's
 syntax, a file of 86 MB that takes twelve seconds to parse; both commands
 end with exit status 3 a second after they started.
 
-The search runs on every core by default: `--jobs N` (`-j`) sets the
-threads, and `--deterministic` runs the sequential engines, whose proof
-and statistics are a function of the input, where a parallel run may find
-a different proof of the same sequent, never a different verdict. The
+By default the search runs on one thread first, and if that has not
+decided within a tenth of a second (`--pool-after`), every core the machine
+runs at once takes over, starting the search afresh: a small sequent is
+decided at once and always the same way, and a hard one gets the machine.
+`--jobs N` (`-j`) runs N threads from the start (with `--pool-after`, after
+one thread), and `--deterministic` runs the sequential engines throughout,
+whose proof and statistics are a function of the input, where a parallel
+run may find a different proof of the same sequent, never a different
+verdict. The
 focus engine splits the choices nearest the root among the threads and
 shares its memo; the net engine splits its search into cubes at its
 first choices, and where every link is forced it makes each link once,
@@ -222,10 +272,10 @@ search never uses more threads than the machine runs at once, and a
 larger `--jobs` is taken as that many, with a note:
 
 ```console
-$ linlog prove -q -j 4 "!(A -o A * A), !(B * B -o C), A, B |- A * A * A"
-unknown (MELL, classical, focus engine): the copy bound of 3 was reached; raise it with --copies
-$ linlog prove -q --deterministic "!(A -o A * A), !(B * B -o C), A, B |- A * A * A"
-unknown (MELL, classical, focus engine): the copy bound of 3 was reached; raise it with --copies
+$ linlog prove -q -j 4 --copies 3 "!(A -o A * A), !(B * B -o C), A, B |- A * A * A"
+unknown (MELL, classical, focus engine): the copy bound of 3 was reached after 1.79ms; raise it with --copies N, or lift it with --copies none to deepen it while the time limit lasts
+$ linlog prove -q --deterministic --copies 3 "!(A -o A * A), !(B * B -o C), A, B |- A * A * A"
+unknown (MELL, classical, focus engine): the copy bound of 3 was reached after 2.55ms; raise it with --copies N, or lift it with --copies none to deepen it while the time limit lasts
 $ linlog prove -q -j 10000 "A |- A"
 note: --jobs 10000 is more than the 16 threads a search uses at most on this machine; it uses 16
 provable (MLL, classical, net engine)
@@ -287,7 +337,7 @@ unprovable (IMALL, intuitionistic, two-sided engine): the search was exhaustive
 ```
 
 The exit status tells scripts the verdict: 0 provable, 1 unprovable, 3
-unknown (the copy bound, the time limit or Ctrl-C stopped the search), 2 an
+unknown (the time limit, a bound, a limit or Ctrl-C stopped the search), 2 an
 error, such as a sequent outside the asserted fragment or an engine forced
 on a sequent it cannot search.
 
@@ -333,9 +383,9 @@ time and never an answer; when that is not enough, the verdict is
 
 ```console
 $ linlog prove --memory-limit 100 "|- (a & b) + (a & c), ~a par (~b & ~c)"
-unknown (MALL, classical, focus engine): the memory limit of 100 B was reached; raise it with --memory-limit
+unknown (MALL, classical, focus engine): the memory limit of 100 B was reached after 32.28µs; raise it with --memory-limit SIZE
 $ linlog prove --memory-limit 100 --format json "|- (a & b) + (a & c), ~a par (~b & ~c)"
-{"verdict":"unknown","reason":{"memory_limit":100},"fragment":"MALL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"focus","statistics":{"nodes":0,"memo_hits":0,"memo_entries":0,"splits":0,"links":0,"tests":0}}
+{"verdict":"unknown","reason":{"memory_limit":100},"fragment":"MALL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"focus","statistics":{"nodes":0,"memo_hits":0,"memo_entries":0,"splits":0,"links":0,"tests":0,"copies":0}}
 ```
 
 The bound counts what grows with the search (what it remembers, the
@@ -363,7 +413,7 @@ logic flags):
 
 ```console
 $ linlog prove --format json "A |- A"
-{"verdict":"proved","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"net","statistics":{"nodes":1,"memo_hits":0,"memo_entries":0,"splits":0,"links":1,"tests":1},"sequent":{"terms":[{"D":0},{"V":0}],"ids":[0,1],"var_dict":["A"]},"proof":[{"ax":[0,1]}]}
+{"verdict":"proved","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"net","statistics":{"nodes":1,"memo_hits":0,"memo_entries":0,"splits":0,"links":1,"tests":1,"copies":0},"sequent":{"terms":[{"D":0},{"V":0}],"ids":[0,1],"var_dict":["A"]},"proof":[{"ax":[0,1]}]}
 $ linlog prove --format json "A |- A" | linlog check --quiet
 valid proof of ⊢ ~A, A (classical)
 ```
@@ -625,7 +675,10 @@ $ linlog-bench summary --before bench/results/2026-09-30 bench/results/2026-10-0
 
 `run --bias rarer|factors` runs the focused engines under that bias and
 `run --forward-copies N` the default's forward search within that bound,
-and the rows say which. `bench/targets.sh LABEL` runs the target set of the
+and the rows say which. `run --copies none` deepens the copy bound until
+the time limit, and `run --pool-after SECONDS` searches on one thread for
+that long before the `--jobs` threads take over, as the command does by
+default; the rows have the copy bound reached (`copies_reached`). `bench/targets.sh LABEL` runs the target set of the
 focused engine's performance work, the instances the first baseline
 showed it losing on (the hard families at the sizes that took minutes or
 did not finish, and a fixed sample of 113 LLTP problems), on two pinned
@@ -638,7 +691,7 @@ input, so two such files tell whether a change altered the search at all.
 family, engine and thread count and the whole LLTP library, unattended
 in the night: a user timer starts it as a systemd user unit at 20:00 (or
 at once if that has passed), where it waits for an otherwise idle
-machine, runs about ten hours at most, and is stopped at 07:00
+machine, runs about eleven and a half hours, and is stopped at 07:00
 whatever its state (`--slot=HH:MM-HH:MM` for other times; the script run
 again without `--fresh` finishes a stopped baseline on another night).
 Every baseline keeps a directory of its own named by the day it started,
@@ -692,7 +745,8 @@ Built:
   several times, an atom bias chosen from the sequent or by `--bias`
   (with exponentials a forward and a backward search together), a
   per-branch bound on the copies of `?` formulas that deepens
-  iteratively, and a loop check, one-sided or two-sided; for
+  iteratively, without end or up to a bound, and a loop check, one-sided
+  or two-sided; for
   MLL without units a proof-net engine that searches the axiom linkings
   with count checks, constant-time cycle rejections, the exact acyclicity
   test and a symmetry break for repeated literal conclusions, then
@@ -739,9 +793,17 @@ Built:
   "unknown" with the reason), a sequent unfolds to at most
   `--occurrence-limit` occurrences, and no walk over a formula, a net
   or a derivation recurses on the input's depth.
+- Defaults a newcomer can use, each of them an option: the copy bound
+  deepens while a time limit of two seconds lasts, one thread searches
+  for a tenth of a second before every core takes over, an "unknown"
+  says which bound or limit ended the search, after how long and at which
+  copy bound, with the flag that changes it, and an "unprovable" says why
+  where the counts of the sequent tell (an atom whose literals cannot
+  pair up, the count equation that fails).
 - The `linlog` command: `prove`, `check`, `interact` and `seq`, with time
   limits, Ctrl-C, statistics, JSON output, proof nets, LaTeX, Typst,
-  SVG and Rocq output, and `--jobs` and `--deterministic` for the search;
+  SVG and Rocq output, and `--jobs`, `--pool-after` and `--deterministic`
+  for the search;
   a proof tree is printed on a terminal where it fits, and a derivation
   past `--derivation-limit` is left out with a line that says so.
 - Benchmarks: a reader for the problems of the LLTP library, generated
@@ -756,9 +818,6 @@ Built:
 
 Planned, in roughly this order:
 
-- Sensible defaults, each of them an option: a copy bound that deepens
-  within a default time limit, one thread before several, and reasons
-  with every "unknown" and "unprovable".
 - Output configured through the library (styles, rule labels, the
   certificate's names), LaTeX and Typst output that sets no font, Typst
   trees of any height, and a compact view of large derivations.

@@ -734,17 +734,18 @@ goal other than the roots
 has a root that concludes the goal, so `Proof::check` rejects it; only
 `Interactive` consumes such proofs, by grafting their derivation, and
 `Derivation::of_goal` checks them against the goal on the way. Where
-`Outcome` carries the `Verdict` (`Proved(Box<Proof>)`, `Unprovable` only
-after an exhaustive search, which with exponentials means a deepening
-level that never hit the copy bound, `Unknown(Reason)`, with
-`Reason::CopyBound` when every level hit it), the `Fragment` searched in,
+`Outcome` carries the `Verdict` (`Proved(Box<Proof>)`, `Unprovable(Refutation)`
+only after an exhaustive search, which with exponentials means a
+deepening level that never hit the copy bound, `Unknown(Reason)`, with
+`Reason::CopyBound` when every level up to a bound hit it), the `Fragment` searched in,
 the `Mode`, the `Engine` that ran, the `Statistics`, and `net`, the
 `ProofStructure` the net engine found (`None` from the focused engine).
 `Options` has private fields and setters (`memo_limit`, `recursion_limit`,
 `engine`, `fragment`, `test_period`, `copies`, `jobs`,
 `bias`, `forward_copies`, `check`, `memory_limit`, `occurrence_limit`),
 the constants `DEFAULT_MEMO_LIMIT`, `DEFAULT_RECURSION_LIMIT`,
-`DEFAULT_COPIES`, `DEFAULT_FORWARD_COPIES`, `DEFAULT_MEMORY_LIMIT` (one
+`DEFAULT_COPIES` (the library's default bound; `copies` takes an
+`Option`, `None` for none), `DEFAULT_FORWARD_COPIES`, `DEFAULT_MEMORY_LIMIT` (one
 gibibyte) and `DEFAULT_OCCURRENCE_LIMIT` (`Forest::DEFAULT_LIMIT`),
 which the CLI shows as its defaults, `MAX_JOBS` (256: `jobs` takes more
 as that many, and zero as one), and `stack_size()`,
@@ -757,6 +758,25 @@ sequents for `focus` and literals chosen for `net`; `memo_hits`,
 `memo_entries` and `splits` are the focused engine's, `links` and `tests`
 the net engine's, and the others stay zero.
 
+- **A refutation says what the counts rule out** (`Refutation`,
+  `focus::refutation`, called by `prove_goal` on every `Unprovable` of
+  every engine, which construct `Refutation::Exhausted`). It builds the
+  focused engine's `Counts` (fresh account, the caller's stop: a pass
+  given up is `Exhausted`, which is always true of the verdict), tallies
+  the goal's members, and reports the first atom by the sequent's order
+  whose summed interval excludes zero (`Tally::unbalanced`, through
+  `Counts::ranked`, the atoms that have rows by rank), else the count
+  equation when `Rules` applies it, with the goal's `⊗`, `⅋`, `1` and
+  `⊥` counted. Why the goal's sums are a refutation although the engine
+  tests stable sequents only: the asynchronous phase keeps them (a `⅋`
+  adds a member and a `−1` of weight, a `⊥` takes a member and a `+1`,
+  a premise of `&` lies in its hull, a `?` moves a formula whose atoms
+  have no rows), so every stable sequent the goal reaches fails the same
+  test, under the same `Rules` the engine searched with. It runs only on
+  a refutation, after the search, so no counter of a run moves; its
+  time is one more `Counts` pass on a refuted sequent. Without a
+  refutation from the counts (a `⊤` absorbs, weakening, exponential
+  atoms) the answer is `Exhausted`, never a guess.
 - The dispatch is plan decision D8. Unit-free MLL (the empty fragment
   included) in classical mode goes to `net` when no literal occurs more
   than `NET_MULTIPLICITY` (2) times (`prefers_net`: equal literals are
@@ -1011,7 +1031,15 @@ relies on:
   `Copy(p⊥)` above `Ax(p, p⊥)`, so that the bound counts every `?d` of the
   derivation. `run` deepens the budget from 0 to the search's bound
   (`Options::copies`; the forward search of the default bias may have
-  a larger one, below). A
+  a larger one, below), or without end where `copies` is `None`
+  (`Options::copy_bound` is then `u32::MAX`, which the inclusive range
+  reaches without a wrap and no search reaches at all: every level
+  visits a stable sequent). `Statistics::copies` is the budget of the
+  last level begun, of two searches the larger (`Statistics::add` takes
+  the maximum), which is how far an unbounded search got when its stop
+  fired. The library's default keeps `DEFAULT_COPIES` (3): `prove` has
+  no stop condition, and a search without a bound ends only when it
+  decides; the command's default is `None` under a time limit. A
   level whose search skipped a copy for lack of budget sets `exhausted`;
   `Unprovable` is answered only by a level that ends with the flag clear,
   and `Reason::CopyBound` when every level set it. The flag is saved and
@@ -1139,6 +1167,17 @@ relies on:
     reported as `CopyBound(Options::copies)`, which is true of both
     searches (the forward one was cut at every level up to its own
     bound, which is at least that).
+  - **Without a copy bound** (`Options::copies(None)`, the command's
+    default) both searches deepen until one decides or the stop fires,
+    and the forward bound has no effect (the larger of no bound and 30
+    is none). The identity above holds as it is: each search is the
+    explicit one without a bound, whose levels up to any `n` are those
+    of the same search under `Some(n)`, so with no stop firing the
+    unbounded default decides whatever the default under any bound
+    decides, and whatever either explicit search decides. The price is
+    the backward search's share: on a sequent where the forward one
+    used to end at its bound and hand over the core, it keeps a third of
+    the work (on one core) until the stop.
   - **The forward bound** is `Options::copies`, and the larger of that
     and `Options::forward_copies` (`DEFAULT_FORWARD_COPIES`) where the
     sequent is a Horn program (`chains`) and the mode has no Mix. A
