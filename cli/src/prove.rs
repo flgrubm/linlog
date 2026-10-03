@@ -328,7 +328,8 @@ pub fn sequent_in(
             SequentFormat::Svg => svg::sequent(sequent, &Style::default()),
         });
     }
-    let forest = Forest::new(sequent)?;
+    // The sequent was admitted when it was read.
+    let forest = Forest::within(sequent, u64::MAX)?;
     let reading = Reading::new(&forest)
         .map_err(|e| anyhow!("not an intuitionistic sequent: {}", e.describe(&forest)))?;
     Ok(match format {
@@ -368,7 +369,7 @@ fn note(format: Format, text: &str) -> String {
 /// Returns a search error with formulas where the library's message has
 /// occurrence ids.
 pub(crate) fn describe(error: Error, sequent: &Sequent) -> anyhow::Error {
-    match (&error, Forest::new(sequent)) {
+    match (&error, Forest::within(sequent, u64::MAX)) {
         (Error::NotIntuitionistic(e), Ok(forest)) => {
             anyhow!("not an intuitionistic sequent: {}", e.describe(&forest))
         }
@@ -440,10 +441,7 @@ fn unread(args: &ProveArgs, limit: Duration) -> Result<Status> {
 pub fn prove(args: &ProveArgs) -> Result<Status> {
     let deadline = Deadline::start(args.timeout, Instant::now())?;
     let input = args.input.clone();
-    let loaded = deadline.within(move || {
-        let sequent = input.sequent()?;
-        Ok::<_, anyhow::Error>(Forest::try_from(sequent)?)
-    })?;
+    let loaded = deadline.within(move || input.forest())?;
     let Some(forest) = loaded else {
         let limit = deadline.limit().expect("only a limit passes");
         return unread(args, limit);
@@ -463,6 +461,8 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         .bias(args.bias.into())
         .forward_copies(args.forward_copies)
         .check(!args.no_check)
+        .memory_limit(args.memory_limit.0)
+        .occurrence_limit(args.input.most())
         .jobs(jobs(args.jobs, args.deterministic));
     let format = args.output.format;
     let quiet = args.output.quiet;
@@ -574,6 +574,9 @@ fn verdict_line(outcome: &Outcome, asserted: bool, stop: Option<Stop>) -> String
                     format!("{reason}; raise it with --recursion-limit")
                 }
                 (Reason::CopyBound(_), _) => format!("{reason}; raise it with --copies"),
+                (Reason::MemoryLimit(_), _) => {
+                    format!("{reason}; raise it with --memory-limit")
+                }
                 _ => reason.to_string(),
             };
             format!("unknown ({context}): {why}")

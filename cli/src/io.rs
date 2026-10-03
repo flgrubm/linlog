@@ -3,7 +3,7 @@
 
 use crate::argument_parsing::SequentInput;
 use anyhow::{Context, Result, bail};
-use linlog::Sequent;
+use linlog::{Forest, Sequent};
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::Path;
@@ -37,11 +37,37 @@ impl SequentInput {
             Some(text) => text.clone(),
             None => read(self.file.as_deref(), "sequent")?,
         };
-        if self.json_input {
-            serde_json::from_str(&text).context("not a sequent in JSON")
+        let sequent: Sequent = if self.json_input {
+            serde_json::from_str(&text).context("not a sequent in JSON")?
         } else {
-            text.parse().map_err(|e| crate::parse_error(&text, e))
+            text.parse().map_err(|e| crate::parse_error(&text, e))?
+        };
+        // Refused here, before any command unfolds or prints it.
+        let occurrences = sequent.occurrences();
+        if occurrences > self.most() {
+            bail!(
+                "the sequent unfolds to {} subformula occurrences, more than the limit of {}; \
+                 raise it with --occurrence-limit",
+                if occurrences == u64::MAX {
+                    "more than 10¹⁹".to_owned()
+                } else {
+                    occurrences.to_string()
+                },
+                self.most()
+            );
         }
+        Ok(sequent)
+    }
+
+    /// Returns the most occurrences the sequent may have.
+    pub fn most(&self) -> u64 {
+        self.occurrence_limit.0.unwrap_or(u64::MAX)
+    }
+
+    /// Reads the sequent and lays it out as a forest, within the limit on
+    /// its occurrences.
+    pub fn forest(&self) -> Result<Forest> {
+        Ok(Forest::from_owned(self.sequent()?, self.most())?)
     }
 }
 

@@ -250,6 +250,14 @@ impl Forest {
         Ok(Self::build(sequent.clone(), &sizes))
     }
 
+    /// Builds the forest of a sequent as [`within`](Self::within) does,
+    /// taking the sequent instead of copying it: of a sequent of millions
+    /// of terms the copy is memory worth saving.
+    pub fn from_owned(sequent: Sequent, limit: u64) -> Result<Self, Error> {
+        let sizes = Self::measure(&sequent, limit)?;
+        Ok(Self::build(sequent, &sizes))
+    }
+
     /// Returns the number of occurrences below every arena term of a
     /// sequent, itself included, if the sequent has at most `limit`
     /// occurrences and no more than a forest can hold.

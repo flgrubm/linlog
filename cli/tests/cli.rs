@@ -121,6 +121,75 @@ fn timeout() {
 /// `--jobs` beyond what the machine runs at once is taken as that many,
 /// and standard error says so; the verdict and the status are the
 /// search's.
+/// A search that holds more than `--memory-limit` allows answers
+/// "unknown" with the limit and the flag, exit status 3, and a sequent
+/// that unfolds beyond `--occurrence-limit` is an error before it is
+/// unfolded: 25 doublings of one atom are 427 bytes of JSON and 67 million
+/// occurrences.
+#[test]
+fn limits_on_memory_and_occurrences() {
+    let literals: Vec<String> = (0..40).map(|i| format!("x{i}")).collect();
+    let sequent = format!(
+        "|- p * q, 0 * (~p par ~p), 0 * (~q par ~q), {}",
+        literals.join(", ")
+    );
+    for threads in [["--deterministic"].as_slice(), &["--jobs", "2"]] {
+        let args = [
+            &["prove", "-a", "--memory-limit", "1KiB"],
+            threads,
+            &[&sequent],
+        ]
+        .concat();
+        assert_eq!(
+            linlog(&args, ""),
+            (
+                3,
+                "unknown (MALL, classical affine, focus engine): the memory limit of 1 KiB was \
+                 reached; raise it with --memory-limit\n"
+                    .to_owned(),
+                String::new()
+            )
+        );
+    }
+
+    let doublings: Vec<String> = (0..25).map(|i| format!(r#"{{"⊗":[{i},{i}]}}"#)).collect();
+    let shared = format!(
+        r#"{{"terms":[{{"V":0}},{}],"ids":[25],"var_dict":["A"]}}"#,
+        doublings.join(",")
+    );
+    for command in [
+        ["prove"].as_slice(),
+        &["seq", "print"],
+        &["seq", "fragment"],
+    ] {
+        let (status, out, err) = linlog(&[command, &["--json-input"]].concat(), &shared);
+        assert_eq!(
+            (status, out.as_str(), err.as_str()),
+            (
+                2,
+                "",
+                "error: the sequent unfolds to 67108863 subformula occurrences, more than the \
+                 limit of 50000000; raise it with --occurrence-limit\n"
+            )
+        );
+    }
+    let (status, _, err) = linlog(
+        &["seq", "fragment", "--occurrence-limit", "2", "A |- A * A"],
+        "",
+    );
+    assert!(
+        status == 2 && err.contains("to 4 subformula occurrences"),
+        "{err}"
+    );
+    assert_eq!(
+        linlog(
+            &["seq", "fragment", "--occurrence-limit", "none", "A |- A"],
+            ""
+        ),
+        (0, "MLL\n".to_owned(), String::new())
+    );
+}
+
 #[test]
 fn jobs_are_bounded() {
     let (status, out, err) = linlog(&["prove", "--quiet", "--jobs", "100000", "A |- A"], "");

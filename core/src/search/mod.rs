@@ -100,8 +100,8 @@ pub(crate) fn set_up_stopped(forest: &Forest, stop: &mut dyn FnMut() -> bool) ->
 /// focus engine in intuitionistic mode and the two-sided engine in
 /// classical mode ([`Error::EngineMode`]); the additive engine on anything
 /// but two additive-only formulas ([`Error::NotAdditive`]); and a sequent
-/// with more subformula occurrences than a forest can index
-/// ([`Error::TooManyOccurrences`]). A proof that the checker rejects is
+/// that unfolds to more subformula occurrences than
+/// [`Options::occurrence_limit`] allows ([`Error::TooManyOccurrences`]). A proof that the checker rejects is
 /// [`Error::Rejected`]: every proof returned has passed it, unless
 /// [`Options::check`] says otherwise.
 ///
@@ -175,7 +175,7 @@ pub fn prove_until(
     options: &Options,
     stop: impl FnMut() -> bool,
 ) -> Result<Outcome, Error> {
-    let forest = Forest::new(sequent)?;
+    let forest = Forest::within(sequent, options.occurrence_limit)?;
     prove_goal(&forest, forest.roots(), mode, options, stop)
 }
 
@@ -488,6 +488,8 @@ pub struct Options {
     check: bool,
     /// The most bytes the search may hold at once, or `None` for no bound.
     memory_limit: Option<u64>,
+    /// The most subformula occurrences a sequent may unfold to.
+    occurrence_limit: u64,
 }
 
 impl Default for Options {
@@ -499,8 +501,11 @@ impl Default for Options {
     /// [`DEFAULT_COPIES`](Self::DEFAULT_COPIES), one of
     /// [`DEFAULT_FORWARD_COPIES`](Self::DEFAULT_FORWARD_COPIES) for the
     /// forward search of the default bias, one thread, every proof
-    /// checked ([`DEFAULT_CHECK`](Self::DEFAULT_CHECK)), and a memory
-    /// bound of [`DEFAULT_MEMORY_LIMIT`](Self::DEFAULT_MEMORY_LIMIT).
+    /// checked ([`DEFAULT_CHECK`](Self::DEFAULT_CHECK)), a memory
+    /// bound of [`DEFAULT_MEMORY_LIMIT`](Self::DEFAULT_MEMORY_LIMIT), and
+    /// a sequent of at most
+    /// [`DEFAULT_OCCURRENCE_LIMIT`](Self::DEFAULT_OCCURRENCE_LIMIT)
+    /// occurrences.
     fn default() -> Self {
         Self {
             memo_limit: Self::DEFAULT_MEMO_LIMIT,
@@ -514,6 +519,7 @@ impl Default for Options {
             forward_copies: Self::DEFAULT_FORWARD_COPIES,
             check: Self::DEFAULT_CHECK,
             memory_limit: Some(Self::DEFAULT_MEMORY_LIMIT),
+            occurrence_limit: Self::DEFAULT_OCCURRENCE_LIMIT,
         }
     }
 }
@@ -546,6 +552,26 @@ impl Options {
     /// The memory bound of the default options, in bytes: one gibibyte,
     /// which a laptop and a browser tab both have to spare.
     pub const DEFAULT_MEMORY_LIMIT: u64 = 1 << 30;
+
+    /// The most subformula occurrences of a sequent under the default
+    /// options: [`Forest::DEFAULT_LIMIT`].
+    pub const DEFAULT_OCCURRENCE_LIMIT: u64 = Forest::DEFAULT_LIMIT;
+
+    /// Sets the most subformula occurrences the sequent may unfold to
+    /// when [`prove`] and [`prove_until`] build its forest: a sequent
+    /// beyond is refused with [`Error::TooManyOccurrences`] before
+    /// anything of that size is built. A sequent read from JSON can share
+    /// subterms, so a few hundred bytes unfold to any number of
+    /// occurrences; a forest takes about 25 bytes for each, and it is not
+    /// counted under [`memory_limit`](Self::memory_limit), since
+    /// [`prove_goal`] is handed it. No limit lets through more than a
+    /// forest indexes, somewhat under 2³².
+    pub fn occurrence_limit(self, limit: u64) -> Self {
+        Self {
+            occurrence_limit: limit,
+            ..self
+        }
+    }
 
     /// Sets the most bytes the search may hold at once, or `None` for no
     /// bound. Counted are the structures that grow with the search: the

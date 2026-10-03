@@ -52,6 +52,7 @@ pub fn interact(args: &InteractArgs) -> Result<Status> {
         .copies(args.copies)
         .bias(args.bias.into())
         .forward_copies(args.forward_copies)
+        .memory_limit(args.memory_limit.0)
         .jobs(jobs(args.jobs, args.deterministic));
     catch_interrupt();
     let stack_size = options.stack_size();
@@ -344,6 +345,7 @@ fn verdict(outcome: &Outcome) -> String {
                 }
                 Reason::RecursionLimit => format!("{reason}; raise it with --recursion-limit"),
                 Reason::CopyBound(_) => format!("{reason}; raise it with --copies"),
+                Reason::MemoryLimit(_) => format!("{reason}; raise it with --memory-limit"),
                 _ => reason.to_string(),
             };
             format!("unknown ({context}): {why}")

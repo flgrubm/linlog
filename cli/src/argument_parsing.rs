@@ -3,7 +3,7 @@
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use linlog::search::{Engine, Options};
-use linlog::{Bias, Fragment, Mode, ViewOptions};
+use linlog::{Bias, Forest, Fragment, Mode, ViewOptions};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -131,10 +131,22 @@ pub struct ProveArgs {
     /// The most decided sequents the search remembers at once
     ///
     /// When the memo is full it is emptied, which costs time but not
-    /// correctness; lower the limit if memory runs out. Zero switches the memo
-    /// off.
+    /// correctness. Zero switches the memo off. `--memory-limit` bounds
+    /// the memo in bytes; this is the finer knob beside it.
     #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_MEMO_LIMIT)]
     pub memo_limit: usize,
+    /// The most memory the search may hold: a number of bytes with a unit
+    /// such as 512MiB or 4GiB, or `none` for no limit
+    ///
+    /// Counted is what grows with the search: what it remembers, the
+    /// proofs it keeps and what every level of its recursion takes; not
+    /// the sequent itself. A memo that no longer fits is emptied first,
+    /// as at `--memo-limit`; when that is not enough the verdict is
+    /// unknown (exit status 3). The check of the proof and the derivation
+    /// built from it are under the same limit: a derivation estimated
+    /// above it is left out even with `--derivation-limit none`.
+    #[arg(long, value_name = "SIZE", value_parser = parse_limit, default_value_t = Limit(Some(Options::DEFAULT_MEMORY_LIMIT)))]
+    pub memory_limit: Limit,
     /// The deepest nesting of rules on one branch before the search gives up
     ///
     /// Raise it for sequents with thousands of connectives; the search runs on
@@ -213,6 +225,9 @@ pub struct InteractArgs {
     /// `prove --memo-limit`
     #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_MEMO_LIMIT)]
     pub memo_limit: usize,
+    /// The most memory a `close` may hold; see `prove --memory-limit`
+    #[arg(long, value_name = "SIZE", value_parser = parse_limit, default_value_t = Limit(Some(Options::DEFAULT_MEMORY_LIMIT)))]
+    pub memory_limit: Limit,
     /// The deepest nesting of rules on one branch before a `close` gives
     /// up; see `prove --recursion-limit`
     #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_RECURSION_LIMIT)]
@@ -342,6 +357,46 @@ pub struct SequentInput {
     /// Read the sequent as JSON, as `seq json` writes it, instead of as text
     #[arg(long)]
     pub json_input: bool,
+    /// The most subformula occurrences the sequent may have, or `none`
+    ///
+    /// A sequent in JSON can share subformulas, so a small file may stand
+    /// for a sequent of any size; one beyond the limit is refused before
+    /// it is unfolded. Occurrences cost some 25 bytes each before any
+    /// search, and no limit lets through more than about four billion.
+    #[arg(long, value_name = "N", value_parser = parse_most, default_value_t = Most::default())]
+    pub occurrence_limit: Most,
+}
+
+/// The most occurrences a sequent may have, or none for no limit but the
+/// library's own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Most(pub Option<u64>);
+
+impl Default for Most {
+    /// The library's default.
+    fn default() -> Self {
+        Self(Some(Forest::DEFAULT_LIMIT))
+    }
+}
+
+impl std::fmt::Display for Most {
+    /// Writes the limit as `--occurrence-limit` reads it.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            None => f.write_str("none"),
+            Some(most) => write!(f, "{most}"),
+        }
+    }
+}
+
+/// Parses a number of occurrences, or `none`.
+fn parse_most(text: &str) -> Result<Most, String> {
+    if text == "none" {
+        return Ok(Most(None));
+    }
+    text.parse()
+        .map(|most| Most(Some(most)))
+        .map_err(|_| format!("{text:?} is neither a number nor `none`"))
 }
 
 /// The logic a sequent is proved in.
