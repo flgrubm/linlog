@@ -43,6 +43,21 @@
         # `cargo test', not nextest: nextest skips doc tests.
         test = craneLib.cargoTest withArtifacts;
 
+        # The tests once more with the assertions a development build has:
+        # crane tests in the release profile, where `debug_assert!' is
+        # nothing, and the engines state their invariants in that macro (a
+        # proof checked where it is made, a zone that must be empty). The
+        # doc tests ran above.
+        test-debug-assertions = craneLib.cargoTest (
+          withArtifacts
+          // {
+            pnameSuffix = "-test-debug-assertions";
+            CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS = "true";
+            CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS = "true";
+            cargoTestExtraArgs = "--all-targets";
+          }
+        );
+
         doc = config.packages.doc;
 
         deny = craneLib.cargoDeny { inherit (workspace) src; };

@@ -177,7 +177,7 @@ nix build .#lltp -o bench/lltp   # the LLTP library (1.1 GB, GPL-3.0, fetched at
 bench/targets.sh LABEL            # the focused engine's target set into bench/targets/LABEL.csv (two cores, about 20 min, detached)
 bench/baseline.sh --arm --fresh   # the whole baseline, unattended from 20:00 to 07:00 (about 10.5 h): bench/results/DAY/, bench/RESULTS.md
 
-nix flake check   # build, clippy, test, doc, deny, features (cargo-hack), export (the LaTeX and Typst output compiles, the SVG renders), rocq (NanoYalla checks the certificates), bench (the harness on the smallest problems), deadnix, actionlint, treefmt, claude-hooks
+nix flake check   # build, clippy, test, test-debug-assertions (the tests with debug_assert! on, which the release profile drops), doc, deny, features (cargo-hack), export (the LaTeX and Typst output compiles, the SVG renders), rocq (NanoYalla checks the certificates), bench (the harness on the smallest problems), deadnix, actionlint, treefmt, claude-hooks
 nix build .#checks.x86_64-linux.rocq   # the certificates alone: Rocq is a 1.2 GB closure from the binary cache
 nix fmt           # nixfmt, rustfmt, taplo, shfmt, shellcheck (a hook runs it on each file changed with Write or Edit; a file changed from the shell needs it run by hand before the commit, or the treefmt check fails)
 nix build         # linlog-cli, whose binary is result/bin/linlog
