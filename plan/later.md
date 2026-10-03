@@ -24,7 +24,7 @@ heading.
 | MALL proof nets | dropped | non-canonical or exponentially large: a display feature without a use |
 | A batch mode for the CLI | 25 | with LLTP input and the draft of the header report |
 | Ordinary logic through its embeddings | 26 | the layer; termination on the image of a translation is deferred and assessed in step 26's report (the literature terminates on the intuitionistic side: Dyckhoff's LJT, loop-checked LJ) |
-| The web front end | 27 | – |
+| The web front end | 27 | the bindings (`linlog-web`) in the workspace, the client in a repository of its own under the organization (D22) |
 | Problems from practice | 30 | the coverability suite of `blondimi/qcover` (176 instances, real non-theorems). Deferred: Model Checking Contest nets beyond the 76 LLTP used, and planning domains, for which no collection in linear logic exists. Dropped: Granule's synthesis benchmarks (graded signatures with data types, few of them propositional ILL) and llprover's examples (one file of 70 lines without a licence) |
 
 New from step 17, sketched in its report's section 5: a call that keeps

@@ -16,8 +16,18 @@ off is content: a website, a book, a package index. Provers go both ways
 for their proof-assistant part: NanoYalla is a directory of Click &
 coLLecT, Yalla and coq-elpi have repositories of their own.
 
-So: `core/`, `cli/`, `bench/` and the web crate stay one workspace, since
-they version and test together. The Rocq library starts under `rocq/`
+So: `core/`, `cli/`, `bench/` and the web front end's bindings (the
+crate `linlog-web`) stay one workspace, since they version and test
+together and the bindings are written against the library's types. The
+web front end's client is a repository of its own from the start
+(decided by the author on 2026-10-03): it has another toolchain, it
+redeploys on every push where the library releases by version, and as
+`linlog-prover.github.io` it is served at the organization's root
+address while this repository's Pages keep the rustdoc. It takes this
+repository as a pinned flake input, so a change across both is two
+commits and nothing breaks unannounced. The precedents: rust-analyzer
+keeps its editor client in its tree because the two share a protocol;
+tokio, bevy and egglog keep sites and demos apart. The Rocq library starts under `rocq/`
 (D20) and moves out when it has a release rhythm or contributors of its
 own; the opam archive needs only a release archive. What may leave the
 history is data: the baselines' CSV files (11 MB after two) fit release

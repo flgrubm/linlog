@@ -1394,6 +1394,15 @@ the author answered: "create an organization, linlog-prover". It is in
 D22; creating it and transferring the repository are the author's acts,
 and `plan/notes/distribution.md` lists what a transfer touches.
 
+Asked then: "Also, what do you think about separating the web
+interface into its own project?" The recommendation was to split along
+the seam: the bindings stay in the workspace, where a change of the
+library that breaks them fails in the same commit, and the client goes
+into a repository of its own under the organization from the start. The
+author: "yes, record it". It is in D22 and in step 27's prompt, with
+one caveat kept there (a client written in a Rust framework is the case
+for a workspace; the step asks before departing).
+
 **What the answers changed.**
 
 - *Decisions.* D16 (sensible defaults, every default an option), D17

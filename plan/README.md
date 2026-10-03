@@ -45,7 +45,7 @@ amended (see "Review protocol"). `notes/` holds research the prompts rely on.
 | 24 | The command, the harness, the flake and the documents in order | `24-command-harness-docs.md` (finished at the review of 23) | Opus 5.5 | xhigh | 23 |
 | 25 | A batch mode, LLTP input for the command, and the draft of the header report | `25-batch.md` (finished at the review of 24) | Opus 5.5 | xhigh | 20, 21, 24 |
 | 26 | Ordinary logic through its embeddings: the layer | `26-ordinary-logic.md` (finished at the review of 25) | Opus 5.5 | xhigh | 21, 25 |
-| 27 | The web front end (three sessions, a plan of its own) | `27-web.md` (finished at the reviews of 22 to 24) | Opus 5.5 | xhigh | 18, 22, 23 |
+| 27 | The web front end: the bindings in the workspace, the client in a repository of its own (three sessions, a plan of its own) | `27-web.md` (finished at the reviews of 22 to 24) | Opus 5.5 | xhigh | 18, 22, 23 |
 | 28 | A Rocq library of linlog's own, `linlog` under `rocq/` (three to four sessions) | `28-rocq-library.md` (finished at the reviews of 18 and 23) | Fable 5.1 | xhigh for the checker and its proof, high for the rest | 18, 23 |
 | 29 | The focused engine in order, and the dispatch as a measured table | `29-focused-engine.md` (finished at the reviews of 20 and 23) | Fable 5.1 | xhigh | 20, 23 |
 | 30 | Horn programs: an engine, coverability, and the coverability suite from practice (two sessions) | `30-horn.md` (finished at the review of 29) | Fable 5.1 | xhigh | 25, 29 |
@@ -543,8 +543,15 @@ objects a course shows (MELL nets, cut elimination).
 **D22. One workspace, published where its users are; the author
 publishes** (the author's wish of 2026-10-03, with the facts of
 `notes/distribution.md`). The library, the command, the harness and the
-web front end stay one Cargo workspace in one repository, as such
-projects are kept; the Rocq library lives under `rocq/` until it has a
+web front end's bindings (the crate `linlog-web`: the library compiled
+to WebAssembly behind an API of JSON and SVG, with the flake check that
+builds it) stay one Cargo workspace in one repository, as such projects
+are kept, so that a change of the library that breaks the bindings fails
+in the same commit. The web front end's client (the page, its interface
+code, its assets and its deployment) is a repository of its own under
+the organization from the start, with a toolchain, a release rhythm and
+an address of its own, taking this repository as a pinned input (the
+author, 2026-10-03, on the planning's recommendation); the Rocq library lives under `rocq/` until it has a
 release rhythm of its own, and may then get a repository; benchmark data
 may move to release assets. The first release is 0.1.0 at step 31: the
 crates `linlog` and `linlog-cli` on crates.io, a tag and a GitHub
@@ -1313,7 +1320,8 @@ publishing are the author's acts.
   teaching object and every engine the dispatch can use wanted; a
   release, with the header report drafted and the author reminded;
   later, repositories and registries, with the release going out under
-  the organization `linlog-prover`. They are D16 to D22. Four points
+  the organization `linlog-prover` and the web front end's client in a
+  repository of its own there, its bindings staying in the workspace. They are D16 to D22. Four points
   of the supervisor, passed on by the author, are in: the JSON defect is
   step 18's first commit; the search's limits are two steps (19 the
   time, 20 the memory and the inputs); step 18 owns the test run with

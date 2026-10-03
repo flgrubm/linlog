@@ -24,11 +24,22 @@ sent to a server.
 
 ## What is fixed now
 
-1. **A crate `linlog-web`** in the workspace: the library compiled to
-   `wasm32-unknown-unknown` without the `parallel` feature, behind a
+1. **Two repositories** (D22; the author, 2026-10-03). In this
+   workspace the crate `linlog-web`, the bindings: the library compiled
+   to `wasm32-unknown-unknown` without the `parallel` feature, behind a
    small API of JSON in and JSON or SVG out (the interactive state, the
-   options values of steps 22 and 23, the outcome of a search). The wasm
-   build is a flake check from the first session.
+   options values of steps 22 and 23, the outcome of a search), with its
+   tests run under wasm and its build a flake check from the first
+   session, so that a change of the library that breaks them fails here.
+   In a repository of its own under the organization `linlog-prover`
+   the client: the page, its interface code, its assets and its
+   deployment, with a flake that takes this repository as a pinned
+   input, its own CI, licence headers and CLAUDE.md. The session sets
+   that repository up locally, with jj as this one is, in the directory
+   the author names; creating it on GitHub and pushing are the author's.
+   Named `linlog-prover.github.io` it is served at the organization's
+   root address, with the rustdoc staying at `/linlog`; propose that
+   and let the author decide.
 2. **What the target lacks** (checked 2026-10-03): `std::thread::spawn`
    and `Instant::now()` panic there; the stack is 1 MiB unless a link
    argument raises it; threads need cross-origin isolation, which GitHub
@@ -46,15 +57,21 @@ sent to a server.
    a sequent, the modes, the goals with clickable formulas, the rules
    that apply, undo, close, the drawing, the finished proof's exports.
    Its plan says what is left out.
-5. **Hosting** beside the documentation site, built by the flake.
+5. **Hosting** from the client's repository, built by its flake; this
+   repository's Pages keep the rustdoc.
 
 ## What waits
 
 The choice of client technology (the first session compares a plain page
 over wasm-bindgen with one Rust framework, by size, maintenance and what
-the author would read); the names of steps 22 and 23.
+the author would read); the names of steps 22 and 23. One caveat on the
+two repositories: a client written in a Rust framework is a crate that
+depends on `linlog`, which is the case for a workspace. If the
+comparison ends there and the split then costs more than it gives, say
+so with the reasons and ask the author before departing from D22.
 
 ## Deliverables
 
-`plan/web/README.md` (the step's own plan, by its first session),
-thematic jj commits, `plan/reports/27-web.md`.
+`plan/web/README.md` (the step's own plan, by its first session) and
+`plan/reports/27-web.md`, both in this repository; thematic jj commits
+here for the bindings and in the client's repository for the client.
