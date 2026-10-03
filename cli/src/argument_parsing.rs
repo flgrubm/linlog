@@ -150,6 +150,13 @@ pub struct ProveArgs {
     /// The same as `--jobs 1`, and takes precedence over `--jobs`.
     #[arg(long)]
     pub deterministic: bool,
+    /// Report the proof the search found without checking it
+    ///
+    /// By default every proof passes the proof checker, which shares no
+    /// code with the search, before anything is reported; a proof it
+    /// rejects is an error (exit status 2), not a verdict.
+    #[arg(long)]
+    pub no_check: bool,
     /// Where and how to write the result.
     #[command(flatten)]
     pub output: OutputArgs,

@@ -85,7 +85,9 @@ impl Stop<'_> {
 /// classical mode ([`Error::EngineMode`]); the additive engine on anything
 /// but two additive-only formulas ([`Error::NotAdditive`]); and a sequent
 /// with more subformula occurrences than a forest can index
-/// ([`Error::TooManyOccurrences`]).
+/// ([`Error::TooManyOccurrences`]). A proof that the checker rejects is
+/// [`Error::Rejected`]: every proof returned has passed it, unless
+/// [`Options::check`] says otherwise.
 ///
 /// # Examples
 ///
@@ -304,11 +306,6 @@ pub fn prove_goal(
                 Ok(Some(root)) => {
                     let proof = Proof::new(forest.clone(), nodes, root)
                         .expect("the engine pushes premises before conclusions");
-                    debug_assert!(
-                        !is_roots || proof.check(mode).is_ok(),
-                        "the engine's proof: {:?}",
-                        proof.check(mode)
-                    );
                     Verdict::Proved(Box::new(proof))
                 }
                 Ok(None) => Verdict::Unprovable,
@@ -317,6 +314,16 @@ pub fn prove_goal(
             (verdict, statistics, None)
         }
     };
+    // No engine is trusted with its own proof: the checker has the last
+    // word on every proof of the sequent, in every build.
+    if options.check
+        && is_roots
+        && let Verdict::Proved(proof) = &verdict
+    {
+        proof
+            .check(mode)
+            .map_err(|e| Error::Rejected(Box::new(e)))?;
+    }
     Ok(Outcome {
         verdict,
         fragment,
@@ -435,6 +442,9 @@ pub struct Options {
     /// The most copies of `?` formulas one branch may take in the forward
     /// search of the default bias.
     forward_copies: u32,
+    /// Whether a proof of the sequent passes the checker before it is
+    /// returned.
+    check: bool,
 }
 
 impl Default for Options {
@@ -445,7 +455,8 @@ impl Default for Options {
     /// at its default cadence, a copy bound of
     /// [`DEFAULT_COPIES`](Self::DEFAULT_COPIES), one of
     /// [`DEFAULT_FORWARD_COPIES`](Self::DEFAULT_FORWARD_COPIES) for the
-    /// forward search of the default bias, and one thread.
+    /// forward search of the default bias, one thread, and every proof
+    /// checked ([`DEFAULT_CHECK`](Self::DEFAULT_CHECK)).
     fn default() -> Self {
         Self {
             memo_limit: Self::DEFAULT_MEMO_LIMIT,
@@ -458,6 +469,7 @@ impl Default for Options {
             portfolio: false,
             bias: Bias::Auto,
             forward_copies: Self::DEFAULT_FORWARD_COPIES,
+            check: Self::DEFAULT_CHECK,
         }
     }
 }
@@ -481,6 +493,22 @@ impl Options {
     /// milliseconds on a small Horn program, a second and more on one
     /// whose markings grow in several places at once.
     pub const DEFAULT_FORWARD_COPIES: u32 = 30;
+
+    /// Whether the default options check a proof before returning it: they
+    /// do. The check is one pass over the proof, in memory proportional to
+    /// it.
+    pub const DEFAULT_CHECK: bool = true;
+
+    /// Sets whether a proof of the sequent passes the checker
+    /// ([`Proof::check`], which shares no code with the engines) before
+    /// the search returns it; one that does not is
+    /// [`Error::Rejected`], never a verdict. Without the check the proof
+    /// is the engine's word, which a caller that checks it itself, or
+    /// times the search alone, may prefer. The proof of a goal other than
+    /// the roots is not checked here in either case: what grafts it does.
+    pub fn check(self, check: bool) -> Self {
+        Self { check, ..self }
+    }
 
     /// Sets the most copies of `?` formulas one branch of a proof may take.
     /// The search deepens the bound from zero up to this value; a sequent

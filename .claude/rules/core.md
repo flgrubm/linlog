@@ -496,9 +496,18 @@ picks the prunes and the engine, the net engine only for the roots
 are the forest's roots), the additive path for any two additive-only
 occurrences (`additive::search_goal`), the focused engine otherwise; in
 intuitionistic mode a goal must have exactly one occurrence in output
-position (`Error::GoalOutputs`). The proof of a goal other than the roots
+position (`Error::GoalOutputs`). **Every proof of the roots has passed
+the checker when it is returned, in every build** (`Options::check`,
+`DEFAULT_CHECK` true; the check is at the end of `prove_goal`, one place
+for every engine, and a proof it rejects is `Error::Rejected`, an error
+and never a verdict). The engines' own `debug_assert!`s on their proofs
+stay, and the flake's `test-debug-assertions` check is what runs them,
+since crane tests in the release profile. The harness switches the check
+off to time the search alone and checks the proof itself. The proof of a
+goal other than the roots
 has a root that concludes the goal, so `Proof::check` rejects it; only
-`Interactive` consumes such proofs, by grafting their derivation. Where
+`Interactive` consumes such proofs, by grafting their derivation, and
+`Derivation::of_goal` checks them against the goal on the way. Where
 `Outcome` carries the `Verdict` (`Proved(Box<Proof>)`, `Unprovable` only
 after an exhaustive search, which with exponentials means a deepening
 level that never hit the copy bound, `Unknown(Reason)`, with
@@ -507,7 +516,7 @@ the `Mode`, the `Engine` that ran, the `Statistics`, and `net`, the
 `ProofStructure` the net engine found (`None` from the focused engine).
 `Options` has private fields and setters (`memo_limit`, `recursion_limit`,
 `engine`, `fragment`, `test_period`, `copies`, `jobs`, `portfolio`,
-`bias`, `forward_copies`), the
+`bias`, `forward_copies`, `check`), the
 constants `DEFAULT_MEMO_LIMIT`, `DEFAULT_RECURSION_LIMIT`,
 `DEFAULT_COPIES` and `DEFAULT_FORWARD_COPIES`, which the CLI shows as
 its defaults, and `stack_size()`,
@@ -1184,7 +1193,8 @@ relies on:
   restored by hand inside `prove_stable`; an early return between the
   decision and the restore, or a stack push anywhere else, silently
   breaks the level's completeness claim.
-- **Every proof passes the checker**: `debug_assert!` in `search`, and
+- **Every proof passes the checker**: in `prove_goal` for a proof of the
+  roots, in every build; `debug_assert!` in `search` besides, and
   every test that gets a proof calls `check`. The test-only generator
   `search/generate.rs` builds random provable sequents (and mutants of
   them) for every combination of units, additives, Mix and exponentials,
@@ -1375,9 +1385,9 @@ What the code relies on:
   opens to interchangeable conclusions) is the follow-up the plan's step
   14 should measure; until then the dispatch routes MLL with a literal of
   multiplicity above 2 to the focused engine (`prefers_net`).
-- **Every proof passes the checker** (`debug_assert!` in `search`, every
-  test), and every net is the net of its proof (`from_proof` in the tests'
-  `run`). The differential test against the focused engine
+- **Every proof passes the checker** (in `prove_goal`, in every build;
+  `debug_assert!` in `search` besides; every test), and every net is the
+  net of its proof (`from_proof` in the tests' `run`). The differential test against the focused engine
   (`agrees_with_the_focused_engine`) covers generated provable sequents,
   their mutants, doubled sequents (equal conclusions) and random
   balanced sequents from `generate::balanced`, which pass the counts and

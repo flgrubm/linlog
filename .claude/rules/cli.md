@@ -108,6 +108,11 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   `--stats` counts, a proof compared across runs) needs, since a parallel
   run's counts add every thread's and its proof is the first found. The
   CLI enables core's `parallel` feature in `cli/Cargo.toml`.
+- **Every proof reported has passed the checker**: the library checks it
+  before `prove_until` returns (`Options::check`), so `--quiet` and
+  `--format json` are checked like the drawn formats; `--no-check`
+  switches it off. A proof the checker rejects is `Error::Rejected`, exit
+  status 2: a defect to report, not a verdict.
 - **Ctrl-C** (`ctrlc`, whose handler runs on a thread of its own once per
   signal): the first sets a flag the search polls, so the outcome is
   unknown and `--stats` still prints; the second exits with 130. The

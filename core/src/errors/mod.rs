@@ -106,6 +106,13 @@ pub enum Error {
     /// only, not a goal deeper in the forest.
     #[error("the net engine decides the whole sequent only, not a goal within it")]
     NetGoal,
+    /// The checker rejected the proof a search found: a defect of the
+    /// engine that found it, and no verdict on the sequent.
+    #[error(
+        "the proof the search found does not pass the checker, which is a defect of the engine \
+         and no verdict on the sequent: {0}"
+    )]
+    Rejected(Box<CheckError>),
     /// The threads of a parallel search could not be started.
     #[cfg(feature = "parallel")]
     #[error("cannot start {0} search threads: {1}")]
