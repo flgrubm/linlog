@@ -371,3 +371,56 @@ cores:
 - The harness's rows run under one gibibyte unless `--memory-limit 0`
   is passed, and its files have the column `memory_limit`.
 - "One thread first": on a pool the kept arena is not collected.
+
+## From the review (2026-10-03)
+
+The planning session read the memo's new layout, the memory account and
+the checker's bound, and ran the command and the harness itself, in
+capped scopes on pinned cores (12 to 15 for the single calls).
+
+- **One integer the step did not argue**, guarded in the review ("Take
+  no key whose extra copies a record's offset cannot name"): a memo
+  record names its linear zone's extra copies by a 32-bit offset into
+  one list, and nothing kept that list below 2³² entries. Beyond it the
+  offset wrapped and a lookup compared a key with another record's
+  copies, which can make two sequents that differ only in multiplicities
+  one, and a complete failure of one the other's. It takes 32 GiB of
+  such copies, so only a search with `--memory-limit none` on a large
+  machine could get there; the insertion now answers "full" instead.
+- **The megabyte proof file through the command**, which the report
+  lists as not done: a file of 0.86 MB (30 384 nodes: 14 000 `⊥` above a
+  `⊤`, read by the 8 192 lowest nodes of a `&` tree that are all derived
+  before one is consumed) is refused by `linlog check` at the default
+  bound after 0.77 s at a peak of 1.05 GB, exit status 2, and within
+  64 MiB after 0.05 s at 73 MB; with `--memory-limit none` it is a valid
+  proof at 1.19 GB. The same nodes in depth-first order take 10 MB.
+  The crafted files of step 18's review are refused as before.
+- **The named calls**: R8 ends by the bound under 256 MiB, 16 MiB and
+  1 MiB (2.56 s at 270 MB, 0.14 s at 21 MB, 8 ms at 6 MB) on one thread
+  and on four (1.97 s at 260 MB, 0.11 s at 21 MB), and at the time limit
+  under the default (944 MB); `TokenRing-50-unfolded_1_1` and a proof
+  that unfolds 2²² times with `--derivation-limit none` end with their
+  verdict and the line that names `--memory-limit`, in every format;
+  the four `qbf/40` instances stop 5 to 19 ms after a limit of 2 s on
+  the machine's slowest core; D5's file is refused in under 10 ms; a
+  formula nested 100 000 deep is printed, classified and decided
+  (0.02 s; under 100 000 `!` the search answers "recursion limit" in
+  0.05 s); a parse error at character 90 004 is shown in a window of
+  its line.
+- **The new parser**, by hand on the precedence of every operator in
+  both spellings, and on the library below.
+- **The target set**: `after-memory.csv` and `after-limits.csv` against
+  `after-bias.csv`, no verdict and no counter differs.
+- **The library, one thread, one second each** (4 512 problems under
+  `ILL` and `CLL`, through the harness in two halves on the cores 4 to
+  7): 1 874 proved and all `checked` `ok` (six more than after step 19,
+  each a timeout then), 104 refuted, no contradiction with the second
+  baseline, no kill, and the latest stop 0.06 s after its limit, where
+  it was 0.43 s. On the 4 483 files for which both have the columns,
+  the parsed sequent has the baseline's occurrences, multiplicity and
+  fragment: the new parser reads the library as chumsky did.
+- **The same under a bound of two megabytes** (the 1 358 problems
+  outside the nets, cores 12 and 13), so that the memo is emptied and
+  the arena collected all the time: 427 proved and all `checked` `ok`,
+  101 refuted, 123 "unknown" by the bound, no contradiction with the
+  second baseline.

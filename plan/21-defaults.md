@@ -66,6 +66,24 @@ and the LLTP library's own results say what that costs:
   must be able to act on. `--jobs` above the machine's parallelism is
   clamped with a note (`jobs` in `cli/src/argument_parsing.rs`).
 
+- Step 20 gave a search a bound of one gibibyte by default
+  (`Options::DEFAULT_MEMORY_LIMIT`, `--memory-limit`), the sequent a
+  bound of fifty million occurrences, and the check and the derivation
+  the same memory bound. A search whose memo cycles within the bound
+  does not answer "unknown" by it: it goes on until a time limit ends
+  it, so the default time limit is what makes such a search answer at
+  all (`TokenRing-40-unfolded_100_1` ran for 150 s within 144 MiB). A
+  memo starved by a small bound makes a search slow rather than
+  "unknown". Three new ways to end need their words:
+  `Reason::MemoryLimit`, `Reason::IndexLimit`, and `Error::Unchecked`
+  (the proof was found and its check was refused for memory), whose
+  message today names the limit in raw bytes (`1073741824 bytes`). Of
+  the default bias's two searches the reason reported is the backward
+  one's, also where the forward one ended at its memory bound. On a
+  pool the kept arena is not collected, so a pool reaches the bound
+  sooner than one thread. The harness's rows run under one gibibyte
+  unless `--memory-limit 0` is passed.
+
 The author's decision (2026-10-03), which binds this step and every
 later one (D16): sensible defaults, and the ability to tune every one of
 them. Steps 19 and 20 made the time limit and the memory bound hold;

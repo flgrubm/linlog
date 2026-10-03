@@ -45,6 +45,12 @@ verdict line, 8 MB for the largest net, with `--quiet` too; `--tree
 never` leaves the derivation out of every format where its help speaks
 of the text tree; and `ViewError`'s `Display` writes a saturated count
 as `18446744073709551615` where the command writes `more than 10¹⁹`.
+Step 20 gave the derivation a memory bound beside its size bound
+(`ViewOptions::memory`, `ViewError::Memory`) and found one output that
+nothing bounds: an error report with formulas (`CheckError::describe`)
+writes every member of a zone as its formula, 65 MB from a proof file
+of 47 KB that shares subformulas deeply. It belongs with the
+abbreviation of a sequent in a line.
 
 ## Goal
 

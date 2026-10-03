@@ -1530,3 +1530,41 @@ publishing are the author's acts.
   brief: two derived `clone_from` that allocated at every copy of a
   zone, and the quadratic pass of the assessment's R11 in the counts,
   not in the parser. Awaiting review.
+- 2026-10-03: review of step 20 (its own entry is above), accepted with
+  one guard added in the review. Read: the report, the memo's new layout
+  (records in chunks with an index of its own; a lookup compares the
+  whole key), the memory account, the checker's bound and its refusals;
+  no comment names the plan, the new files carry the header. Checked:
+  clippy, the tests with and without the `parallel` feature, both
+  `cargo hack` runs, `cargo deny`, `nix flake check` before and after
+  the guard. **Guarded**: a memo record names its zone's extra copies
+  by a 32-bit offset into one list that nothing kept below 2³² entries;
+  beyond it a lookup would have compared a key with another record's
+  copies, and a complete failure could have answered for a sequent of
+  other multiplicities. It takes 32 GiB of such copies, so only a
+  search with the bound lifted on a large machine; the insertion now
+  answers "full" ("Take no key whose extra copies a record's offset
+  cannot name"). Run by hand in capped scopes on pinned cores: the
+  megabyte proof file through `linlog check`, which the report left
+  undone (refused at the default bound after 0.77 s at 1.05 GB and
+  within 64 MiB after 0.05 s, valid with the bound lifted at 1.19 GB);
+  R8 by the bound under 256 MiB, 16 MiB and 1 MiB on one thread and on
+  four; the lifted derivation limit on `TokenRing-50` and on a proof
+  that unfolds 2²² times, each ending with its verdict; stops with a
+  full memo 5 to 19 ms late on the slowest core; D5's file, 100 000
+  levels of nesting, an error at character 90 004; the parser's
+  precedences in both spellings; the target set's two new files against
+  `after-bias.csv` (no verdict or counter differs); the whole library on
+  one thread at one second (1 874 proofs, all `checked` `ok`, no
+  contradiction, the latest stop 0.06 s late where it was 0.43 s, and
+  every parsed sequent with the baseline's occurrences, multiplicity
+  and fragment); and the 1 358 problems outside the nets under a bound
+  of two megabytes (427 proofs `ok`, no contradiction, 123 "unknown" by
+  the bound). Assigned: the words for `MemoryLimit`, `IndexLimit` and
+  `Unchecked`, the raw bytes in the check's refusal and a memo that
+  cycles within its bound until the time limit, to prompt 21; the
+  unbounded error report with formulas to 22; the error family, the
+  occurrence limit that `Deserialize` cannot take and a stop for the
+  checker's pass to 23; every integer argument under 32 bits to 27,
+  where wasm32 is the first such target; the hasher's fixed seed before
+  untrusted proof files deferred in `plan/later.md`. Next: step 21.

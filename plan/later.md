@@ -822,7 +822,15 @@ meets first on a large problem, and come before any new engine:
     of the formula.
   - A proof file and a session's state are read under the default
     occurrence limit, whatever `--occurrence-limit` says: serde's
-    `Deserialize` takes no options.
+    `Deserialize` takes no options. Step 23.
+  - *The checker on a hostile file* (the review of step 20 assigned
+    these): its pass polls no stop and can be made quadratic in time
+    within flat memory (step 23, with the checker's interface); an error
+    report with formulas is not bounded (step 22); the crate's hasher
+    has a fixed seed, which the checker's tables now face untrusted
+    input with (deferred: a seed per process would cost the
+    reproducible runs, a second hasher for the checker would not); the
+    32-bit case of every integer argument (step 27, under wasm32).
 - **The forward search misses its stop on the GPPP-1000 nets, by
   minutes.** On one thread they are killed past 10.5 s under a 5 s
   limit, or proved 0.7 to 1.0 s late, in the default and the `--bias

@@ -71,7 +71,7 @@ session's transcript is
 
 ## Where things stand
 
-As of 2026-10-03 (evening) steps 1 to 19 are finished, reviewed and
+As of 2026-10-03 (evening) steps 1 to 20 are finished, reviewed and
 pushed. Step 17 assessed the project (`plan/reports/17-assessment.md`)
 and, on the author's answers, planned steps 18 to 37: the step table,
 the decisions D16 to D22 and the commands are in `plan/README.md`, the
@@ -86,10 +86,15 @@ counters wrapping (a crafted file passed as a proof of an unprovable
 sequent) and fixed that itself. Step 19 made the time limit hold to
 within half a second on one thread and on a pool, counted from the
 command's start; what is left of it is the freeing of a full memo, which
-step 20 takes with the memory bound. The next command is step 20:
+step 20 took with the memory bound. Step 20 gave a search a bound in
+bytes (a memo of records in chunks, the arena collected, "unknown" by
+the bound as the last answer), the sequent a bound on its occurrences,
+the check and the derivation the same memory bound, and replaced the
+parser by a hand-written one without recursion (chumsky is gone); its
+review guarded one more counter. The next command is step 21:
 
 ```nu
-claude --model claude-fable-5-1 --effort xhigh --name step-20 ((open --raw plan/20-memory-and-boundaries.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort high --name step-21 ((open --raw plan/21-defaults.md) + "\n" + (open --raw plan/conduct.md))
 ```
 
 Profiling (the author asked on 2026-10-03, the planning session

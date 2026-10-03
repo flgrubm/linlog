@@ -58,7 +58,20 @@ do terms and binders go". No behaviour of the command changes.
    web front end are then three callers of the same values (D15).
 4. **One family of errors**: `ShapeError`, `Unsupported`, `UnknownRule`
    and `NetError` within reach of `Error`, one way to describe an error
-   with formulas, a serializable form.
+   with formulas, a serializable form. Steps 18 to 20 added to the
+   family and it is this step's to make them one: `ViewError`,
+   `Error::Rejected`, `Error::Unchecked`, `Error::TooManyNodes`, and in
+   the checker `Problem::Surplus` (a fault of the proof) beside
+   `Problem::Memory` (a refusal, no verdict: `CheckError::is_refusal`).
+   A caller must not be able to read a refusal as "invalid".
+   And three limits that reach a caller unevenly: a proof file and a
+   session's state are read under the default occurrence limit whatever
+   the caller asked for, because `Deserialize` takes no options (a
+   seeded form, or a constructor that takes the limit); the checker's
+   pass takes a memory bound and no stop condition, though a hostile
+   proof file can make it quadratic in time; and the bounds of a search,
+   of a check and of a view are three values that a front end sets one
+   by one.
 5. **The same walk once**: one printer of formulas and of two-sided
    sequents over `Notation`, with `Display` as one of its tables; `Rule`
    as a classical rule and a position, with its tables in one place and

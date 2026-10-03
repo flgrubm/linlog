@@ -58,7 +58,8 @@ proof term. The NanoYalla export stays exactly as it is.
    is another and need not mirror its memory discipline. The refusal of
    a zone too large to conclude (`Problem::Surplus`) exists because
    Rust's counters are finite; over `nat` it is a lemma or nothing, and
-   the report says which. The first implementation
+   the report says which. `Problem::Memory` is a refusal for lack of
+   memory, no verdict, and no part of the algorithm. The first implementation
    (`core/src/proofs/oracle.rs`, lists and no tables) is the closer text
    to translate.
 

@@ -49,7 +49,15 @@ sent to a server.
    18's bound on every derivation (`ViewOptions`), with a smaller
    default than the command's, and `Size::height` asked before a
    derivation is built, since the builder recurses to that depth unless
-   step 20 gave it a stack of its own.
+   step 20 gave it a stack of its own (it did: the builder, the parser,
+   the printers and sequentialization no longer recurse on the input).
+   The target is the first 32-bit one: the arguments that no integer of
+   the checker, of the size estimate and of the memo wraps were made for
+   64 bits, with a sentence each for 32, and nothing was ever compiled
+   there. The bindings' tests run the checker's and the memo's tests at
+   their limits under wasm32, and the memory and occurrence bounds get
+   defaults that fit a tab (the library's gibibyte is close to what a
+   tab has in all).
 3. **The two searches of the default bias** take turns from their start
    without threads, at up to five times the better search. The first
    session measures it under wasm on the target set's small rows and
