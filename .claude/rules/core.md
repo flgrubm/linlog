@@ -408,7 +408,11 @@ that cannot repeat the engine's mistakes. Engines only call `Proof::check`.
   reads is the true one; the first implementation has the same rule, so
   the two still agree on the error. The rule also bounds what a
   malformed term costs: every zone, and so every error report, is within
-  the goal plus twice the nodes. The weights an observer adds up are
+  the goal plus twice the nodes. In ids, that is: `describe` writes every
+  member as its formula, so a report with formulas is members times
+  formula text, and a file that shares subformulas deeply makes it large
+  (65 MB from a file of 47 KB was measured); bounding the report is a
+  follow-up. The weights an observer adds up are
   not part of the argument: they are sums of at most that many formula
   sizes.
 - The `any` flag is what makes `⊤` checkable without a recorded context:
