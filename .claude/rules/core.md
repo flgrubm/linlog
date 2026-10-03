@@ -250,7 +250,10 @@ serve step 8. Invariants:
   is the last node, and every node is reachable from the root. `Proof::new`
   verifies the bounds and the order of what the root reaches, drops the
   rest (an engine's arena holds the subproofs of failed branches) and
-  renumbers; it does not check the proof. A subproof two nodes share (a
+  renumbers; it does not check the proof. A proof has at least one node
+  and at most 2³² − 1 (`Error::TooManyNodes`; reading a proof file
+  refuses the same), which is what makes the number of nodes, and the
+  checker's count of a node's readers, a `u32`. A subproof two nodes share (a
   memo hit) is stored once, so the arena is a DAG and the derivation view
   unfolds it.
 - A node never records the sequent it proves; the checker derives it. So
@@ -298,9 +301,10 @@ that cannot repeat the engine's mistakes. Engines only call `Proof::check`.
   live states are those of disjoint subtrees, each no larger than twice
   its subtree, so the memory is linear in the proof whatever the order of
   the arena; a node read by several others is cloned for all but the
-  last, so a proof whose shared nodes have large zones can still take
+  last, so a proof whose shared nodes have large zones takes
   nodes × zone (the weakenings of one large sequent under a tower of `&`
-  is the shape), which no engine's proofs were seen to do. The first
+  is the shape), which no engine's proofs were seen to do and which the
+  pass refuses past its bound (next item). The first
   implementation kept every node's sequent with a bitset as wide as the
   forest (6 GiB on a net of 65 000 clauses whose proof the search finds
   in 43 ms; the new pass checks it in a few milliseconds within the
@@ -310,21 +314,81 @@ that cannot repeat the engine's mistakes. Engines only call `Proof::check`.
   the generated sequents and the families, in every mode, and on mutants
   of them: a change to a rule is made in both, or the test says where
   they part.
+- **The pass counts what it holds and refuses to pass its bound**
+  (`Proof::check_within(mode, memory)`, `check(mode)` being that within
+  `DEFAULT_MEMORY_LIMIT`, 1 GiB; `None` for no bound). The refusal is
+  `Problem::Memory { limit }` at the node the pass had come to, and
+  `CheckError::is_refusal()` tells it from every fault of a proof: **a
+  refusal is no verdict**, and a front end must never print it as
+  "invalid" (`Error` wraps it as `Unchecked`, not `InvalidProof`;
+  `ViewError` as `Memory`, not `Invalid`). What is counted
+  (`Pass::held`): twelve bytes per node for the pass's two tables, what
+  the observer says it holds (`Observer::bytes`), and every state in
+  `live` or in the hands of the current rule at `State::bytes`, which is
+  the value plus its two tables. A table is counted by the most members
+  it ever held (`Zone::most`, `Bag::most`, through `table_bytes`), not
+  by its members now and not by `capacity()`: the standard library's
+  table never gives slots back, a clone has the slots of its original
+  whatever it holds, and `capacity()` goes down with every tombstone, so
+  a zone that was large and then consumed would be held for nothing and
+  counted as nothing. Counted that way a table that only grew is exact
+  to the byte, and one that members came and went from is at most four
+  times what is counted (a doubling forced by tombstones at half load;
+  twice in a random churn). A copy is charged before it is made, the
+  premises a rule was handed (`Pass::passed`) are taken off when its
+  own state is charged, and the count is compared with the bound at
+  every charge; the tables themselves are asked for before they are
+  allocated (`check::afford`, which the size estimate calls before it
+  makes its own, 72 bytes a node). Not counted: what one rule needs while it joins two
+  states, the one list of shared occurrences, the sequents of an error
+  report, each a small multiple of one counted state, and what is
+  proportional to the forest (the reading, the weights' scratch
+  tables). Measured on a proof file of 1.1 MB (46 768 nodes: 14 000 `⊥`
+  formulas introduced once, then read by the 16 384 leaves of a balanced
+  `&` tree, all before the first `&`): without a bound the pass holds
+  2.31 GiB by its count and the process's peak grows by 2.31 GiB (ratio
+  0.999) in 1.45 s; within 64 MiB it is refused after 28 ms with 62 MiB
+  held, within the default after 0.40 s with 1 022 MiB.
+  `holds_no_more_than_its_bound` pins the file's term.
 - **An error costs a second pass.** The states a failing node read are
   gone or changed by the time it fails, so `examine` runs the pass again
-  up to that node with its premises pinned (one reader more) and reports
-  their sequents from there. `Problem` is found by the first pass; the
-  second cannot fail before the node.
-- **`examine(proof, goal, mode, reading, observer)` is the one pass
-  behind everything**: `check` is it on the roots with no observer; the
-  derivation view and the size estimate are observers (`Observer`: every
-  node's `State` in arena order and the `Facts` of how its rule applied:
-  `used`, `shared`, `absent`, `needs`, `left_goal`), so what they know of
-  a proof is what the checker derived, never a second reading of the
-  rules. An observer may give occurrences a `weight`, which a state adds
+  up to that node and reports its premises' sequents from there; they
+  are kept then, since the node itself has yet to read them. `Problem`
+  is found by the first pass; the second does exactly what the first
+  did up to the node, so it holds no more and cannot fail before it. A
+  refusal has no second pass, which would take the memory that was
+  refused: its `premises` are empty.
+- **`examine(proof, goal, mode, reading, memory, observer)` is the one
+  pass behind everything**: `check` is it on the roots with no observer;
+  the derivation view and the size estimate are observers (`Observer`:
+  every node's `State` in arena order and the `Facts` of how its rule
+  applied: `used`, `shared`, `absent`, `needs`, `left_goal`), so what
+  they know of a proof is what the checker derived, never a second
+  reading of the rules, and every one of them is under the bound. An
+  observer may give occurrences a `weight` (a `u32`), which a state adds
   up over its zones as they change (`State::weight`, `goal_weight`); the
   checker's own observer is `()` and the sums are zeros. A goal other
   than the roots is checked the same way (`Derivation::of_goal`).
+- **No integer of the pass wraps, in any build**, and each says why at
+  its declaration. The arguments, all from four facts: a proof has
+  fewer than 2³² nodes, a node has two premises at most, a forest has
+  fewer than 2³² − 1 occurrences, and a state that a rule or an
+  observer reads has passed `within`, so its linear zone has at most
+  `Bag::MOST` = 2³² − 2 members. `readers` (`u32`): one node has at most
+  as many readers as the proof has nodes, because every later node but
+  the root must itself be somebody's premise. `Bag::counts` and
+  `Bag::len` saturate, and a saturated one is over `MOST`
+  (`Problem::Surplus`). `State::outputs`, `linear` and `goal` saturate
+  while a rule builds a state, which only a zone over `MOST` can make
+  them do, and are exact when read; every subtraction (`take`) is on a
+  premise's exact sums and comes before any addition of its rule.
+  `State::unrestricted` is at every moment the sum over a set of
+  occurrences, below 2⁶⁴ with `u32` weights. `State::weight()`, the two
+  zones together, saturates, and the size estimate carries that to its
+  result (below). `Pass::held` never exceeds what the pass has
+  allocated, and saturates all the same. The second pass no longer adds
+  a reader to pin the premises (the one `+= 1` that could have passed
+  `u32::MAX`).
 - **A zone the rest of the proof cannot consume is refused where it
   arises** (`Pass::within`, `Problem::Surplus`): a rule takes two members
   of a premise's zone at most and passes the others on, and the root's
@@ -416,9 +480,15 @@ so structural rules appear only where needed:
   uses, unless a `⊤` in that premise absorbs them.
 - Whatever a `⊤` absorbs flows down to it through every rule; a `⊗` split
   gives the absorbed part to the absorbing premise.
-The builder recurses over the tree, so its depth is the derivation's
-height, and a DAG with heavy sharing unfolds to a tree exponentially
-larger than the arena. `Derivation::new` checks the term first (any mode)
+The builder walks the tree on a stack of its own (`Task`: a subproof to
+unfold, an inference to conclude from the subtrees finished last, the
+weakenings above a `&` premise, the contractions below a `⊗`), so a
+derivation of any height is built on a call stack of any size
+(`any_height_on_a_small_stack`: 120 000 inferences on 256 KiB); a DAG
+with heavy sharing unfolds to a tree exponentially larger than the
+arena. The order of the inferences is the recursion's: the left
+premise's subtree, the right one's, the rule, then its structural rules.
+`Derivation::new` checks the term first (any mode)
 and fails as the checker would. What the builder knows of the term comes
 from the checker's pass through an observer (`Record`): a flag per node
 for `absorbs` and for `used` (a `?` step whose formula a copy above uses,
@@ -431,10 +501,16 @@ table of every node's sequent would be, by any factor, on a chain of `?`
 steps (which are no inferences).
 
 **The size of a derivation is computed from the term, without building
-it** (`proofs/size.rs`, `Proof::derivation_size(two_sided)`, a `Size`):
-one pass of the checker with an observer that keeps a few numbers per
-node, all saturating, since a term with shared subproofs unfolds
-exponentially. What `Size` promises: `inferences` and `height` (the
+it** (`proofs/size.rs`, `Proof::derivation_size(two_sided)`, a `Size`;
+`derivation_size_within(two_sided, memory)` for another bound on the
+pass): one pass of the checker with an observer that keeps a few numbers
+per node, all saturating, since a term with shared subproofs unfolds
+exponentially. Every sum, product and difference there saturates;
+nothing is ever taken away from a count of inferences, of characters or
+of a height on its way to the root, and a node's characters are never
+fewer than its sequent's weight, so a number that reached `u64::MAX`
+anywhere shows in the `Size` returned, whose `bytes()` is then over
+every bound. What `Size` promises: `inferences` and `height` (the
 inferences on the longest branch; the text tree has two lines for each)
 are exact; `characters` is the sum over the inferences of their sequents
 written one-sided, each formula with two characters for its separator,
@@ -469,14 +545,27 @@ order of magnitude for every format but the SVG's memory.
 
 **Nothing builds a derivation it was not allowed to** (`ViewOptions`,
 the one options value of every path that builds one, plain data with
-serde: `limit`, the most bytes of `Size::bytes()` a derivation may be
-estimated at, `DEFAULT_LIMIT` 64 MiB, `None` or `UNBOUNDED` for no
-bound). `unfold` is the one place derivations are made, for
-`Derivation::new`, `two_sided` and `of_goal` alike: the size first (a
-pass of the checker), `ViewError::TooLarge { size, limit }` past the
-bound with nothing built, then the pass that records what the builder
-reads, then the builder, which polls the caller's `stop` once per node
-and answers `ViewError::Stopped`. So the text tree, the four exports
+serde, a field absent from the JSON taking its default: `limit`, the
+most bytes of `Size::bytes()` a derivation may be estimated at,
+`DEFAULT_LIMIT` 64 MiB, `None` for no bound; and `memory`, the most
+bytes the making of one may hold, `DEFAULT_MEMORY_LIMIT`, `None` for no
+bound, which bounds every pass of the checker on the way and the
+derivation by the same estimate. `UNBOUNDED` lifts `limit` and keeps the
+default `memory`; `UNBOUNDED.memory(None)` is no bound at all). `unfold`
+is the one place derivations are made, for `Derivation::new`,
+`two_sided` and `of_goal` alike: the size first, always (a pass of the
+checker); `ViewError::TooLarge { size, limit }` past `limit`, else
+`ViewError::Memory { size: Some(size), limit }` past `memory`, else
+`ViewError::TooMany { size }` for more inferences than an `InfId` counts
+(`Derivation::MOST`, which only a call with both bounds lifted can
+reach), each with nothing built; then the pass that records what the
+builder reads, then the builder, which polls the caller's `stop` once
+per node and answers `ViewError::Stopped`. A pass that the checker gives
+up for its memory is `ViewError::Memory { size: None, limit }`, never
+`Invalid`: `From<CheckError>` sees to it. The record's sequents are not
+counted against the pass (each is in the derivation, whose estimate was
+within the bound before the pass began). `ViewError` and `Problem` are
+`#[non_exhaustive]`. So the text tree, the four exports
 (which take a `Derivation`), the graft of `Interactive::close` and a
 front end's check output are all under the bound by construction, and a
 new path that needs a derivation gets it from there or not at all.
@@ -486,9 +575,9 @@ derivation is refused for its size has passed the checker (the size's
 pass is one). `Interactive::close(goal, options, view, stop)` leaves a
 goal open whose graft is refused (`Error::View`), though the search
 proved it; what it then tells the user is the front end's to say. The
-builder still recurses to the derivation's height, and the bound does
-not limit that: a caller on a small stack (the web front end) needs
-`Size::height` to decide.
+builder needs no stack to speak of, so a front end on a small one (the
+web) builds what the bounds allow; `Size::height` is what it asks to
+know whether a tree fits a view.
 
 `Rule::Open` is the rule of an open goal in the derivation of a proof in
 progress (below) and appears nowhere else; `Rule::classical` maps every
