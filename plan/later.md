@@ -617,7 +617,11 @@ holding without it through `textLength`.
 
 ## Follow-ups: the focused engine
 
-*Assigned (2026-10-03).* The check and the derivation of a large net:
+*Assigned (2026-10-03).* A reference prover kept in the repository,
+test-only, for the differential runs that reviewers so far wrote and
+threw away (the unfocused two-sided prover of step 8, for one): step 29, before
+it changes the engine; the engines of steps 30, 34 and 36 join its test.
+The checker has its own since step 18 (`proofs/oracle.rs`). The check and the derivation of a large net:
 step 18. The forward search's missed stop and the portfolio's removal:
 19. The search's own memory: 20. The copy bound, the five sampled
 problems and the default's contract at the limit: 21. The Horn test on

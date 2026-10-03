@@ -51,6 +51,32 @@ Every commit that claims no change of the search leaves `nodes`,
 is measured, and is reviewed differentially by a fresh-context reviewer
 as step 15's were. Pinned CPU time does not rise.
 
+The counters say that a search is the same search; they say nothing of
+a verdict that was wrong before and after. So this step also leaves a
+**reference prover in the repository** (the author, 2026-10-03, on the
+planning session's recommendation), before it changes anything: a
+test-only module, as `core/src/proofs/oracle.rs` is for the checker,
+that decides a small sequent by the plain rules of the unfocused
+calculus, exhaustively, with no polarity, no bias, no count prune and
+no memo keyed as the engines key theirs, classical and two-sided,
+linear and affine, with and without Mix, and with a copy bound of its
+own for the exponentials. It shares no code with any engine. A
+committed test compares it with every engine on the sequents
+`search/generate.rs` makes, provable ones and mutants, at sizes it
+finishes in the time the neighbouring tests take, and asserts what the
+contract allows: never "proved" against "unprovable", in either
+direction, and no "unprovable" from an engine where the reference finds
+a proof within its bound. Until now such a reference was written anew
+by a step's reviewer and thrown away (the unfocused two-sided prover
+that step 8's engine was compared with on 60 000 sequents is the one
+the rules file names), so none of those runs can be repeated on the
+engine as it is today; the checker guards a
+wrong "proved" in every build, and only the engines themselves guard a
+wrong "unprovable". Steps 30, 34 and 36 add their engines to this test.
+A fresh-context reviewer still writes a reference of their own for a
+change of the search: the committed one is for repeating, theirs for
+independence.
+
 ## What waits
 
 Whether the engine's recursion becomes an explicit stack: only if step
