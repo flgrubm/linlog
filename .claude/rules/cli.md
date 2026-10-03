@@ -127,6 +127,25 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   would hold for a small proof minus the tree. In a session the line is
   the command's output, and a `close` whose graft is refused leaves the
   goal open.
+- **A text tree that does not fit the terminal is not printed** (`--tree
+  auto`, the default; `Show::fit`): when standard output is a terminal,
+  there is no `--output` and the format is `text`, the tree is printed
+  only if its widest line fits the terminal's columns and its lines
+  `SCREENS` (3) times the terminal's rows. Otherwise the verdict is
+  followed by one line with the tree's inferences, columns and lines and
+  the ways to get it (`unfit`: `--tree always`, `--output FILE`,
+  `--format json`). The decision is made twice: from the proof's `Size`
+  before anything is built (its width is a lower bound, its lines are
+  exact), and from `Derivation::text_size` once the derivation exists,
+  which is exact. `--tree always` prints whatever the size, under the
+  limit; `--tree never` leaves the derivation out of every format
+  without a line; into a file or a pipe `auto` is `always`, so a script
+  gets the same output whatever the terminal. `--quiet` is what it was.
+  The terminal's size is that of standard output alone:
+  `terminal_size::terminal_size_of(stdout)`, never the crate's
+  `terminal_size()`, which falls back to standard error and standard
+  input and would report a size while the output goes to a pipe; 80 by
+  24 where the terminal does not say.
 - **The time limit and Ctrl-C hold after the search** (`prove`): the same
   deadline and flag are polled every `STEPS_PER_CLOCK` (256) inferences
   built and pieces of text written (`halt`; the text tree goes through

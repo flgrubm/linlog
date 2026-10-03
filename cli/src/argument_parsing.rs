@@ -359,6 +359,14 @@ pub struct OutputArgs {
     /// paste (latex and typst)
     #[arg(long)]
     pub standalone: bool,
+    /// When to print the proof tree of the text format
+    ///
+    /// By default a tree is printed on a terminal only if it fits: no line
+    /// wider than the terminal and no more than three screens of lines.
+    /// Otherwise one line says how large the tree is and how to get it.
+    /// Into a file or a pipe the tree is always written.
+    #[arg(long, value_enum, value_name = "WHEN", default_value_t = Tree::Auto)]
+    pub tree: Tree,
     /// The largest derivation to build, by its estimated size: a number
     /// of bytes with a unit such as 64MiB or 2GiB, or `none` for no limit
     ///
@@ -370,6 +378,17 @@ pub struct OutputArgs {
     /// the verdict's. `--format json` writes the proof itself at any size.
     #[arg(long, value_name = "SIZE", value_parser = parse_limit, default_value_t = Limit::default())]
     pub derivation_limit: Limit,
+}
+
+/// When the text format prints its proof tree.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tree {
+    /// On a terminal if it fits, into a file or a pipe always
+    Auto,
+    /// Whatever its size, up to `--derivation-limit`
+    Always,
+    /// Not at all
+    Never,
 }
 
 /// The largest derivation a command builds, in bytes of its estimated

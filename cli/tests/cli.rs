@@ -34,9 +34,11 @@ fn linlog(args: &[&str], stdin: &str) -> (i32, String, String) {
 
 /// A derivation estimated above `--derivation-limit` is not written: the
 /// verdict stands with its exit status, standard error says how large the
-/// derivation is and how to get it.
+/// derivation is and how to get it, and `none` lifts the limit;
+/// `--tree never` leaves the tree out without a word, and into a pipe
+/// `--tree auto` writes it whatever its size.
 #[test]
-fn derivation_limit() {
+fn derivation_limit_and_tree_switch() {
     let sequent = "A, A -o B |- B";
     let verdict = "provable (MLL, classical, net engine)\n";
     let (status, out, err) = linlog(&["prove", "--derivation-limit", "100", sequent], "");
@@ -63,6 +65,24 @@ fn derivation_limit() {
         out.contains("\\begin{prooftree}") && err.is_empty(),
         "{out}{err}"
     );
+
+    let (_, whole, _) = linlog(&["prove", sequent], "");
+    for when in ["always", "auto"] {
+        let (status, out, err) = linlog(
+            &[
+                "prove",
+                "--tree",
+                when,
+                "--derivation-limit",
+                "none",
+                sequent,
+            ],
+            "",
+        );
+        assert_eq!((status, out, err), (0, whole.clone(), String::new()));
+    }
+    let (status, out, err) = linlog(&["prove", "--tree", "never", sequent], "");
+    assert_eq!((status, out.as_str(), err.as_str()), (0, verdict, ""));
 
     // `check` is under the same limit.
     let (_, proof, _) = linlog(&["prove", "--format", "json", sequent], "");

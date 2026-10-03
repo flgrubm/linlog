@@ -1,7 +1,7 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use crate::argument_parsing::{CheckArgs, Format, OutputArgs, ProveArgs, SequentFormat};
+use crate::argument_parsing::{CheckArgs, Format, OutputArgs, ProveArgs, SequentFormat, Tree};
 use crate::io;
 use crate::{Status, catch_interrupt, interrupted};
 use anyhow::{Context, Result, anyhow, bail};
@@ -58,6 +58,10 @@ enum Stop {
     Interrupt,
 }
 
+/// How many screens of lines a proof tree may fill and still be printed
+/// on a terminal without being asked for.
+const SCREENS: u64 = 3;
+
 /// How many inferences are built, or pieces of text written, between two
 /// looks at the clock and the Ctrl-C flag while a derivation is made.
 const STEPS_PER_CLOCK: u32 = 256;
@@ -71,8 +75,11 @@ pub(crate) struct Show {
     form: Form,
     /// The bound on what is built.
     view: ViewOptions,
-    /// Whether the output goes to a terminal.
-    terminal: bool,
+    /// When the text tree is printed.
+    tree: Tree,
+    /// The columns and rows of the terminal the output goes to, if it goes
+    /// to one.
+    terminal: Option<(u64, u64)>,
 }
 
 impl Show {
@@ -84,11 +91,21 @@ impl Show {
             output.standalone,
             matches!(format, Format::Latex | Format::Typst | Format::Rocq),
         )?;
-        let terminal = output.output.is_none() && std::io::stdout().is_terminal();
+        // The size of the terminal that standard output is, and of no
+        // other stream's.
+        let stdout = std::io::stdout();
+        let terminal = match (&output.output, stdout.is_terminal()) {
+            (None, true) => Some(
+                terminal_size::terminal_size_of(stdout)
+                    .map_or((80, 24), |(w, h)| (u64::from(w.0), u64::from(h.0))),
+            ),
+            _ => None,
+        };
         Ok(Self {
             format,
             form,
             view: output.derivation_limit.into(),
+            tree: output.tree,
             terminal,
         })
     }
@@ -100,7 +117,19 @@ impl Show {
             format: Format::Text,
             form: Form::Fragment,
             view,
-            terminal: false,
+            tree: Tree::Always,
+            terminal: None,
+        }
+    }
+
+    /// The columns and lines a text tree may take to be printed unasked,
+    /// when the output is a terminal and the switch leaves it to the fit.
+    fn fit(&self) -> Option<(u64, u64)> {
+        match (self.tree, self.format, self.terminal) {
+            (Tree::Auto, Format::Text, Some((columns, rows))) => {
+                Some((columns, rows.saturating_mul(SCREENS)))
+            }
+            _ => None,
         }
     }
 
@@ -108,7 +137,7 @@ impl Show {
     /// verdict when the output is a terminal, to standard error otherwise,
     /// so that a file or a pipe gets what it would get from a small proof.
     fn left_out(&self, text: &mut String, line: &str) {
-        if self.terminal {
+        if self.terminal.is_some() {
             text.push('\n');
             text.push_str(&note(self.format, line));
         } else {
@@ -164,6 +193,16 @@ pub(crate) fn bytes_text(bytes: u64) -> String {
     }
 }
 
+/// Returns the line for a tree that does not fit the terminal.
+fn unfit(inferences: u64, width: &str, lines: u64, columns: u64, most: u64) -> String {
+    format!(
+        "the proof tree is not shown: {inferences} inferences, {width} columns by {lines} \
+         lines, for a terminal of {columns} columns and at most {most} lines ({SCREENS} \
+         screens); print it with --tree always, write it with --output FILE, or get the \
+         proof with --format json"
+    )
+}
+
 /// Returns the line for a derivation past the limit.
 fn too_large(size: &Size, limit: u64) -> String {
     format!(
@@ -179,8 +218,9 @@ fn too_large(size: &Size, limit: u64) -> String {
 
 /// Makes the derivation of a proof as `show` asks, two-sided in
 /// intuitionistic mode: a LaTeX or Typst proof tree, a Rocq script, an
-/// SVG document or a text tree; or says why it is left out: a derivation
-/// past the limit, or one that `halt` stopped, which is polled as it is built and written and
+/// SVG document or a text tree; or says why it is left out: a text tree
+/// that does not fit the terminal, a derivation past the limit, or one
+/// that `halt` stopped, which is polled as it is built and written and
 /// whose reason `why` then gives. Fails with the checker's complaint,
 /// with formulas, on a proof that is none.
 pub(crate) fn derivation(
@@ -190,9 +230,30 @@ pub(crate) fn derivation(
     mut halt: impl FnMut() -> bool,
     why: impl Fn() -> String,
 ) -> Result<Shown> {
+    if show.tree == Tree::Never {
+        return Ok(Shown::Nothing);
+    }
     let invalid =
         |e: linlog::CheckError| anyhow!("the proof is invalid: {}", e.describe(proof.forest()));
     let stopped = || Shown::LeftOut(format!("the derivation is not written: {}", why()));
+    // A tree that cannot fit is known from its size alone, before
+    // anything is built.
+    let fit = show.fit();
+    if let Some((columns, most)) = fit {
+        let size = proof
+            .derivation_size(mode.intuitionistic)
+            .map_err(invalid)?;
+        if size.width > columns || size.lines() > most {
+            let width = format!("at least {}", size.width);
+            return Ok(Shown::LeftOut(unfit(
+                size.inferences,
+                &width,
+                size.lines(),
+                columns,
+                most,
+            )));
+        }
+    }
     let built = if mode.intuitionistic {
         proof.two_sided_derivation_with(&show.view, &mut halt)
     } else {
@@ -206,6 +267,20 @@ pub(crate) fn derivation(
         }
         Err(ViewError::Stopped) => return Ok(stopped()),
     };
+    if let Some((columns, most)) = fit {
+        let (width, lines) = d.text_size();
+        let (width, lines) = (width as u64, lines as u64);
+        if width > columns || lines > most {
+            let inferences = d.inferences().len() as u64;
+            return Ok(Shown::LeftOut(unfit(
+                inferences,
+                &width.to_string(),
+                lines,
+                columns,
+                most,
+            )));
+        }
+    }
     Ok(Shown::Written(match show.format {
         Format::Latex => latex::derivation(&d, show.form),
         Format::Typst => typst::derivation(&d, show.form),
