@@ -710,9 +710,17 @@ the net engine's, and the others stay zero.
     a deadline builds the forest itself, as the CLI does, and calls
     `prove_goal`), a single pass over the forest, the check of the
     proof at the end of `prove_goal` and the size pass of a derivation
-    (below), `sequentialize`, and the freeing of a search's memo and
-    arena when it returns, which is what a stop is late by in practice:
-    0.1 to 0.35 s for a memo at its default cap of 2²⁰ entries.
+    (below), `sequentialize`, and **the freeing of a full memo**, which
+    is what a stop is late by in practice. A memo at its default cap of
+    2²⁰ entries is two allocations per entry, and freeing them takes
+    0.15 to 0.35 s on the machine's middle cores and 0.55 s on its
+    slowest: once when the search returns, and once in the middle of a
+    search every time `Memo::insert` empties a full table (`qbf/40#1`:
+    a gap of 0.51 s between two polls, every two seconds). A stop that
+    falls into the second and then pays the first is about a second
+    late on the slowest cores. Keys that live in one allocation, or in
+    an arena that is dropped whole, would remove both; that is the
+    memo's own design and was left to the step that bounds its bytes.
   - *The check and the size pass are not polled because they are
     short*: on the largest proof the engines find in the LLTP library
     (`SYJ202+1.005` in its cbv translation, 566 490 inferences) the
@@ -1706,16 +1714,19 @@ has no or-choices worth sharing out). What the code relies on:
   `Unprovable` only with every worker's flag clear.
 - **The net engine's cubes are what is left of the search, split at
   its choices** (`net::parallel::search`). A cube is the links of a
-  branch nobody has followed yet. The root engine starts from the one
-  cube without a link and, while there are fewer than
-  `CUBES_PER_THREAD` (16) cubes per thread, takes the oldest (`reset`,
-  `seed`) and replaces it by the branches of its next choice
-  (`explore(Some(1), …)`: the search below the seed with every branch
-  recorded and taken back at its first link of a literal with more
-  than one admissible partner; the forced links on the way to that
-  choice are made and stay in the cube). A branch that dies leaves no
-  cube, a proof net found on the way ends everything, and an empty
-  queue is `Unprovable`. So nothing is searched twice: the cubes
+  branch nobody has followed yet, and the list of cubes is kept in the
+  order in which the sequential search would reach them. The root
+  engine starts from the one cube without a link and, while there are
+  fewer than `CUBES_PER_THREAD` (16) cubes per thread, makes a pass
+  over the list that replaces every cube in place (`reset`, `seed`) by
+  the branches of its next choice (`explore(Some(1), …)`: the search
+  below the seed with every branch recorded and taken back at its first
+  link of a literal with more than one admissible partner; the forced
+  links on the way to that choice are made and stay in the cube). So
+  after `d` passes the cubes are the branches of the first `d` choices
+  that the tests do not reject. A branch
+  that dies leaves no cube, a proof net found on the way ends
+  everything, and an empty list is `Unprovable`. So nothing is searched twice: the cubes
   partition the remaining search at every moment, and a sequent whose
   links are all forced is decided by the first `explore`, which is the
   sequential search, link for link (`forced_links_are_made_once` pins
@@ -1731,8 +1742,20 @@ has no or-choices worth sharing out). What the code relies on:
   the per-worker state is allocated once; a worker that finds a net
   stores it and raises the flag; `Unprovable` needs every cube to have
   ended `Ok(false)`, and any error or a real stop makes the verdict
-  `Unknown`. The queue is first in, first out, so the cubes are the
-  shallow branches first and of mixed depth when the count is reached.
+  `Unknown`. **The order is what keeps a pool from being slower than
+  one thread on a provable sequent**: the workers take cubes in the
+  sequential search's order, so the cube with the proof one thread
+  finds is taken no later than one thread reaches it. A first version
+  kept the cubes in a queue and appended a cube's branches at its end;
+  the workers then searched cubes that one thread never enters before
+  the one with the proof, and Partition with the items 1, 1, 2, 4 took
+  two threads 2.2 s and 253 852 literals against 1.3 s and 109 627 on
+  one. **A pass is always whole.** Stopping in the middle of one, as
+  soon as the count is reached, left the unsplit cubes at the end of
+  the list one choice coarser than the rest, and the refutations of
+  3-Partition were 3 to 4.5 % slower on two and four threads than with
+  cubes of one depth; the count may therefore overshoot by a level's
+  branching, as it always could.
   No state is shared beyond the flags: the structure and the scratch
   are per worker. A cube's seed must reproduce the root engine's state
   at the record: the links in order, which the structure's undo log and

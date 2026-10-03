@@ -795,7 +795,6 @@ pub(crate) mod parallel {
     use crate::occurrences::{Forest, OccId};
     use crate::search::parallel::Runtime;
     use crate::search::{Options, Reason, Statistics, Stop, Verdict};
-    use std::collections::VecDeque;
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -821,16 +820,18 @@ pub(crate) mod parallel {
     /// Runs the net engine on the runtime's pool, as [`super::search`]
     /// does on one thread, polling `stop` on the calling thread while the
     /// pool searches. The root engine splits the search into cubes: it
-    /// starts from the one cube without a link and replaces the oldest
-    /// cube by the branches of its next choice, the links that choice
-    /// forces included, until there are [`CUBES_PER_THREAD`] cubes per
-    /// thread or the splitting decided the sequent by itself. A cube is
-    /// never searched twice, and where every link is forced the first
-    /// cube's one branch is the whole sequential search. Then every
-    /// worker takes cubes from a shared counter, one engine of its own
-    /// reset per cube, until a proof net is found, which stops the
-    /// others, or the cubes run out. `Unprovable` needs every cube to
-    /// have been searched to its end.
+    /// starts from the one cube without a link and, pass by pass over the
+    /// cubes in the order of the search, replaces every cube by the
+    /// branches of its next choice, the links that choice forces
+    /// included, until a pass leaves [`CUBES_PER_THREAD`] cubes per thread
+    /// or the splitting decided the sequent by itself. A cube is never searched twice,
+    /// where every link is forced the first cube's one branch is the
+    /// whole sequential search, and the cubes stay in the order in which
+    /// one thread would reach them. Then every worker takes cubes from a
+    /// shared counter in that order, one engine of its own reset per
+    /// cube, until a proof net is found, which stops the others, or the
+    /// cubes run out. `Unprovable` needs every cube to have been searched
+    /// to its end.
     pub(crate) fn search(
         forest: &Forest,
         mode: Mode,
@@ -844,23 +845,26 @@ pub(crate) mod parallel {
         let threads = runtime.threads();
         let (result, statistics, net) = runtime.drive(stop, |flags| {
             let mut root = Engine::new(forest, mode, options, Stop::Flags(flags));
-            // The cubes are what is left of the search at every moment:
-            // each a branch nobody has followed yet.
-            let mut cubes = VecDeque::from([Cube::new()]);
-            let mut branches = Vec::new();
+            // The cubes are what is left of the search at every moment,
+            // each a branch nobody has followed yet, in the order of the
+            // search: the branches of a cube take its place.
+            let mut cubes = vec![Cube::new()];
             while cubes.len() < CUBES_PER_THREAD * threads {
-                let Some(cube) = cubes.pop_front() else {
-                    return (Ok(false), root.statistics, None);
-                };
-                root.reset();
-                root.seed(&cube);
-                match root.explore(Some(1), &mut branches) {
-                    Ok(true) => return (Ok(true), root.statistics, Some(root.net)),
-                    Ok(false) => cubes.extend(branches.drain(..)),
-                    Err(reason) => return (Err(reason), root.statistics, None),
+                let mut split = Vec::new();
+                for cube in &cubes {
+                    root.reset();
+                    root.seed(cube);
+                    match root.explore(Some(1), &mut split) {
+                        Ok(true) => return (Ok(true), root.statistics, Some(root.net)),
+                        Ok(false) => {}
+                        Err(reason) => return (Err(reason), root.statistics, None),
+                    }
                 }
+                if split.is_empty() {
+                    return (Ok(false), root.statistics, None);
+                }
+                cubes = split;
             }
-            let cubes = Vec::from(cubes);
             let next = AtomicUsize::new(0);
             let found = AtomicBool::new(false);
             let collected = Mutex::new(Collected {
