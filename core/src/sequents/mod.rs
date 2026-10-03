@@ -222,9 +222,47 @@ impl Sequent {
         Ok(())
     }
 
-    /// Consumes another sequent and appends its root formulas to this one,
-    /// with the arenas and atom dictionaries concatenated.
-    pub fn add(&mut self, s: Self) {
+    /// Gives atoms of the same name one index, the first's, and drops the
+    /// later entries of the table, so that a name is an atom; a table of
+    /// distinct names stays as it is. The terms must refer to atoms of the
+    /// table.
+    pub(crate) fn merge_atoms(&mut self) {
+        use Term::*;
+        let mut seen =
+            HashMap::<&str, Atom>::with_capacity_and_hasher(self.atoms.len(), Default::default());
+        let mut merged = Vec::with_capacity(self.atoms.len());
+        for name in &self.atoms {
+            let fresh = Atom::new(seen.len() as u32);
+            merged.push(*seen.entry(name).or_insert(fresh));
+        }
+        let distinct = seen.len();
+        drop(seen);
+        if distinct == self.atoms.len() {
+            return;
+        }
+        for e in &mut self.terms {
+            *e = match *e {
+                Var(a) => Var(merged[a.index()]),
+                DualVar(a) => DualVar(merged[a.index()]),
+                other => other,
+            };
+        }
+        // An entry stays when it is the first of its name, which is when
+        // its new index is the number of entries kept before it.
+        let (mut old, mut kept) = (0, 0);
+        self.atoms.retain(|_| {
+            let first = merged[old].index() == kept;
+            old += 1;
+            kept += usize::from(first);
+            first
+        });
+    }
+
+    /// Appends another sequent's arena, root formulas and atom table to this
+    /// one's as they are, so that a name both have is two entries until
+    /// [`optimize`](Self::optimize) or [`merge_atoms`](Self::merge_atoms)
+    /// runs.
+    pub(crate) fn append(&mut self, s: Self) {
         let offset_atoms = self.atoms.len() as u32;
         let offset_terms = self.terms.len() as u32;
 
@@ -241,6 +279,14 @@ impl Sequent {
         );
 
         self.atoms.extend(s.atoms);
+    }
+
+    /// Consumes another sequent and appends its root formulas to this one,
+    /// with the arenas concatenated; an atom of the other sequent is the
+    /// atom of the same name here, if there is one.
+    pub fn add(&mut self, s: Self) {
+        self.append(s);
+        self.merge_atoms();
     }
 }
 
@@ -275,6 +321,21 @@ mod tests {
     /// Shorthand for `Term::Bang`.
     pub(crate) const fn bang(k: u32) -> Term {
         Term::Bang(TermId::new(k))
+    }
+
+    /// Adding a sequent identifies its atoms with those of the same name,
+    /// and leaves the others in the order they came.
+    #[test]
+    fn add_merges_atoms_by_name() {
+        let mut s = raw(vec![dual_var(0), var(1)], &[0, 1], &["A", "B"]);
+        s.add(raw(
+            vec![var(0), var(1), var(2)],
+            &[0, 1, 2],
+            &["C", "A", "B"],
+        ));
+        assert_eq!(s.atoms, ["A", "B", "C"]);
+        assert_eq!(s.terms, [dual_var(0), var(1), var(2), var(0), var(1)]);
+        assert_eq!(s.roots.len(), 5);
     }
 
     /// The empty sequent survives optimisation unchanged.

@@ -118,14 +118,16 @@ impl TryFrom<Sequent> for Seq {
     type Error = crate::Error;
 
     /// Converts a deserialized sequent back, failing if its arena breaks the
-    /// invariants.
+    /// invariants. A name the dictionary repeats is one atom, as it is in a
+    /// parsed sequent.
     fn try_from(s: Sequent) -> Result<Seq, Self::Error> {
-        let s = Seq {
+        let mut s = Seq {
             terms: s.terms.into_iter().map(Term::from).collect(),
             roots: s.ids.into_iter().map(TermId::new).collect(),
             atoms: s.var_dict,
         };
         s.verify_integrity()?;
+        s.merge_atoms();
         Ok(s)
     }
 }

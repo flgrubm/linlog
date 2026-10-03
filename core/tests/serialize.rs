@@ -64,6 +64,17 @@ fn round_trip() {
     }
 }
 
+/// A name the atom dictionary repeats is one atom: the sequent reads as the
+/// one with the name once, and is proved like it.
+#[test]
+fn repeated_atom_name_is_one_atom() {
+    let json = r#"{"terms":[{"D":0},{"V":1}],"ids":[0,1],"var_dict":["A","A"]}"#;
+    let s: Sequent = serde_json::from_str(json).unwrap();
+    assert_eq!(s, "A |- A".parse().unwrap());
+    let outcome = prove(&s, Mode::CLASSICAL, &Options::default()).unwrap();
+    assert!(matches!(outcome.verdict, linlog::Verdict::Proved(_)));
+}
+
 /// JSON whose arena breaks an invariant is rejected on deserialization.
 #[test]
 fn broken_arena_is_rejected() {

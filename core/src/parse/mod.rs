@@ -254,7 +254,7 @@ impl<'a> From<TwoSided<'a>> for Sequent {
         lhs_terms
             .chain(rhs_terms)
             .map(Sequent::from)
-            .for_each(|s| sequent.add(s));
+            .for_each(|s| sequent.append(s));
         sequent.optimize().unwrap();
         sequent
     }

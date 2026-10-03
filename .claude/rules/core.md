@@ -32,6 +32,19 @@ guarantees that every arena term is reachable: a deserialized sequent may
 carry junk terms, and `fragment()` and `Forest` walk from the roots for that
 reason. `Sequent::add` merges two sequents by offsetting atom and term indices.
 
+**A name is an atom**: the atom table of every `Sequent` a caller can hold
+has distinct names. `optimize` merges equal names (and drops unused ones),
+`add` identifies the added sequent's atoms with those of the same name
+(`merge_atoms`), and deserialization does the same after the integrity
+check, so a JSON dictionary that repeats a name reads as the sequent with
+the name once; before, such a file gave two atoms that printed alike, and
+`⊢ ~A, A` was answered "unprovable". `merge_atoms` leaves a table of
+distinct names untouched (unused entries and their order included), so a
+JSON sequent is written back as it was read, and it never moves a term or
+a root, so the occurrence ids a stored proof names are those of the file.
+Only the parser's lowering holds a table with repeats (one entry per
+occurrence, joined by the crate-private `append`), until its `optimize`.
+
 The public surface is read-only accessors (`terms`, `term`, `roots`,
 `atom_names`, `atom_name`, `atom`, `formula`) plus `optimize`, `add` and
 `verify_integrity`; construction goes through the parser or serde. Tests inside
