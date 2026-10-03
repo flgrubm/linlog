@@ -46,12 +46,36 @@ impl SequentInput {
     }
 }
 
-/// Writes `text` and a newline to the file, or to standard output for
-/// `None`.
+/// Writes `text` and a newline to a file under another name beside
+/// `path` and gives it that name once it is whole, so that `path` never
+/// holds half an output; what is no regular file (a device, a pipe) is
+/// written to as it is.
+fn write_file(path: &Path, text: &str) -> io::Result<()> {
+    let whole = |file: &Path| {
+        let mut out = fs::File::create(file)?;
+        out.write_all(text.as_bytes())?;
+        out.write_all(b"\n")
+    };
+    if fs::metadata(path).is_ok_and(|m| !m.is_file()) {
+        return whole(path);
+    }
+    let mut partial = path.as_os_str().to_owned();
+    partial.push(format!(".{}.partial", std::process::id()));
+    let partial = Path::new(&partial);
+    whole(partial)
+        .and_then(|()| fs::rename(partial, path))
+        .inspect_err(|_| {
+            let _ = fs::remove_file(partial);
+        })
+}
+
+/// Writes `text` and a newline to the file, which then holds all of it or
+/// is as it was, or to standard output for `None`.
 pub fn write(path: Option<&Path>, text: &str) -> Result<()> {
     match path {
-        Some(path) => fs::write(path, format!("{text}\n"))
-            .with_context(|| format!("cannot write {}", path.display())),
+        Some(path) => {
+            write_file(path, text).with_context(|| format!("cannot write {}", path.display()))
+        }
         None => {
             let mut stdout = io::stdout().lock();
             writeln!(stdout, "{text}").context("cannot write to standard output")
