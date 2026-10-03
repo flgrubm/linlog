@@ -193,13 +193,25 @@ pub(crate) fn bytes_text(bytes: u64) -> String {
     }
 }
 
+/// Returns a count of a derivation's size as text; one that reached the
+/// most its counter holds is only known to be beyond it.
+pub(crate) fn count_text(count: u64) -> String {
+    if count == u64::MAX {
+        "more than 10¹⁹".to_owned()
+    } else {
+        count.to_string()
+    }
+}
+
 /// Returns the line for a tree that does not fit the terminal.
 fn unfit(inferences: u64, width: &str, lines: u64, columns: u64, most: u64) -> String {
     format!(
-        "the proof tree is not shown: {inferences} inferences, {width} columns by {lines} \
-         lines, for a terminal of {columns} columns and at most {most} lines ({SCREENS} \
-         screens); print it with --tree always, write it with --output FILE, or get the \
-         proof with --format json"
+        "the proof tree is not shown: {} inferences, {width} columns by {} lines, for a \
+         terminal of {columns} columns and at most {most} lines ({SCREENS} screens); print \
+         it with --tree always, write it with --output FILE, or get the proof with --format \
+         json",
+        count_text(inferences),
+        count_text(lines)
     )
 }
 
@@ -209,8 +221,8 @@ fn too_large(size: &Size, limit: u64) -> String {
         "the derivation is not written: its {} inferences with {} characters of sequents are \
          estimated at {}, over the limit of {}; --format json writes the proof itself, \
          --derivation-limit SIZE raises the limit and --derivation-limit none lifts it",
-        size.inferences,
-        size.characters,
+        count_text(size.inferences),
+        count_text(size.characters),
         bytes_text(size.bytes()),
         bytes_text(limit)
     )

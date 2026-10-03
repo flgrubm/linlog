@@ -3,7 +3,7 @@
 
 use crate::argument_parsing::InteractArgs;
 use crate::prove::{
-    Show, Shown, bytes_text, derivation, describe, on_large_stack, polls_per_clock,
+    Show, Shown, bytes_text, count_text, derivation, describe, on_large_stack, polls_per_clock,
 };
 use crate::{Status, catch_interrupt, clear_interrupt, interrupted, io};
 use anyhow::{Context, Result, bail};
@@ -252,8 +252,8 @@ impl Session {
                 "the search proved the goal, but the derivation to graft is too large: its {} \
                  inferences with {} characters of sequents are estimated at {}, over the \
                  limit of {}; the goal stays open (--derivation-limit raises the limit)",
-                size.inferences,
-                size.characters,
+                count_text(size.inferences),
+                count_text(size.characters),
                 bytes_text(size.bytes()),
                 bytes_text(limit)
             ),
