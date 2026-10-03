@@ -435,7 +435,7 @@ impl Rule {
                 rules,
                 reading,
                 (&counts, classes),
-                &options.clone().copies(self.copies),
+                &options.clone().copies(Some(self.copies)),
                 Stop::Flags(flags),
                 Table::Shared(&memo),
                 Arena::new(Kept::Shared(&arena), account),
@@ -1043,7 +1043,7 @@ mod tests {
                 ];
                 for text in texts.iter().filter(|t| !t.is_empty()) {
                     for engine in [None, Some(Engine::Focus)] {
-                        let options = Options::default().copies(copies).engine(engine);
+                        let options = Options::default().copies(Some(copies)).engine(engine);
                         agree(text, mode, &options);
                     }
                 }
@@ -1069,7 +1069,7 @@ mod tests {
                     texts.push(generate::two_sided(&hypotheses, &goal));
                 }
                 for text in &texts {
-                    let options = Options::default().copies(copies);
+                    let options = Options::default().copies(Some(copies));
                     agree(text, Mode::INTUITIONISTIC, &options);
                     agree(text, Mode::INTUITIONISTIC.affine(), &options);
                 }

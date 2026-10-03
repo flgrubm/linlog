@@ -420,7 +420,7 @@ pub(crate) fn proofs() -> Vec<(Proof, Mode)> {
             } else {
                 classical
             };
-            let options = Options::default().copies(provable.copies);
+            let options = Options::default().copies(Some(provable.copies));
             let text = generate::sequent(&provable.formulas);
             cases.push((text.clone(), mode, options.clone()));
             cases.push((text, mode.affine(), options));
@@ -431,7 +431,7 @@ pub(crate) fn proofs() -> Vec<(Proof, Mode)> {
         for _ in 0..25 {
             let budget = 2 + rng.below(9);
             let ill = generate::ill(&mut rng, rules, 3, budget);
-            let options = Options::default().copies(ill.copies);
+            let options = Options::default().copies(Some(ill.copies));
             let text = generate::two_sided(&ill.hypotheses, &ill.goal);
             cases.push((text.clone(), Mode::INTUITIONISTIC, options.clone()));
             cases.push((text, Mode::INTUITIONISTIC.affine(), options));
@@ -452,7 +452,7 @@ pub(crate) fn proofs() -> Vec<(Proof, Mode)> {
     for family in crate::families::FAMILIES {
         let instance = family.instance(family.sizes[0], 0);
         let options = match instance.copies {
-            Some(copies) => Options::default().copies(copies),
+            Some(copies) => Options::default().copies(Some(copies)),
             None => Options::default(),
         };
         let mut polls = 0;

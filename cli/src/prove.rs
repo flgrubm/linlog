@@ -506,7 +506,7 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         .recursion_limit(args.recursion_limit)
         .engine(args.engine.into())
         .fragment(args.fragment.map(Into::into))
-        .copies(args.copies)
+        .copies(Some(args.copies))
         .bias(args.bias.into())
         .forward_copies(args.forward_copies)
         .check(!args.no_check)

@@ -49,7 +49,7 @@ pub fn interact(args: &InteractArgs) -> Result<Status> {
     let options = Options::default()
         .memo_limit(args.memo_limit)
         .recursion_limit(args.recursion_limit)
-        .copies(args.copies)
+        .copies(Some(args.copies))
         .bias(args.bias.into())
         .forward_copies(args.forward_copies)
         .memory_limit(args.memory_limit.0)

@@ -114,6 +114,8 @@ struct StatisticsDef {
     links: u64,
     /// Exact acyclicity tests the net engine ran.
     tests: u64,
+    /// The largest copy bound the deepening reached.
+    copies: u32,
 }
 
 /// The serialized form of an outcome: the verdict as a word, the reason for

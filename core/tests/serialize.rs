@@ -275,7 +275,7 @@ fn outcome_json_format() {
     assert_eq!(
         json,
         format!(
-            r#"{head}"statistics":{{"nodes":2,"memo_hits":0,"memo_entries":0,"splits":0,"links":2,"tests":2}},"sequent":{sequent},"proof":[{{"ax":[0,2]}},{{"ax":[3,4]}},{{"⊗":[1,0,1]}}]}}"#
+            r#"{head}"statistics":{{"nodes":2,"memo_hits":0,"memo_entries":0,"splits":0,"links":2,"tests":2,"copies":0}},"sequent":{sequent},"proof":[{{"ax":[0,2]}},{{"ax":[3,4]}},{{"⊗":[1,0,1]}}]}}"#
         )
     );
     let proof: Proof = serde_json::from_str(&json).unwrap();
@@ -286,7 +286,7 @@ fn outcome_json_format() {
     assert_eq!(
         json,
         format!(
-            r#"{head}"statistics":{{"nodes":1,"memo_hits":0,"memo_entries":1,"splits":1,"links":0,"tests":0}},"sequent":{sequent},"proof":[{{"ax":[2,0]}},{{"ax":[3,4]}},{{"⊗":[1,0,1]}}]}}"#
+            r#"{head}"statistics":{{"nodes":1,"memo_hits":0,"memo_entries":1,"splits":1,"links":0,"tests":0,"copies":0}},"sequent":{sequent},"proof":[{{"ax":[2,0]}},{{"ax":[3,4]}},{{"⊗":[1,0,1]}}]}}"#
         )
     );
 
@@ -294,20 +294,20 @@ fn outcome_json_format() {
     let outcome = prove(&s, Mode::CLASSICAL, &Options::default()).unwrap();
     assert_eq!(
         serde_json::to_string(&outcome).unwrap(),
-        r#"{"verdict":"unprovable","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"net","statistics":{"nodes":0,"memo_hits":0,"memo_entries":0,"splits":0,"links":0,"tests":0}}"#
+        r#"{"verdict":"unprovable","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"net","statistics":{"nodes":0,"memo_hits":0,"memo_entries":0,"splits":0,"links":0,"tests":0,"copies":0}}"#
     );
     let outcome =
         prove_until(&s, Mode::CLASSICAL.with_mix(), &Options::default(), || true).unwrap();
     assert_eq!(
         serde_json::to_string(&outcome).unwrap(),
-        r#"{"verdict":"unknown","reason":"stopped","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":true},"engine":"net","statistics":{"nodes":1,"memo_hits":0,"memo_entries":0,"splits":0,"links":0,"tests":0}}"#
+        r#"{"verdict":"unknown","reason":"stopped","fragment":"MLL","mode":{"intuitionistic":false,"affine":false,"mix":true},"engine":"net","statistics":{"nodes":1,"memo_hits":0,"memo_entries":0,"splits":0,"links":0,"tests":0,"copies":0}}"#
     );
     let s: Sequent = "!A |- A".parse().unwrap();
-    let options = Options::default().copies(0).forward_copies(0);
+    let options = Options::default().copies(Some(0)).forward_copies(0);
     let outcome = prove(&s, Mode::CLASSICAL, &options).unwrap();
     assert_eq!(
         serde_json::to_string(&outcome).unwrap(),
-        r#"{"verdict":"unknown","reason":{"copy_bound":0},"fragment":"MELL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"focus","statistics":{"nodes":1,"memo_hits":0,"memo_entries":1,"splits":0,"links":0,"tests":0}}"#
+        r#"{"verdict":"unknown","reason":{"copy_bound":0},"fragment":"MELL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"focus","statistics":{"nodes":1,"memo_hits":0,"memo_entries":1,"splits":0,"links":0,"tests":0,"copies":0}}"#
     );
 }
 

@@ -480,8 +480,9 @@ pub struct Options {
     /// tests, or `None` for the default that depends on the size of the
     /// structure.
     test_period: Option<u32>,
-    /// The most copies of `?` formulas one branch may take.
-    copies: u32,
+    /// The most copies of `?` formulas one branch may take, or `None` for
+    /// a search that deepens until it decides or is stopped.
+    copies: Option<u32>,
     /// How many threads the search may use; one runs the sequential
     /// engines.
     jobs: usize,
@@ -520,7 +521,7 @@ impl Default for Options {
             engine: None,
             fragment: None,
             test_period: None,
-            copies: Self::DEFAULT_COPIES,
+            copies: Some(Self::DEFAULT_COPIES),
             jobs: 1,
             bias: Bias::Auto,
             forward_copies: Self::DEFAULT_FORWARD_COPIES,
@@ -540,7 +541,10 @@ impl Options {
     pub const DEFAULT_RECURSION_LIMIT: u32 = 2048;
 
     /// The copy bound of the default options: three copies per branch, the
-    /// bound llprover searches with by default.
+    /// bound llprover searches with by default. The default options keep a
+    /// bound because a search without one ends only when it decides or its
+    /// stop condition fires, and [`prove`] has none; a front end with a
+    /// clock lifts it ([`copies`](Self::copies)).
     pub const DEFAULT_COPIES: u32 = 3;
 
     /// The forward search's copy bound of the default options: thirty
@@ -611,16 +615,29 @@ impl Options {
         Self { check, ..self }
     }
 
-    /// Sets the most copies of `?` formulas one branch of a proof may take.
-    /// The search deepens the bound from zero up to this value; a sequent
-    /// that has no proof within it is [`Reason::CopyBound`], unless some
-    /// level finished without ever reaching its bound, which makes the
-    /// sequent [`Verdict::Unprovable`]. Without exponentials the bound has
-    /// no effect. A proof found at some level may reuse a memoized subproof
-    /// found with more copies left, so the bound limits the search, not the
-    /// proof returned.
-    pub fn copies(self, copies: u32) -> Self {
+    /// Sets the most copies of `?` formulas one branch of a proof may take,
+    /// or `None` for no bound. The search deepens the bound from zero, one
+    /// level after another; a sequent that has no proof within the bound
+    /// is [`Reason::CopyBound`], unless some level finished without ever
+    /// reaching its bound, which makes the sequent [`Verdict::Unprovable`].
+    /// Without a bound the search goes on to the next level until it
+    /// decides, its stop condition fires or a limit binds, and
+    /// [`Statistics::copies`] says how far it got: the choice of a caller
+    /// with a time limit, as the command is, since no bound is too small
+    /// for some provable sequent and full linear logic is undecidable.
+    /// Without exponentials the bound has no effect. A proof found at some
+    /// level may reuse a memoized subproof found with more copies left, so
+    /// the bound limits the search, not the proof returned.
+    pub fn copies(self, copies: Option<u32>) -> Self {
         Self { copies, ..self }
+    }
+
+    /// Returns the copy bound as the engines count it: no bound is the
+    /// largest, which no search reaches, since every level visits a stable
+    /// sequent and polls at it, and four billion levels take hours at the
+    /// least.
+    pub(crate) fn copy_bound(&self) -> u32 {
+        self.copies.unwrap_or(u32::MAX)
     }
 
     /// Sets the engine to use, or `None` for the one the detected fragment
@@ -724,8 +741,9 @@ impl Options {
     /// step, all on one branch, so it wants a larger bound than
     /// [`copies`](Self::copies), which this is when it is the larger of
     /// the two; the forward search never runs within less than `copies`.
-    /// On any other sequent, under another bias, under Mix and under
-    /// weakening it has no effect.
+    /// On any other sequent, under another bias, under Mix, under
+    /// weakening and without a copy bound it has no effect: unbounded, the
+    /// forward search deepens as far as its share of the work takes it.
     pub fn forward_copies(self, copies: u32) -> Self {
         Self {
             forward_copies: copies,
@@ -803,9 +821,9 @@ pub enum Reason {
     Stopped,
     /// The nesting of engine calls reached [`Options::recursion_limit`].
     RecursionLimit,
-    /// Every level up to [`Options::copies`], which is this value, hit its
-    /// bound on some branch, so a proof with more copies of a `?` formula
-    /// per branch may exist.
+    /// Every level up to the bound [`Options::copies`] set, which is this
+    /// value, hit its bound on some branch, so a proof with more copies of
+    /// a `?` formula per branch may exist.
     CopyBound(u32),
     /// The search held [`Options::memory_limit`] bytes, which is this
     /// value, with its memo already emptied, or had no room left for a
@@ -876,6 +894,11 @@ pub struct Statistics {
     pub links: u64,
     /// The exact acyclicity tests the net engine ran.
     pub tests: u64,
+    /// The largest copy bound a level of the focused engine's deepening
+    /// began under, of two searches the larger: how far a search without
+    /// a bound got before it was stopped. Zero without exponentials and
+    /// for the other engines.
+    pub copies: u32,
 }
 
 impl Statistics {
@@ -887,6 +910,7 @@ impl Statistics {
         self.splits += other.splits;
         self.links += other.links;
         self.tests += other.tests;
+        self.copies = self.copies.max(other.copies);
     }
 }
 

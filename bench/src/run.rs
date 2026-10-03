@@ -543,7 +543,7 @@ fn tail(args: &OneArgs) -> String {
     let options = Options::default()
         .engine(args.engine.engine())
         .jobs(args.jobs)
-        .copies(copies)
+        .copies(Some(copies))
         .bias(args.bias.bias())
         .forward_copies(forward_copies(args.forward_copies))
         .memory_limit(memory_limit(args.memory_limit))
