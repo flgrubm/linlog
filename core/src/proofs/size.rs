@@ -492,12 +492,25 @@ pub(crate) fn measure(
     let (all, goal) = (characters(false), characters(true));
     let beyond = all.saturating_sub(root.weight);
     let beyond_goal = goal.saturating_sub(root.goal).min(beyond);
+    let characters = root
+        .characters
+        .saturating_add((beyond - beyond_goal).saturating_mul(root.reached))
+        .saturating_add(beyond_goal.saturating_mul(root.reached_goal));
+    // A formula of more characters than a weight holds was counted short
+    // wherever it stands, so the characters are not known: more than can
+    // be said, rather than a sum that is too low.
+    if measure.weights.contains(&u32::MAX) {
+        return Ok(Size {
+            inferences: root.inferences,
+            characters: u64::MAX,
+            height: root.height,
+            width: u64::MAX,
+            exact: false,
+        });
+    }
     Ok(Size {
         inferences: root.inferences,
-        characters: root
-            .characters
-            .saturating_add((beyond - beyond_goal).saturating_mul(root.reached))
-            .saturating_add(beyond_goal.saturating_mul(root.reached_goal)),
+        characters,
         height: root.height,
         width: root.width.max(all),
         exact: measure.exact,
@@ -585,6 +598,36 @@ mod tests {
             }
         }
         assert!(bounds > 0, "no sample whose sum is a bound");
+    }
+
+    /// A formula of more characters than a weight counts makes the sums
+    /// it enters too low, so the size says that it could not count them:
+    /// here a tree of 4 096 atoms whose name has a mebibyte of characters,
+    /// absorbed by a `⊤`. Nothing writes the formula out.
+    #[test]
+    fn a_formula_too_long_to_count_is_not_counted_short() {
+        use crate::proofs::{Node, NodeId, Proof};
+        use crate::sequents::{Atom, Term, TermId};
+        use crate::{Forest, OccId};
+        // Terms: 0 is ⊤, 1 the atom, 2 + j the tree of depth j + 1.
+        let mut terms = vec![Term::Top, Term::Var(Atom::new(0))];
+        for j in 0..12 {
+            terms.push(Term::With(TermId::new(1 + j), TermId::new(1 + j)));
+        }
+        let sequent = Sequent {
+            terms,
+            roots: vec![TermId::new(0), TermId::new(13)],
+            atoms: vec!["a".repeat(1 << 20)],
+        };
+        let forest = Forest::new(&sequent).unwrap();
+        assert_eq!(forest.len(), 1 + (1 << 13) - 1);
+        let nodes = vec![Node::Top(OccId::new(0))];
+        let proof = Proof::new(forest, nodes, NodeId::new(0)).unwrap();
+        let size = proof.derivation_size(false).unwrap();
+        assert_eq!((size.inferences, size.height), (1, 1));
+        // The conclusion alone has over 2³² characters.
+        assert_eq!((size.characters, size.width), (u64::MAX, u64::MAX));
+        assert!(!size.exact);
     }
 
     /// The characters of a derivation's conclusion.

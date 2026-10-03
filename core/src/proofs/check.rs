@@ -86,9 +86,15 @@ impl Zone {
 
     /// Adds `o` and returns whether it was not a member.
     fn insert(&mut self, o: OccId) -> bool {
-        let new = self.members.insert(o);
+        // The table makes room before it looks a member up, so adding one
+        // that is there already would double a full table, which the
+        // count of its bytes would not see.
+        if self.members.contains(&o) {
+            return false;
+        }
+        self.members.insert(o);
         self.most = self.most.max(self.members.len());
-        new
+        true
     }
 
     /// Removes `o` and returns whether it was a member.
@@ -1855,6 +1861,24 @@ mod tests {
         }
         let root = n(nodes.len() as u32 - 1);
         Proof::new(Forest::new(&sequent).unwrap(), nodes, root).unwrap()
+    }
+
+    /// A zone's count of its bytes stays what its table takes when a
+    /// member that is there already is added again: the table is full at
+    /// fourteen members in sixteen slots, and would double to make room
+    /// before it looked the member up.
+    #[test]
+    fn a_member_twice_grows_no_table() {
+        let mut zone = Zone::default();
+        for id in 0..14 {
+            assert!(zone.insert(o(id)));
+        }
+        let (bytes, room) = (zone.bytes(), zone.members.capacity());
+        assert_eq!((bytes, room), (16 * 5 + 16, 14));
+        for id in 0..14 {
+            assert!(!zone.insert(o(id)));
+        }
+        assert_eq!((zone.bytes(), zone.members.capacity()), (bytes, room));
     }
 
     /// A check holds no more than it is allowed: a proof file of a megabyte
