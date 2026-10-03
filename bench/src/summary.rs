@@ -13,36 +13,36 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// One CSV row, as a map from column to value.
-struct Row(HashMap<String, String>);
+pub(crate) struct Row(HashMap<String, String>);
 
 impl Row {
     /// The value of a column, empty when the column is absent.
-    fn get(&self, column: &str) -> &str {
+    pub(crate) fn get(&self, column: &str) -> &str {
         self.0.get(column).map_or("", String::as_str)
     }
 }
 
 /// The runs of one problem in one configuration.
-struct Runs<'a> {
+pub(crate) struct Runs<'a> {
     /// The first run.
-    first: &'a Row,
+    pub(crate) first: &'a Row,
     /// The time of every run, in milliseconds.
-    times: Vec<f64>,
+    pub(crate) times: Vec<f64>,
     /// Whether a sequential run waited for a CPU for more than a hundredth
     /// of its time and a millisecond: another process slowed it down.
-    disturbed: bool,
+    pub(crate) disturbed: bool,
 }
 
 impl Runs<'_> {
     /// The median of the times.
-    fn median(&self) -> f64 {
+    pub(crate) fn median(&self) -> f64 {
         let mut times = self.times.clone();
         times.sort_by(f64::total_cmp);
         times[times.len() / 2]
     }
 
     /// Whether the verdict is decided.
-    fn solved(&self) -> bool {
+    pub(crate) fn solved(&self) -> bool {
         matches!(self.first.get("verdict"), "proved" | "unprovable")
     }
 
@@ -57,7 +57,7 @@ impl Runs<'_> {
 
     /// The cell of a scaling table: the median time and a mark for the
     /// verdict.
-    fn cell(&self) -> String {
+    pub(crate) fn cell(&self) -> String {
         let row = self.first;
         let mark = match (row.get("verdict"), row.get("reason")) {
             ("proved", _) => "✓",
@@ -86,33 +86,8 @@ struct Group<'a> {
 
 /// Prints the tables for the CSV files.
 pub fn summary(files: &[PathBuf]) -> Result<()> {
-    let mut rows = Vec::new();
-    for file in files {
-        let text =
-            std::fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
-        let mut lines = text.lines();
-        let Some(header) = lines.next() else { continue };
-        let columns: Vec<&str> = header.split(',').collect();
-        let stem = file.file_stem().unwrap_or_default().to_string_lossy();
-        for line in lines.filter(|l| !l.is_empty() && !l.starts_with("source,")) {
-            let values: Vec<&str> = line.split(',').collect();
-            if values.len() != columns.len() {
-                bail!(
-                    "{}: a row of {} fields: {line}",
-                    file.display(),
-                    values.len()
-                );
-            }
-            let row = columns
-                .iter()
-                .zip(values)
-                .map(|(c, v)| ((*c).to_owned(), v.to_owned()));
-            let mut row: HashMap<String, String> = row.collect();
-            row.insert("file".to_owned(), stem.to_string());
-            rows.push(Row(row));
-        }
-    }
-    rows.retain(|row| row.get("verdict") != "refused");
+    let rows = read(files)?;
+
 
     // Runs grouped by configuration and problem, in the order first seen.
     let config = |row: &Row| {
@@ -272,9 +247,42 @@ pub fn summary(files: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
+/// The rows of the CSV files, each with its file's name in the column
+/// `file`, without those of a forced engine that does not apply.
+pub(crate) fn read(files: &[PathBuf]) -> Result<Vec<Row>> {
+    let mut rows = Vec::new();
+    for file in files {
+        let text =
+            std::fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+        let mut lines = text.lines();
+        let Some(header) = lines.next() else { continue };
+        let columns: Vec<&str> = header.split(',').collect();
+        let stem = file.file_stem().unwrap_or_default().to_string_lossy();
+        for line in lines.filter(|l| !l.is_empty() && !l.starts_with("source,")) {
+            let values: Vec<&str> = line.split(',').collect();
+            if values.len() != columns.len() {
+                bail!(
+                    "{}: a row of {} fields: {line}",
+                    file.display(),
+                    values.len()
+                );
+            }
+            let row = columns
+                .iter()
+                .zip(values)
+                .map(|(c, v)| ((*c).to_owned(), v.to_owned()));
+            let mut row: HashMap<String, String> = row.collect();
+            row.insert("file".to_owned(), stem.to_string());
+            rows.push(Row(row));
+        }
+    }
+    rows.retain(|row| row.get("verdict") != "refused");
+    Ok(rows)
+}
+
 /// Formats milliseconds for a table: microseconds below one millisecond,
 /// milliseconds below a second, seconds above.
-fn time(ms: f64) -> String {
+pub(crate) fn time(ms: f64) -> String {
     if ms < 1.0 {
         format!("{:.0} µs", ms * 1000.0)
     } else if ms < 1000.0 {

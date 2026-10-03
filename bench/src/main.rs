@@ -6,6 +6,8 @@
 //! linlog's engines, one child process per run with a time limit, writes
 //! one CSV row per run, and summarises CSV files as Markdown tables.
 
+/// Two sets of rows compared problem by problem.
+mod compare;
 /// Where problems come from: the families, LLTP files, problem files.
 mod problems;
 /// Running problems: the parent that spawns a child per run, and the child.
@@ -40,6 +42,15 @@ enum Command {
         /// The CSV files
         #[arg(required = true)]
         files: Vec<PathBuf>,
+        /// Compare every file with the file of the same name in this
+        /// directory, an earlier baseline, problem by problem, instead
+        #[arg(long, value_name = "DIR", conflicts_with = "against")]
+        before: Option<PathBuf>,
+        /// Compare every other file with this one, problem by problem
+        /// whatever the files' names, instead (the passes under one atom
+        /// bias against the default)
+        #[arg(long, value_name = "FILE")]
+        against: Option<PathBuf>,
     },
     /// List the generated families with their default sizes
     Families,
@@ -181,7 +192,15 @@ pub struct OneArgs {
 fn main() -> ExitCode {
     let result = match Cli::parse().command {
         Command::Run(args) => run::run(&args),
-        Command::Summary { files } => summary::summary(&files),
+        Command::Summary {
+            files,
+            before,
+            against,
+        } => match (before, against) {
+            (Some(dir), _) => compare::before(&dir, &files),
+            (_, Some(file)) => compare::against(&file, &files),
+            _ => summary::summary(&files),
+        },
         Command::Families => {
             for family in linlog::families::FAMILIES {
                 let sizes: Vec<String> = family.sizes.iter().map(u32::to_string).collect();
