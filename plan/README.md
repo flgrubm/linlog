@@ -1386,3 +1386,40 @@ publishing are the author's acts.
   force pushes and deletion, after the first release (prompt 31 reminds);
   two-factor authentication as a requirement of the organization, not
   wanted now. The first CI and Docs runs under the organization passed.
+- 2026-10-03: step 18, by its own session (this entry is the step's; its
+  review is the planning session's to add), in one session, so the seam
+  after item 3 was not needed. "Give equal atom names of a JSON sequent
+  one atom" first (a name is an atom, as `optimize` and `add` meant it:
+  the file is read as the sequent with the name once, and the
+  assessment's file is proved). Then "Check a proof in memory linear in
+  its size" (a node's sequent kept only while a later node reads it, as
+  tables of its members; the first implementation kept as the tests'
+  oracle, the same result and error on 1 300 engine proofs and 5 000
+  mutants; a fresh-context reviewer compared the two on 27 000 random
+  terms in six modes and found no defect), "Check every proof the search
+  returns" (`Options::check`, on by default, `--no-check`,
+  `Error::Rejected`), the harness (the verdict before the check, the
+  kill from the end of the load with `--load-limit`, the crash reason,
+  a column `check_ms`), "Run the tests with debug assertions in the
+  flake" (26 s more on four cores), "Lay the text tree out in two
+  passes", "Estimate a derivation's size without building it"
+  (`Proof::derivation_size`, exact but for the weakenings above a
+  premise of `&`, where it is an upper bound and says so), "Bound the
+  derivation a front end builds" (`ViewOptions::limit`, 64 MiB,
+  honoured where derivations are made, with a stop condition;
+  `--derivation-limit`), "Write an output file whole or not at all",
+  and "Leave out a tree that does not fit the terminal" (`--tree
+  auto|always|never`; the crate `terminal_size`). Measured in scopes of
+  1 GiB: R1 to R4 on the net of 65 643 clauses end in 0.35 s within
+  72 MB where each took 6 GiB; the 14 crash rows of the second
+  baseline's intuitionistic pass are proved and `checked` `ok` in 4 to
+  14 ms each; the text tree of `wide-m1` at 1 024 takes 0.55 s where it
+  took 32 s, and at the default limit is not built. The target set
+  (`after-check`) has the counters of `after-bias` on all 99 decided
+  rows, and the check costs 0.3 % of the search time over its 131
+  proofs. Left as they were, and said in the report: the exports cannot
+  be stopped inside, the SVG layout's memory, the builder's recursion,
+  and a malformed proof term that doubles a zone per node (step 20).
+  Checked by the session: clippy, the workspace's tests, both
+  `cargo hack` runs, the families' verdicts (no mismatch) and
+  `nix flake check`. Next: step 19.

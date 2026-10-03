@@ -912,6 +912,19 @@ tree is shown only if it fits; into a file or a pipe it is written
 unless its estimated size passes a safety bound (64 MiB by default, an
 option, D16). The compact view is step 22's.
 
+*Done by step 18* (`--tree`, `--derivation-limit`, `ViewOptions`,
+`Proof::derivation_size`; `plan/reports/18-bounded-proofs.md`). What it
+left for step 22: the exports return a `String` and cannot be stopped
+inside; the SVG layout takes 50 bytes of memory per character of
+sequent, six times the other formats; the command assembles its output
+as one string, twice the text tree's size at the peak; `SCREENS` and the
+text tree's `GAP` are constants; `check` prints the whole sequent in its
+verdict line. For step 20: a malformed proof term (`Mix(p, p)` repeated)
+doubles a zone of the checker per node before the root rejects it; a
+zone longer than the roots plus the nodes still to come is the test.
+For the web front end: the derivation builder recurses to the
+derivation's height, which `Size::height` tells beforehand.
+
 
 **A proof tree that does not fit is not printed** (the author,
 2026-10-03, after the review of step 16 showed the command's default
@@ -1028,7 +1041,11 @@ if the suite's time matters more than the coverage.
 ## Follow-ups: the benchmarks
 
 *Assigned (2026-10-03).* `derive`'s memory, the verdict written before
-the check, the kill counted from the end of the load: step 18. `summary`
+the check, the kill counted from the end of the load: step 18 (done:
+the checker keeps no sequent a later node does not read, the child
+prints its row before it checks, `--load-limit`; whether
+`bench/reruns.txt` is still needed for the large SYJ files was not
+measured). `summary`
 counting a late verdict as solved, a table of counters, the script's
 values hard-coded for the second baseline, `bench/reruns.txt`: 24. LLTP
 input for the command and the draft of the header report: 25 (the author
