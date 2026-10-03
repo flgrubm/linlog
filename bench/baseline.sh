@@ -13,12 +13,16 @@
 # atom bias alone; the largest sizes with 20 minutes each, the LLTP
 # problems that ended at the copy bound or the recursion limit with those
 # raised; then the thread counts 2, 4, 8 and every core on the hard
-# families, and every core on the LLTP
-# problems not decided at once; last, the runs of those that more room lets
-# finish. The LLTP problems of the later stages are those of the first
-# baseline (`reference'), so that every row of it has its counterpart.
-# About ten hours on sixteen cores, on an otherwise idle machine (stages 1
-# to 3 of the first baseline took 9 h 21 min on 2026-09-30).
+# families, every core on the LLTP problems not decided at once, and the
+# intuitionistic library under the command's default; last, the runs of
+# those that more room lets finish. Every LLTP pass names its copy bound,
+# so that it stays the pass of the earlier baselines whatever the defaults.
+# The LLTP problems of the later stages are those of the first baseline
+# (`reference'), so that every row of it has its counterpart. About eleven
+# and a half hours on sixteen cores, on an otherwise idle machine (stages 1
+# to 3 of the first baseline took 9 h 21 min on 2026-09-30, the second
+# baseline 10 h 30 min), which is more than one slot: a baseline stopped at
+# the slot's end is finished on the next night.
 #
 #   nix build .#lltp -o bench/lltp          # once: the LLTP library
 #   bench/baseline.sh --arm --fresh          # from the devshell
@@ -75,7 +79,7 @@ lltp=bench/lltp
 results=bench/results
 cores=(1 0 2 3)
 slot=20:00-07:00
-estimate=$((10 * 3600))
+estimate=$((23 * 1800))
 # The first baseline, whose intuitionistic LLTP pass chooses the problems
 # that the later stages run again: chosen from each baseline's own pass,
 # the sets would differ between baselines and no row would compare.
@@ -412,12 +416,12 @@ mll=(--family "partition-yes=4,5,6,12,20" --family "partition-no=3,4,9,12" --fam
 # share theirs, the families after one library pass and the engines after
 # the other. About three and a half hours.
 streams=()
-run "${cores[0]}" lltp-rarer --lltp "$lltp/ILL" --bias rarer --timeout 5 &
+run "${cores[0]}" lltp-rarer --lltp "$lltp/ILL" --bias rarer --copies 3 --timeout 5 &
 streams+=($!)
 run "${cores[1]}" lltp-forward --lltp "$lltp/ILL" --bias factors --copies 30 --timeout 5 &
 streams+=($!)
 (
-  run "${cores[2]}" lltp-intuitionistic --lltp "$lltp/ILL" --timeout 5
+  run "${cores[2]}" lltp-intuitionistic --lltp "$lltp/ILL" --copies 3 --timeout 5
   run "${cores[2]}" families --all-families --timeout 300 "${repeat[@]}"
 ) &
 streams+=($!)
@@ -425,7 +429,7 @@ streams+=($!)
   # In reverse, so that this pass loads the library's largest files (up to
   # 103 MB each) at other times than the three in order.
   run "${cores[3]}" lltp-classical --lltp "$lltp/CLL" --lltp "$lltp/ILL" --modes classical \
-    --reverse --timeout 5
+    --copies 3 --reverse --timeout 5
   run "${cores[3]}" engines "${mll[@]}" --family additive --problems bench/problems/slow-tests.txt \
     --engines focus,net --timeout 60 "${repeat[@]}"
   for period in 1 2 8 16; do
@@ -466,14 +470,19 @@ run "${cores[2]}" lltp-copies-10 --lltp "$lltp/ILL" --only "$(ended copy_bound)"
   --timeout 5 &
 streams+=($!)
 run "${cores[3]}" lltp-recursion --lltp "$lltp/ILL" --only "$(ended recursion_limit)" \
-  --recursion-limit 16384 --timeout 5 &
+  --copies 3 --recursion-limit 16384 --timeout 5 &
 streams+=($!)
 wait "${streams[@]}"
 
 # Stage 3, alone on the machine: the hard families on 1 (the speedups'
 # baseline, taken alone like the rest), 2, 4, 8 and every core, the net
-# engine on the same thread counts, and the LLTP problems that are not decided at once on
-# every core (the command's default). About three and a half hours.
+# engine on the same thread counts, the LLTP problems that are not decided
+# at once on every core (the command's default until it deepened the copy
+# bound), and the whole intuitionistic library under the command's default:
+# no copy bound, one thread for a tenth of a second and then every core,
+# within the default time limit of two seconds. About four and a half
+# hours, the last pass one of them (about 2 000 problems wait the whole
+# limit).
 run - parallel --family 3-partition-yes --family 3-partition-no --family partition-yes=5,6,7,20,24 \
   --family partition-no=4,5,12,14 --family qbf=16,20,24,40,44 --family mix=8,9,10,11 --family counter \
   --family counter-over --family wide-m3=24,30,36 --family wide-m4=28,32,36 \
@@ -484,7 +493,8 @@ run - parallel-net --family 3-partition-mll-no=4,5,6 --engines net --jobs 1,2,4,
 run - parallel-net --problems bench/problems/slow-tests.txt --only partition-table --engines net \
   --jobs 1,2,4,8,all --timeout 60 "${repeat[@]}"
 slow=$(ended slow)
-run - lltp-all-cores --lltp "$lltp/ILL" --only "$slow" --jobs all --timeout 5
+run - lltp-all-cores --lltp "$lltp/ILL" --only "$slow" --copies 3 --jobs all --timeout 5
+run - lltp-default --lltp "$lltp/ILL" --copies none --jobs all --pool-after 0.1 --timeout 2
 
 # Stage 4: the runs above that were killed or crashed and that more room
 # lets finish, as bench/reruns.txt lists them (lines `FILE FAMILY/NAME`:
@@ -509,16 +519,17 @@ again() {
 }
 cap=16
 streams=()
-again "${cores[0]}" lltp-intuitionistic 600 --lltp "$lltp/ILL" --timeout 5 &
+again "${cores[0]}" lltp-intuitionistic 600 --lltp "$lltp/ILL" --copies 3 --timeout 5 &
 streams+=($!)
 again "${cores[1]}" lltp-classical 600 --lltp "$lltp/CLL" --lltp "$lltp/ILL" --modes classical \
-  --timeout 5 &
+  --copies 3 --timeout 5 &
 streams+=($!)
-again "${cores[2]}" lltp-recursion 600 --lltp "$lltp/ILL" --recursion-limit 16384 --timeout 5 &
+again "${cores[2]}" lltp-recursion 600 --lltp "$lltp/ILL" --copies 3 --recursion-limit 16384 \
+  --timeout 5 &
 streams+=($!)
 wait "${streams[@]}"
 cap=32
-again - lltp-all-cores 60 --lltp "$lltp/ILL" --jobs all --timeout 5
+again - lltp-all-cores 60 --lltp "$lltp/ILL" --copies 3 --jobs all --timeout 5
 
 fired=$(timers "$now" "$(date +%s)" LastTriggerUSec)
 fired=${fired%, }

@@ -159,13 +159,13 @@ names() {
 (
   run 1 --family 3-partition-no=4,5 --family partition-yes=5,6,7 --family partition-no=4,5 \
     --family mix=8,9,10,11 --timeout 300 "${repeat[@]}"
-  run 1 --lltp "$lltp/ILL" --timeout 5 --only "$(names ILL/petri-nets/MCC/ "${timeout[@]}")"
-  run 1 --lltp "$lltp/ILL" --timeout 5 --only "$(names ILL/ "${copy_bound[@]}")"
-  run 1 --lltp "$lltp/ILL" --timeout 5 --only "$(names ILL/ "${recursion_limit[@]}")"
-  run 1 --lltp "$lltp/ILL" --timeout 5 --only "$(names ILL/petri-nets/MCC/ "${too_wide[@]}")"
-  run 1 --lltp "$lltp/ILL" --timeout 5 --grace 25 \
+  run 1 --lltp "$lltp/ILL" --copies 3 --timeout 5 --only "$(names ILL/petri-nets/MCC/ "${timeout[@]}")"
+  run 1 --lltp "$lltp/ILL" --copies 3 --timeout 5 --only "$(names ILL/ "${copy_bound[@]}")"
+  run 1 --lltp "$lltp/ILL" --copies 3 --timeout 5 --only "$(names ILL/ "${recursion_limit[@]}")"
+  run 1 --lltp "$lltp/ILL" --copies 3 --timeout 5 --only "$(names ILL/petri-nets/MCC/ "${too_wide[@]}")"
+  run 1 --lltp "$lltp/ILL" --copies 3 --timeout 5 --grace 25 \
     --only "$(names ILL/petri-nets/MCC/ "${missed_stop[@]}")"
-  run 1 --lltp "$lltp/ILL" --timeout 5 --grace 55 --recursion-limit 16384 \
+  run 1 --lltp "$lltp/ILL" --copies 3 --timeout 5 --grace 55 --recursion-limit 16384 \
     --only "$(names ILL/petri-nets/MCC/ "${deep[@]}")"
 ) &
 first=$!
