@@ -270,6 +270,14 @@ even to read.** Every operation goes through `jj`, including lock updates:
 - Work lands on `main` directly or through a GitHub pull request. Pushing is
   outward-facing, so only when asked: `jj bookmark set main -r @-`, then
   `jj git push --bookmark main`.
+- The GitHub CLI (`gh`) is logged in with the author's own rights, over the
+  organization `linlog-prover` and everything else the account reaches.
+  Ask before every administrative task through it (a setting of the
+  organization or a repository, Pages, Actions, branch rules, secrets,
+  releases, a new repository, a workflow run): say what the call does and
+  wait for a yes, which covers that task only. Deleting and transferring
+  are the author's own acts. A permission rule asks before any `gh`
+  command.
 
 ## Conventions
 

@@ -55,7 +55,9 @@ Current contents:
 - `hooks/session-jj-state.sh`: `SessionStart`, prints `@` and `@-` and any
   bookmark `@` is stacked on that `main` lacks.
 - `settings.json`: allow rules for the build/check commands and jj's read-only
-  ones, `ask` on `jj git push`, deny on every `git` command, on
+  ones, `ask` on `jj git push` and on every `gh` command (the GitHub CLI is
+  logged in with the author's rights over the organization and beyond; see
+  CLAUDE.md), deny on every `git` command, on
   `cargo publish`/`yank`/`owner`/`login` and on hand edits of `LICENSE` and both
   lock files. `env` sets `CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS`, which drops
   Claude Code's built-in commit/PR instructions and its git status snapshot:

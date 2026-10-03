@@ -47,7 +47,8 @@
       "WebFetch(domain:docs.jj-vcs.dev)"
     ],
     "ask": [
-      "Bash(jj git push *)"
+      "Bash(jj git push *)",
+      "Bash(gh *)"
     ],
     "deny": [
       "Bash(git *)",
