@@ -11,6 +11,8 @@ pub mod argument_parsing;
 pub mod interact;
 /// Reading input and writing output.
 pub mod io;
+/// The time limit of a command.
+mod limit;
 /// The `prove` and `check` commands.
 pub mod prove;
 

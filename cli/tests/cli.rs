@@ -32,6 +32,53 @@ fn linlog(args: &[&str], stdin: &str) -> (i32, String, String) {
     )
 }
 
+/// `--timeout` ends a search that would run for hours (2⁴² splits that no
+/// count cuts) with an unknown verdict, the limit in its line and exit
+/// status 3, on one thread and on a pool; and it counts from the start of
+/// the command, so a sequent that is not read in time is given up on with
+/// a line that says so.
+#[test]
+fn timeout() {
+    let literals: Vec<String> = (0..40).map(|i| format!("x{i}")).collect();
+    let sequent = format!(
+        "|- p * q, 0 * (~p par ~p), 0 * (~q par ~q), {}",
+        literals.join(", ")
+    );
+    for threads in [["--deterministic"].as_slice(), &["--jobs", "2"]] {
+        let args = [&["prove", "-a", "--timeout", "200ms"], threads, &[&sequent]].concat();
+        let (status, out, err) = linlog(&args, "");
+        assert_eq!(
+            (status, out.as_str(), err.as_str()),
+            (
+                3,
+                "unknown (MALL, classical affine, focus engine): the time limit of 200ms was \
+                 reached\n",
+                ""
+            )
+        );
+    }
+
+    // Standard input stays open and empty until the command has answered.
+    let mut child = Command::new(env!("CARGO_BIN_EXE_linlog"))
+        .args(["prove", "--timeout", "100ms"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let open = child.stdin.take();
+    let status = child.wait().unwrap();
+    drop(open);
+    let mut out = String::new();
+    std::io::Read::read_to_string(&mut child.stdout.take().unwrap(), &mut out).unwrap();
+    assert_eq!(
+        (status.code(), out.as_str()),
+        (
+            Some(3),
+            "unknown: the time limit of 100ms was reached while the sequent was read\n"
+        )
+    );
+}
+
 /// A derivation estimated above `--derivation-limit` is not written: the
 /// verdict stands with its exit status, standard error says how large the
 /// derivation is and how to get it, and `none` lifts the limit;

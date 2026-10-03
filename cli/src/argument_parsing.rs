@@ -121,8 +121,11 @@ pub struct ProveArgs {
     pub forward_copies: u32,
     /// Give up after this long, such as 500ms, 10s, 2m or 1h
     ///
-    /// The verdict is then unknown (exit status 3). Without it, the search
-    /// runs until it decides or is interrupted with Ctrl-C.
+    /// The verdict is then unknown (exit status 3). The time counts from
+    /// the start of the command, so it covers reading and parsing the
+    /// sequent as well as the search: a sequent that is not read in time
+    /// is given up on like one that is not decided. Without the limit, the
+    /// search runs until it decides or is interrupted with Ctrl-C.
     #[arg(long, value_name = "DURATION", value_parser = parse_duration)]
     pub timeout: Option<Duration>,
     /// The most decided sequents the search remembers at once
@@ -303,7 +306,7 @@ pub enum SeqCommand {
 }
 
 /// Where a sequent comes from.
-#[derive(Args, Debug)]
+#[derive(Args, Clone, Debug)]
 pub struct SequentInput {
     /// The sequent, such as "A, A -o B |- B"; read from --file or standard
     /// input when absent

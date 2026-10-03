@@ -2,9 +2,8 @@
 // Licensed under the EUPL
 
 use crate::argument_parsing::InteractArgs;
-use crate::prove::{
-    Show, Shown, bytes_text, count_text, derivation, describe, on_large_stack, polls_per_clock,
-};
+use crate::limit::Deadline;
+use crate::prove::{Show, Shown, bytes_text, count_text, derivation, describe, on_large_stack};
 use crate::{Status, catch_interrupt, clear_interrupt, interrupted, io};
 use anyhow::{Context, Result, bail};
 use linlog::export::svg::{self, Style};
@@ -60,7 +59,6 @@ pub fn interact(args: &InteractArgs) -> Result<Status> {
         state,
         options,
         view: args.derivation_limit.into(),
-        period: polls_per_clock(if args.deterministic { 1 } else { args.jobs }),
         timeout: args.timeout,
     };
     on_large_stack(stack_size, move || session.run())?
@@ -81,9 +79,6 @@ struct Session {
     options: Options,
     /// The bound on the derivation `close` grafts.
     view: ViewOptions,
-    /// How many polls of the stop condition go between two looks at the
-    /// clock.
-    period: u32,
     /// How long a `close` may take.
     timeout: Option<Duration>,
 }
@@ -238,14 +233,8 @@ impl Session {
     /// Runs the search on a goal, stopped by the time limit or Ctrl-C.
     fn close(&mut self, goal: InfId) -> Result<Outcome> {
         clear_interrupt();
-        let deadline = self.timeout.map(|t| Instant::now() + t);
-        let mut polls = 0u32;
-        let period = self.period;
-        let stop = || {
-            polls = polls.wrapping_add(1);
-            polls.is_multiple_of(period)
-                && (interrupted() || deadline.is_some_and(|d| Instant::now() >= d))
-        };
+        let deadline = Deadline::start(self.timeout, Instant::now())?;
+        let stop = || interrupted() || deadline.passed();
         match self.state.close(goal, &self.options, &self.view, stop) {
             Ok(outcome) => Ok(outcome),
             Err(Error::View(ViewError::TooLarge { size, limit })) => bail!(

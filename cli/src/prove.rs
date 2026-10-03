@@ -3,11 +3,12 @@
 
 use crate::argument_parsing::{CheckArgs, Format, OutputArgs, ProveArgs, SequentFormat, Tree};
 use crate::io;
+use crate::limit::Deadline;
 use crate::{Status, catch_interrupt, interrupted};
 use anyhow::{Context, Result, anyhow, bail};
 use linlog::export::svg::{self, Style};
 use linlog::export::{Form, latex, rocq, typst};
-use linlog::search::{Engine, Options, Outcome, Reason, Statistics, Verdict, prove_until};
+use linlog::search::{Engine, Options, Outcome, Reason, Statistics, Verdict, prove_goal};
 use linlog::{
     Error, Forest, Fragment, Mode, Proof, ProofStructure, Reading, Sequent, Size, ViewError,
     ViewOptions,
@@ -16,17 +17,6 @@ use std::fmt::Write;
 use std::io::IsTerminal;
 use std::thread;
 use std::time::{Duration, Instant};
-
-/// How many polls of the stop condition go by between two looks at the
-/// clock on one thread, so that the clock costs nothing next to the
-/// search; on several threads the driver polls once a millisecond and
-/// every poll looks.
-const POLLS_PER_CLOCK: u32 = 1024;
-
-/// How many polls go between two looks at the clock with `jobs` threads.
-pub(crate) fn polls_per_clock(jobs: usize) -> u32 {
-    if jobs > 1 { 1 } else { POLLS_PER_CLOCK }
-}
 
 /// Runs `f` on a thread with a stack of `size` bytes, as
 /// [`Options::stack_size`] sizes it for the recursion limit, and returns
@@ -63,7 +53,7 @@ enum Stop {
 const SCREENS: u64 = 3;
 
 /// How many inferences are built, or pieces of text written, between two
-/// looks at the clock and the Ctrl-C flag while a derivation is made.
+/// looks at the time limit and the Ctrl-C flag while a derivation is made.
 const STEPS_PER_CLOCK: u32 = 256;
 
 /// How a derivation is to be shown: what the output arguments ask for and
@@ -425,14 +415,42 @@ fn nets_exist(sequent: &Sequent, mode: Mode) -> Result<()> {
     Ok(())
 }
 
+/// What `prove` answers when the time limit passed before the sequent was
+/// read: the verdict is unknown, and the line names no fragment and no
+/// engine, since nothing is known of the sequent. The line is the output,
+/// as a comment of the format; JSON has no form for it, so there it goes
+/// to standard error.
+fn unread(args: &ProveArgs, limit: Duration) -> Result<Status> {
+    let line =
+        format!("unknown: the time limit of {limit:?} was reached while the sequent was read");
+    match args.output.format {
+        Format::Json => eprintln!("{line}"),
+        format => io::write(args.output.output.as_deref(), &note(format, &line))?,
+    }
+    Ok(Status::Unknown)
+}
+
 /// Runs `prove`: reads the sequent, searches on a large stack, and prints
 /// the verdict line, the derivation or the proof net and the statistics,
-/// or the outcome as JSON.
+/// or the outcome as JSON. A time limit counts from here: the sequent is
+/// read, parsed and laid out as a forest under it, on a thread the
+/// command stops waiting for when the limit passes.
 pub fn prove(args: &ProveArgs) -> Result<Status> {
-    let sequent = args.input.sequent()?;
+    let deadline = Deadline::start(args.timeout, Instant::now())?;
+    let input = args.input.clone();
+    let loaded = deadline.within(move || {
+        let sequent = input.sequent()?;
+        Ok::<_, anyhow::Error>(Forest::try_from(sequent)?)
+    })?;
+    let Some(forest) = loaded else {
+        let limit = deadline.limit().expect("only a limit passes");
+        return unread(args, limit);
+    };
+    let forest = forest?;
+    let sequent = forest.sequent();
     let mode = args.mode.mode();
     if matches!(args.output.format, Format::Net | Format::NetSvg) {
-        nets_exist(&sequent, mode)?;
+        nets_exist(sequent, mode)?;
     }
     let options = Options::default()
         .memo_limit(args.memo_limit)
@@ -444,7 +462,6 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         .forward_copies(args.forward_copies)
         .check(!args.no_check)
         .jobs(if args.deterministic { 1 } else { args.jobs });
-    let period = polls_per_clock(if args.deterministic { 1 } else { args.jobs });
     let format = args.output.format;
     let quiet = args.output.quiet;
     let show = Show::new(&args.output)?;
@@ -452,37 +469,29 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
 
     let (outcome, stop, elapsed, derivation) = on_large_stack(options.stack_size(), || {
         let start = Instant::now();
-        let deadline = args.timeout.map(|t| (start + t, t));
         let mut stop = None;
-        let mut polls = 0u32;
-        let outcome = prove_until(&sequent, mode, &options, || {
-            polls = polls.wrapping_add(1);
-            if !polls.is_multiple_of(period) {
-                return false;
-            }
+        // Both conditions are flags, so every poll asks both.
+        let outcome = prove_goal(&forest, forest.roots(), mode, &options, || {
             if interrupted() {
                 stop = Some(Stop::Interrupt);
-            } else if let Some((deadline, t)) = deadline
-                && Instant::now() >= deadline
-            {
-                stop = Some(Stop::Timeout(t));
+            } else if deadline.passed() {
+                stop = deadline.limit().map(Stop::Timeout);
             }
             stop.is_some()
         })
-        .map_err(|e| describe(e, &sequent))?;
+        .map_err(|e| describe(e, sequent))?;
         let elapsed = start.elapsed();
         // The time limit and Ctrl-C hold for the derivation as for the
         // search.
-        let over =
-            || interrupted() || deadline.is_some_and(|(deadline, _)| Instant::now() >= deadline);
+        let over = || interrupted() || deadline.passed();
         let mut steps = 0u32;
         let halt = || {
             steps = steps.wrapping_add(1);
             steps.is_multiple_of(STEPS_PER_CLOCK) && over()
         };
-        let why = || match deadline {
+        let why = || match deadline.limit() {
             _ if interrupted() => "interrupted".to_owned(),
-            Some((_, t)) => format!("the time limit of {t:?} was reached"),
+            Some(t) => format!("the time limit of {t:?} was reached"),
             None => "stopped".to_owned(),
         };
         let derivation = match (&outcome.verdict, format, quiet) {

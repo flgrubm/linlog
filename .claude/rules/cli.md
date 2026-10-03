@@ -93,15 +93,33 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   thread. A 1000-level `⊗` chain renders on it without overflow in a
   debug build. The parallel search sizes its pool's threads by the same
   function, so the CLI computes no stack size of its own.
-- **The stop closure looks at the clock and the Ctrl-C flag every 1024
-  polls on one thread** (`POLLS_PER_CLOCK`, `polls_per_clock`): the
-  engine polls once per stable sequent, a few million times a second,
-  and reading the clock every time would cost a noticeable share. With
-  several threads core's driver polls the closure once a millisecond on
-  the calling thread and every poll looks, or a time limit would be off
-  by seconds. The CLI knows why the search stopped (`Stop`), so the
-  verdict line says "the time limit of 10s was reached" or "interrupted"
-  instead of `Reason::Stopped`'s generic phrase.
+- **The time limit is a flag, and it counts from the start of the
+  command** (`limit.rs`: `Deadline`). `Deadline::start(limit, start)`
+  starts a thread that sleeps until the limit has passed and raises an
+  `AtomicBool`; the stop closure of `prove` and of a session's `close`
+  is `interrupted() || deadline.passed()`, two loads, asked at every
+  poll. No poll looks at a clock: the closure used to look every 1 024
+  polls on one thread, which is exact where the engine polls millions of
+  times a second and half a minute late where a poll takes 30 ms (a
+  forest of millions of occurrences, a Petri net whose stable sequents
+  are large; `--timeout 1s` on the library's largest file ended the
+  search after 32.8 s). Dropping the `Deadline` ends its thread, so a
+  session starts one per `close`. `prove` counts the limit from its
+  first line: the sequent is read, parsed and laid out as a forest by
+  `Deadline::within`, on a thread of a main thread's stack that the
+  command stops waiting for when the limit passes (the parser cannot be
+  stopped from inside; the thread ends with the process), and the answer
+  is then `unknown: the time limit of 1s was reached while the sequent
+  was read` (`unread`: the output in every format but JSON, where it
+  goes to standard error and standard output stays empty), exit status
+  3. Without a limit the load runs on the main thread as before. The
+  search is `prove_goal` on that forest's roots, which is what
+  `prove_until` does after building the forest itself. A session's
+  sequent is read outside any limit: its `--timeout` is a `close`'s.
+  The CLI knows why the search stopped (`Stop`), so the verdict line
+  says "the time limit of 10s was reached" or "interrupted" instead of
+  `Reason::Stopped`'s generic phrase. `cli/tests/cli.rs::timeout` pins
+  the line and the status on one thread, on a pool and during the read.
 - **`--jobs` defaults to the machine's parallelism** (`default_jobs`) and
   `--deterministic` overrides it with one thread, on `prove` and
   `interact`: the sequential engines are what a pinned output (a test's
@@ -147,7 +165,7 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   input and would report a size while the output goes to a pipe; 80 by
   24 where the terminal does not say.
 - **The time limit and Ctrl-C hold after the search** (`prove`): the same
-  deadline and flag are polled every `STEPS_PER_CLOCK` (256) inferences
+  two flags are polled every `STEPS_PER_CLOCK` (256) inferences
   built and pieces of text written (`halt`; the text tree goes through
   `Halting`, a writer that fails once the condition fires). A derivation
   stopped that way is left out with the reason (`why`), the verdict
