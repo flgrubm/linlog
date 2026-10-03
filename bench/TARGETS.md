@@ -39,6 +39,17 @@ search (0.3 %), a median of 8.5 % of a run's search time and at most
 44 % (0.9 ms on a search of 2.0 ms, `ERK_erk-001000_1_1`); the longest
 check is 6.3 ms (`qbf/20#2`, a search of 46 ms).
 
+A seventh, `after-limits`, was taken on 2026-10-03 after the focused
+engine learned to poll inside its chains of forced splits and between
+the passes of its set-up, to look a chain's duals up from a cursor and
+to rank its copies in one pass, and after the portfolio of worker
+orders was removed (the file has no `portfolio` column). All 99 rows
+that `after-bias` decides have its verdict and counters, and the 66
+undecided rows its verdict and reason; the rows both decide take 177 s
+together where `after-bias` took 189 s. The latest stop is 0.20 s after
+its limit (`AutoFlight_afcs_48_a_50_1`), as before: none of the set's
+problems is one of those that missed their limit by minutes.
+
 Stable sequents and splits are machine-independent on one thread and
 come first; a time is the median of up to three runs, the CPU time of
 the search where it is 100 ms or more and the wall time below that, since

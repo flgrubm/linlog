@@ -327,7 +327,10 @@ beyond clap and anyhow, which the CLI already has.
   first label with the column `check_ms` (the rewritten checker, and the
   search checking every proof unless the harness switches that off):
   the same counters again, and the check at 0.3 % of the search time
-  over the proved runs.
+  over the proved runs. `after-limits` is the first without the
+  `portfolio` column (the polls inside forced chains and the set-up,
+  the cursors of a chain's lookups, the copies ranked in one pass): the
+  same counters again.
 
 ## Extension points
 
