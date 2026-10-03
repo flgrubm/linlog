@@ -151,7 +151,9 @@ pub struct ProveArgs {
     /// as at `--memo-limit`; when that is not enough the verdict is
     /// unknown (exit status 3). The check of the proof and the derivation
     /// built from it are under the same limit: a derivation estimated
-    /// above it is left out even with `--derivation-limit none`.
+    /// above it is left out even with `--derivation-limit none`. By
+    /// default one thread and, after `--pool-after`, a pool beside it
+    /// search at once, each within the limit.
     #[arg(long, value_name = "SIZE", value_parser = parse_limit, default_value_t = Limit(Some(Options::DEFAULT_MEMORY_LIMIT)))]
     pub memory_limit: Limit,
     /// The deepest nesting of rules on one branch before the search gives up
@@ -179,7 +181,7 @@ pub struct ProveArgs {
     /// The default is 100ms when `--jobs` is not given, and 0 when it is.
     /// The single thread goes on searching beside a pool of the other
     /// threads, which starts the search afresh, and the first to decide
-    /// answers; the two have half of `--memory-limit` each.
+    /// answers; each holds at most `--memory-limit`.
     #[arg(long, value_name = "DURATION", value_parser = parse_duration)]
     pub pool_after: Option<Duration>,
     /// Run the sequential engines, whose proof is a function of the input

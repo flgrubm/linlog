@@ -363,7 +363,7 @@ beyond clap and anyhow, which the CLI already has.
   `copies_reached` (`Statistics::copies`: how far the deepening got) and
   `pool_after` (`--pool-after SECONDS`: the child searches on one thread
   that long and then with a pool of `--jobs` − 1 threads (at least two)
-  beside it, the first to decide answering, each with half the memory,
+  beside it, the first to decide answering, each within the memory bound,
   adding the counters of both, as the command does by default; empty for
   threads from the start, which is what a file from before the column
   ran). `--copies

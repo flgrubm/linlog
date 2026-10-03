@@ -70,7 +70,6 @@ pub fn interact(args: &InteractArgs) -> Result<Status> {
         },
         timeout: args.timeout.0,
         threads,
-        memory: args.memory_limit.0,
         deepens: args.copies.0.is_none(),
         recursion_limit: args.recursion_limit,
     };
@@ -96,8 +95,6 @@ struct Session {
     timeout: Option<Duration>,
     /// The threads of a `close`, and how long one searches alone.
     threads: Threads,
-    /// The memory a `close` may hold.
-    memory: Option<u64>,
     /// Whether a `close` deepens the copy bound without a bound.
     deepens: bool,
     /// The recursion limit of a `close`.
@@ -265,13 +262,9 @@ impl Session {
         let halt = || interrupted() || deadline.passed();
         let goal_sequent = self.state.goal(goal).ok_or(Refusal::NoGoal(goal))?.to_vec();
         let (forest, mode) = (self.state.forest(), self.state.mode());
-        let searched = alone_first(
-            &self.options,
-            self.threads,
-            self.memory,
-            &halt,
-            |options, halt| prove_goal(forest, &goal_sequent, mode, options, halt),
-        );
+        let searched = alone_first(&self.options, self.threads, &halt, |options, halt| {
+            prove_goal(forest, &goal_sequent, mode, options, halt)
+        });
         let closed = searched.and_then(|outcome| {
             if let Verdict::Proved(proof) = &outcome.verdict {
                 self.state.close_with(goal, proof, &self.view, halt)?;

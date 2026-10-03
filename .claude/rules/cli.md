@@ -142,8 +142,11 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   `alone_first` in `prove.rs` runs the search on a thread of its own
   and waits for it up to `Threads::alone`; if it has not decided, a pool
   of the other threads (`jobs − 1`, at least two: a pool of one would be
-  the same search again) searches beside it, each with half of
-  `--memory-limit`, and the first to decide raises a flag that stops the
+  the same search again) searches beside it, each within the whole of
+  `--memory-limit` (a halved bound starved the memo of a wide sequent:
+  `SYJ212+1.013` in `cbn`, refuted in 0.52 s by the restart's pool, was
+  not refuted in 5 s by the race's with a quarter of the bound per
+  search), and the first to decide raises a flag that stops the
   other (its stop is the command's or that flag); the outcome adds the
   other's counters (`copies` and `memo_entries` by the maximum). The
   single thread is not stopped when the pool starts, because a pool can

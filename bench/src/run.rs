@@ -717,7 +717,8 @@ fn tail(args: &OneArgs) -> String {
 /// the options' threads from the start, or with `--pool-after` on one
 /// thread first and, if that has not decided when the time has passed,
 /// with a pool of the other threads beside it, the first to decide
-/// answering, each with half the memory, as the command does by default.
+/// answering, each within the memory bound, as the command does by
+/// default.
 /// The outcome of two searches has the counters of both.
 fn alone_first(
     sequent: &linlog::Sequent,
@@ -732,19 +733,16 @@ fn alone_first(
     };
     // A pool of one thread would be the single thread's search again.
     let pool = args.jobs.saturating_sub(1).max(2);
-    let half = options
-        .clone()
-        .memory_limit(memory_limit(args.memory_limit).map(|m| m / 2));
     let decided = AtomicBool::new(false);
     let is_decided = |o: &Result<linlog::search::Outcome, Error>| matches!(o, Ok(o) if !matches!(o.verdict, Verdict::Unknown(_)));
     let halt = || stop() || decided.load(Ordering::Relaxed);
     thread::scope(|scope| {
         let (done, finished) = mpsc::channel::<()>();
-        let (half, decided, is_decided, halt) = (&half, &decided, &is_decided, &halt);
+        let (decided, is_decided, halt) = (&decided, &is_decided, &halt);
         let single = thread::Builder::new()
             .stack_size(options.stack_size())
             .spawn_scoped(scope, move || {
-                let outcome = prove_until(sequent, mode, &half.clone().jobs(1), halt);
+                let outcome = prove_until(sequent, mode, &options.clone().jobs(1), halt);
                 if is_decided(&outcome) {
                     decided.store(true, Ordering::Relaxed);
                 }
@@ -764,7 +762,7 @@ fn alone_first(
         {
             return join(single);
         }
-        let pooled = prove_until(sequent, mode, &half.clone().jobs(pool), halt);
+        let pooled = prove_until(sequent, mode, &options.clone().jobs(pool), halt);
         if is_decided(&pooled) {
             decided.store(true, Ordering::Relaxed);
         }

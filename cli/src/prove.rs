@@ -47,14 +47,15 @@ pub(crate) fn on_large_stack<T: Send>(size: usize, f: impl FnOnce() -> T + Send)
 /// passed, with a pool of the other threads beside it, the first of the
 /// two to decide answering. The single thread is not stopped when the
 /// pool starts: a pool may search worse than one thread, and what one
-/// thread decides within the limit stays decided. The two then have half
-/// of `memory` each. `halt` is the command's stop condition, and `search`
-/// runs a search with the options and stop condition given. The outcome
-/// of two searches has the counters of both.
+/// thread decides within the limit stays decided. Each is the search it
+/// would be alone, within the memory bound of the options: a halved bound
+/// starves the memo of a wide sequent, whose every entry is large, and
+/// the search with it. `halt` is the command's stop condition, and
+/// `search` runs a search with the options and stop condition given. The
+/// outcome of two searches has the counters of both.
 pub(crate) fn alone_first<E: Send>(
     options: &Options,
     threads: Threads,
-    memory: Option<u64>,
     halt: &(dyn Fn() -> bool + Sync),
     search: impl Fn(&Options, &mut dyn FnMut() -> bool) -> Result<Outcome, E> + Sync,
 ) -> Result<Outcome, E> {
@@ -63,18 +64,17 @@ pub(crate) fn alone_first<E: Send>(
     };
     // A pool of one thread would be the single thread's search again.
     let pool = threads.jobs.saturating_sub(1).max(2);
-    let half = options.clone().memory_limit(memory.map(|m| m / 2));
     let decided = AtomicBool::new(false);
     let is_decided =
         |o: &Result<Outcome, E>| matches!(o, Ok(o) if !matches!(o.verdict, Verdict::Unknown(_)));
     thread::scope(|scope| {
         let (done, finished) = std::sync::mpsc::channel::<()>();
-        let (search, half, decided, is_decided) = (&search, &half, &decided, &is_decided);
+        let (search, decided, is_decided) = (&search, &decided, &is_decided);
         let single = thread::Builder::new()
             .name("search alone".into())
             .stack_size(options.stack_size())
             .spawn_scoped(scope, move || {
-                let outcome = search(&half.clone().jobs(1), &mut || {
+                let outcome = search(&options.clone().jobs(1), &mut || {
                     halt() || decided.load(Ordering::Relaxed)
                 });
                 if is_decided(&outcome) {
@@ -95,7 +95,7 @@ pub(crate) fn alone_first<E: Send>(
         if finished.recv_timeout(alone).is_ok() || halt() {
             return join(single);
         }
-        let pooled = search(&half.clone().jobs(pool), &mut || {
+        let pooled = search(&options.clone().jobs(pool), &mut || {
             halt() || decided.load(Ordering::Relaxed)
         });
         if is_decided(&pooled) {
@@ -633,13 +633,9 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         let notice = Notice::start(NOTICE_AFTER, notice_line(deadline.limit(), deepens));
         // Both conditions are flags, so every poll asks both.
         let halt = || interrupted() || deadline.passed();
-        let outcome = alone_first(
-            &options,
-            threads,
-            args.memory_limit.0,
-            &halt,
-            |options, halt| prove_goal(&forest, forest.roots(), mode, options, halt),
-        )
+        let outcome = alone_first(&options, threads, &halt, |options, halt| {
+            prove_goal(&forest, forest.roots(), mode, options, halt)
+        })
         .map_err(|e| describe(e, sequent))?;
         let stop = stopped(&deadline);
         drop(notice);
