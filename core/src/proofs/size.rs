@@ -81,17 +81,30 @@ impl Size {
 impl Proof {
     /// Returns how large the derivation of the proof is, the two-sided one
     /// with `two_sided` set, without building it, or the checker's
-    /// complaint about the proof: the proof passes the checker once, and
-    /// a subproof that several nodes share is counted at every use, as the
+    /// complaint about the proof: the proof passes the checker once,
+    /// within [`DEFAULT_MEMORY_LIMIT`](super::DEFAULT_MEMORY_LIMIT), and a
+    /// subproof that several nodes share is counted at every use, as the
     /// derivation repeats it.
     pub fn derivation_size(&self, two_sided: bool) -> Result<Size, CheckError> {
+        self.derivation_size_within(two_sided, Some(super::DEFAULT_MEMORY_LIMIT))
+    }
+
+    /// Returns the size as [`derivation_size`](Self::derivation_size)
+    /// does, the checker's pass holding `memory` bytes at most, or any
+    /// number with `None`; a pass that would hold more ends with an error
+    /// that [`is_refusal`](CheckError::is_refusal).
+    pub fn derivation_size_within(
+        &self,
+        two_sided: bool,
+        memory: Option<u64>,
+    ) -> Result<Size, CheckError> {
         let mode = if two_sided {
             Derivation::TWO_SIDED
         } else {
             Derivation::ONE_SIDED
         };
         let reading = check::reading(self, mode)?;
-        measure(self, self.forest().roots(), mode, reading.as_ref())
+        measure(self, self.forest().roots(), mode, reading.as_ref(), memory)
     }
 }
 
@@ -181,6 +194,14 @@ fn weights(forest: &Forest) -> Vec<u32> {
 }
 
 impl Measure<'_> {
+    /// Returns the bytes of the two tables a measure of `proof` keeps: a
+    /// record for each of fewer than 2³² nodes, a weight for each of fewer
+    /// than 2³² occurrences.
+    fn tables(proof: &Proof) -> u64 {
+        proof.nodes().len() as u64 * size_of::<Sub>() as u64
+            + proof.forest().len() as u64 * size_of::<u32>() as u64
+    }
+
     /// The characters of an occurrence's formula and its separator.
     fn characters(&self, o: OccId) -> u64 {
         u64::from(self.weights[o.index()])
@@ -264,6 +285,10 @@ impl Measure<'_> {
 impl Observer for Measure<'_> {
     fn weight(&self, o: OccId) -> u32 {
         self.weights[o.index()]
+    }
+
+    fn bytes(&self) -> u64 {
+        Self::tables(self.proof)
     }
 
     fn derived(&mut self, id: NodeId, state: &State, facts: &Facts<'_>) {
@@ -437,13 +462,17 @@ impl Observer for Measure<'_> {
 
 /// Returns the size of the derivation that a proof concluding `goal`
 /// unfolds into, two-sided under a reading, or the checker's complaint
-/// about the proof in `mode`.
+/// about the proof in `mode`, or its refusal to hold more than `memory`
+/// bytes.
 pub(crate) fn measure(
     proof: &Proof,
     goal: &[OccId],
     mode: Mode,
     reading: Option<&Reading>,
+    memory: Option<u64>,
 ) -> Result<Size, CheckError> {
+    // Before the tables are made: they are several times the proof.
+    check::afford(proof, Measure::tables(proof), memory)?;
     let mut measure = Measure {
         proof,
         reading,
@@ -451,7 +480,7 @@ pub(crate) fn measure(
         subs: vec![Sub::default(); proof.nodes().len()],
         exact: true,
     };
-    check::examine(proof, goal, mode, reading, &mut measure)?;
+    check::examine(proof, goal, mode, reading, memory, &mut measure)?;
     let root = measure.subs[proof.root().index()];
     // What the conclusion holds beyond what the root derives, a `⊤`
     // absorbs. A goal is a list of any length, so its sums saturate.

@@ -68,7 +68,12 @@ pub enum Error {
     OccurrenceIndexOutOfBounds(usize, usize),
     /// A proof does not prove its sequent.
     #[error("invalid proof: {0}")]
-    InvalidProof(#[from] CheckError),
+    InvalidProof(CheckError),
+    /// The check of a proof was given up because it would hold more memory
+    /// than its bound ([`CheckError::is_refusal`]): the proof is neither
+    /// valid nor invalid.
+    #[error("{0}")]
+    Unchecked(CheckError),
     /// A proof has no derivation to show: it is larger than the options
     /// of the view allow, or its building was stopped.
     #[error("{0}")]
@@ -166,11 +171,23 @@ pub enum Error {
     },
 }
 
+impl From<CheckError> for Error {
+    /// Wraps the checker's complaint: a proof at fault as
+    /// [`Error::InvalidProof`], a check given up as [`Error::Unchecked`].
+    fn from(error: CheckError) -> Self {
+        if error.is_refusal() {
+            Self::Unchecked(error)
+        } else {
+            Self::InvalidProof(error)
+        }
+    }
+}
+
 impl From<crate::proofs::ViewError> for Error {
-    /// Wraps the reason, an invalid proof as [`Error::InvalidProof`].
+    /// Wraps the reason, the checker's complaint as it wraps by itself.
     fn from(error: crate::proofs::ViewError) -> Self {
         match error {
-            crate::proofs::ViewError::Invalid(error) => Self::InvalidProof(error),
+            crate::proofs::ViewError::Invalid(error) => error.into(),
             other => Self::View(other),
         }
     }

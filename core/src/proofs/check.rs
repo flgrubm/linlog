@@ -15,7 +15,9 @@
 //! sequent under any further context. A node's sequent is built from its
 //! premises' own: the last node to read a premise takes its sequent and
 //! changes it in place, an earlier reader a copy, so what the pass holds at
-//! any moment is the sequents some later node still reads.
+//! any moment is the sequents some later node still reads. Those are
+//! counted in bytes as they come and go, and a pass that would hold more
+//! than its bound ends with a refusal, which is no verdict on the proof.
 //!
 //! No arithmetic here may wrap, in any build: a term from a file is
 //! hostile input, and a counter that wrapped once made a term a proof
@@ -30,12 +32,75 @@
 //! a goal at all. Every intuitionistic rule is a classical rule on the
 //! one-sided sequent, so nothing else is intuitionistic about a proof.
 
-use super::{Node, NodeId, Proof, Side};
+use super::{DEFAULT_MEMORY_LIMIT, Node, NodeId, Proof, Side};
 use crate::fragment::Mode;
 use crate::hash::{HashMap, HashSet};
 use crate::occurrences::{Forest, OccId, Position, Reading, ShapeError};
 use crate::sequents::Kind;
 use std::fmt::{Display, Formatter, Result as FmtResult};
+
+/// Returns the bytes of a hash table whose entries take `entry` bytes and
+/// which held `most` of them when it was fullest. The standard library's
+/// table has a power of two of slots, four at least and seven in eight
+/// taken at most, each with a byte beside its entry, and sixteen bytes at
+/// the end; it never gives slots back, and a copy has as many as its
+/// original. A table that entries came and went from can have twice or
+/// four times the slots, so this is the least the table takes and within
+/// that factor of what it does.
+///
+/// Nothing overflows: `most` counts distinct occurrence ids, 2³² at most,
+/// so there are 2³³ slots at most and fewer than 2³⁸ bytes.
+fn table_bytes(most: usize, entry: usize) -> u64 {
+    if most == 0 {
+        return 0;
+    }
+    let slots = (most as u64 * 8).div_ceil(7).next_power_of_two().max(4);
+    slots * (entry as u64 + 1) + 16
+}
+
+/// The unrestricted zone: a set of occurrences.
+#[derive(Clone, Debug, Default)]
+struct Zone {
+    /// The members.
+    members: HashSet<OccId>,
+    /// The most members the table has held, which its memory follows:
+    /// distinct occurrence ids, so 2³² at most.
+    most: usize,
+}
+
+impl Zone {
+    /// Returns the number of members.
+    fn len(&self) -> usize {
+        self.members.len()
+    }
+
+    /// Returns whether the set has no member.
+    fn is_empty(&self) -> bool {
+        self.members.is_empty()
+    }
+
+    /// Returns the members, in no particular order.
+    fn iter(&self) -> impl Iterator<Item = OccId> + '_ {
+        self.members.iter().copied()
+    }
+
+    /// Adds `o` and returns whether it was not a member.
+    fn insert(&mut self, o: OccId) -> bool {
+        let new = self.members.insert(o);
+        self.most = self.most.max(self.members.len());
+        new
+    }
+
+    /// Removes `o` and returns whether it was a member.
+    fn remove(&mut self, o: OccId) -> bool {
+        self.members.remove(&o)
+    }
+
+    /// Returns the bytes the table takes.
+    fn bytes(&self) -> u64 {
+        table_bytes(self.most, size_of::<OccId>())
+    }
+}
 
 /// How many copies of each occurrence a linear zone holds: a multiset
 /// whose insertions and removals cost the same whatever its size.
@@ -43,7 +108,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 /// The counters saturate and never wrap: a zone of more than
 /// [`MOST`](Self::MOST) members is refused by the pass before any rule
 /// reads it, so every count a rule sees is the true one.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default)]
 struct Bag {
     /// The copies of every member, never zero. A count saturates at
     /// `u32::MAX`, and then the zone has that many members at least, more
@@ -54,7 +119,20 @@ struct Bag {
     /// exact until the pass refuses it; where a `usize` has 32 bits it
     /// saturates at `u32::MAX`, which is over the bound as well.
     len: usize,
+    /// The most distinct members the table has held, which its memory
+    /// follows: distinct occurrence ids, so 2³² at most.
+    most: usize,
 }
+
+impl PartialEq for Bag {
+    /// Returns whether both hold the same copies of the same members,
+    /// whatever their tables held before.
+    fn eq(&self, other: &Self) -> bool {
+        self.len == other.len && self.counts == other.counts
+    }
+}
+
+impl Eq for Bag {}
 
 impl Bag {
     /// The most members a zone may hold: fewer than a counter saturates
@@ -97,6 +175,7 @@ impl Bag {
         let n = self.counts.entry(o).or_insert(0);
         *n = n.saturating_add(1);
         self.len = self.len.saturating_add(1);
+        self.most = self.most.max(self.counts.len());
     }
 
     /// Removes one copy of `o` and returns whether there was one.
@@ -125,6 +204,7 @@ impl Bag {
             *own = own.saturating_add(n);
         }
         self.len = self.len.saturating_add(other.len);
+        self.most = self.most.max(self.counts.len());
     }
 
     /// Raises every member's copies to those `other` has of it: the
@@ -140,6 +220,12 @@ impl Bag {
                 *own = n;
             }
         }
+        self.most = self.most.max(self.counts.len());
+    }
+
+    /// Returns the bytes the table takes.
+    fn bytes(&self) -> u64 {
+        table_bytes(self.most, size_of::<(OccId, u32)>())
     }
 
     /// Returns whether no id has more copies here than in `other`.
@@ -172,7 +258,7 @@ impl Bag {
 #[derive(Clone, Debug)]
 pub(crate) struct State {
     /// The unrestricted zone the subproof needs.
-    theta: HashSet<OccId>,
+    theta: Zone,
     /// The linear zone.
     gamma: Bag,
     /// The members of the linear zone in output position, under a reading:
@@ -194,9 +280,19 @@ pub(crate) struct State {
 }
 
 impl State {
+    /// What a sequent takes besides its tables: the value, and what the
+    /// allocator keeps for it.
+    const OWN: u64 = size_of::<Self>() as u64 + 16;
+
+    /// Returns the bytes the sequent takes in memory, at the least: the
+    /// value and its two tables as they were when fullest. Fewer than 2³⁹.
+    fn bytes(&self) -> u64 {
+        Self::OWN + self.theta.bytes() + self.gamma.bytes()
+    }
+
     /// Returns the sequent as ids for an error report.
     fn to_dyadic(&self) -> Dyadic {
-        let mut theta: Vec<OccId> = self.theta.iter().copied().collect();
+        let mut theta: Vec<OccId> = self.theta.iter().collect();
         theta.sort_unstable();
         Dyadic {
             theta,
@@ -208,7 +304,7 @@ impl State {
     /// Returns the unrestricted occurrences the subproof needs, in no
     /// particular order.
     pub(crate) fn unrestricted(&self) -> impl Iterator<Item = OccId> + '_ {
-        self.theta.iter().copied()
+        self.theta.iter()
     }
 
     /// Returns the linear zone's members with their numbers of copies, in
@@ -299,20 +395,25 @@ fn occurrence(f: &mut Formatter<'_>, forest: Option<&Forest>, o: OccId) -> FmtRe
 
 /// Why a proof term is not a proof of its sequent: the node at fault, what
 /// the checker had derived for its premises, and what the rule required.
+/// Or, when [`is_refusal`](Self::is_refusal) says so, why the check was
+/// given up without a verdict on the term.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CheckError {
     /// The node at fault; the root when the proof concludes the wrong sequent
-    /// or the sequent has no intuitionistic reading.
+    /// or the sequent has no intuitionistic reading; for a refusal, the
+    /// node the check had come to.
     pub node: NodeId,
     /// The node's rule instance.
     pub rule: Node,
-    /// The sequents derived for the node's premises, in the node's order.
+    /// The sequents derived for the node's premises, in the node's order;
+    /// none for a refusal.
     pub premises: Vec<Dyadic>,
     /// What the rule required and did not get.
     pub problem: Problem,
 }
 
-/// What a rule required and did not get.
+/// What a rule required and did not get, or why the check was given up.
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Problem {
     /// The mode forbids the rule: weakening of a formula that is not a `?`
@@ -353,6 +454,21 @@ pub enum Problem {
     /// zone differs from the sequent's formulas, or its unrestricted zone
     /// holds a copied occurrence that no `?` rule below moved there.
     Conclusion(Dyadic),
+    /// Not a fault of the proof: the check was given up at the node,
+    /// where the sequents it must hold at once take more than the bound it
+    /// was given. The proof is neither accepted nor rejected.
+    Memory {
+        /// The bound, in bytes.
+        limit: u64,
+    },
+}
+
+impl Problem {
+    /// Returns whether this is no fault of the proof but the check's own
+    /// refusal to go on, which leaves the proof without a verdict.
+    pub const fn is_refusal(&self) -> bool {
+        matches!(self, Self::Memory { .. })
+    }
 }
 
 impl Display for CheckError {
@@ -365,6 +481,13 @@ impl Display for CheckError {
 }
 
 impl CheckError {
+    /// Returns whether the check was given up rather than the proof found
+    /// at fault: it would have taken more memory than its bound. A caller
+    /// must not report the proof as invalid then.
+    pub const fn is_refusal(&self) -> bool {
+        self.problem.is_refusal()
+    }
+
     /// Returns the error for display with formulas instead of occurrence
     /// ids, read from `forest`, the forest of the proof that failed; the
     /// nodes keep their ids. For instance `node 2 (⊗ on A ⊗ ~B from 0, 1)
@@ -442,6 +565,11 @@ impl CheckError {
                 d.write(f, forest)?;
                 f.write_str(", not the sequent")
             }
+            Memory { limit } => write!(
+                f,
+                "the check was given up here, without a verdict on the proof: the sequents \
+                 it holds at once take more than the memory limit of {limit} bytes"
+            ),
         }
     }
 }
@@ -472,14 +600,38 @@ impl std::error::Error for CheckError {}
 /// Returns the first node that fails, in arena order, with what it needed.
 ///
 /// The memory taken is that of the sequents some later node still reads,
-/// which for a proof without shared subproofs is proportional to the proof.
+/// which for a proof without shared subproofs is proportional to the
+/// proof, and within [`DEFAULT_MEMORY_LIMIT`]: see [`check_within`].
 pub fn check(proof: &Proof, mode: Mode) -> Result<(), CheckError> {
+    check_within(proof, mode, Some(DEFAULT_MEMORY_LIMIT))
+}
+
+/// Checks that a proof proves its sequent as [`check`] does, holding
+/// `memory` bytes at most, or any number with `None`. A node that several
+/// others read has its sequent copied for each, so a proof with shared
+/// subproofs can take its nodes times its sequents; a check that would
+/// pass the bound ends with an error that
+/// [`is_refusal`](CheckError::is_refusal), which says nothing about the
+/// proof.
+///
+/// What is counted is what the pass allocates beyond the proof and the
+/// forest it is given: twelve bytes for every node, and every sequent it
+/// holds at the size of its two tables of members, which is the least
+/// they take and at least a quarter of what they do (a table that
+/// members came and went from can have up to four times the slots of one
+/// that only grew). A copy is counted before it is made. Not counted:
+/// what one rule needs while it joins two sequents and the sequents of
+/// an error's report, each within a small multiple of the largest
+/// sequent counted, and the intuitionistic reading, which is a few bytes
+/// for every occurrence of the forest.
+pub fn check_within(proof: &Proof, mode: Mode, memory: Option<u64>) -> Result<(), CheckError> {
     let reading = reading(proof, mode)?;
     examine(
         proof,
         proof.forest().roots(),
         mode,
         reading.as_ref(),
+        memory,
         &mut (),
     )
 }
@@ -503,17 +655,19 @@ pub(crate) fn reading(proof: &Proof, mode: Mode) -> Result<Option<Reading<'_>>, 
 }
 
 /// Checks that a proof concludes `goal`, a multiset of occurrences in any
-/// order (the roots, for a proof of the sequent), as [`check`] does, with
-/// the one-succedent condition when a reading is given, and shows every
-/// node's sequent to `observer` on the way.
+/// order (the roots, for a proof of the sequent), as [`check_within`]
+/// does, with the one-succedent condition when a reading is given, and
+/// shows every node's sequent to `observer` on the way.
 pub(crate) fn examine<O: Observer>(
     proof: &Proof,
     goal: &[OccId],
     mode: Mode,
     reading: Option<&Reading>,
+    memory: Option<u64>,
     observer: &mut O,
 ) -> Result<(), CheckError> {
-    let mut pass = Pass::new(proof, goal.len(), mode, reading, observer);
+    afford(proof, observer.bytes(), memory)?;
+    let mut pass = Pass::new(proof, goal.len(), mode, reading, memory, observer);
     let end = proof.nodes().len();
     let (node, problem) = match pass.run(end) {
         Err(failure) => failure,
@@ -523,13 +677,24 @@ pub(crate) fn examine<O: Observer>(
         },
     };
     drop(pass);
+    let rule = proof.node(node);
+    // A refusal shows no premises: deriving them again would take the
+    // memory that was refused.
+    if problem.is_refusal() {
+        return Err(CheckError {
+            node,
+            rule,
+            premises: vec![],
+            problem,
+        });
+    }
     // The premises' sequents are gone, moved into the node that failed, so
     // the pass runs once more up to it. They are kept then, since the node
     // itself has yet to read them, and the pass does what the first did
-    // up to there: it cannot fail.
-    let rule = proof.node(node);
+    // up to there, with nobody's tables but its own: it holds no more, and
+    // cannot fail.
     let mut nobody = ();
-    let mut pass = Pass::new(proof, goal.len(), mode, reading, &mut nobody);
+    let mut pass = Pass::new(proof, goal.len(), mode, reading, memory, &mut nobody);
     let again = pass.run(node.index());
     debug_assert!(again.is_ok());
     let premises = rule
@@ -544,6 +709,31 @@ pub(crate) fn examine<O: Observer>(
     })
 }
 
+/// Returns the bytes of the two tables a pass over `proof` keeps: a count
+/// of readers and a place for a sequent, twelve bytes, for each of fewer
+/// than 2³² nodes.
+fn tables(proof: &Proof) -> u64 {
+    proof.nodes().len() as u64 * (size_of::<u32>() + size_of::<Option<Box<State>>>()) as u64
+}
+
+/// Refuses a pass over `proof` that may hold `memory` bytes when its own
+/// tables and the `observer` bytes of its observer's are more than that
+/// already. An observer asks before it allocates its own.
+pub(crate) fn afford(proof: &Proof, observer: u64, memory: Option<u64>) -> Result<(), CheckError> {
+    match memory {
+        Some(limit) if tables(proof).saturating_add(observer) > limit => {
+            let first = NodeId::new(0);
+            Err(CheckError {
+                node: first,
+                rule: proof.node(first),
+                premises: vec![],
+                problem: Problem::Memory { limit },
+            })
+        }
+        _ => Ok(()),
+    }
+}
+
 /// What a caller of [`examine`] learns about every node of a correct
 /// proof, in arena order.
 pub(crate) trait Observer {
@@ -551,6 +741,12 @@ pub(crate) trait Observer {
     /// its sequent. A `u32`, so that the sum over a zone fits a `u64`.
     fn weight(&self, o: OccId) -> u32 {
         let _ = o;
+        0
+    }
+
+    /// Returns the bytes the observer holds for the pass from its start,
+    /// which count against the pass's bound.
+    fn bytes(&self) -> u64 {
         0
     }
 
@@ -608,15 +804,28 @@ struct Pass<'a, O> {
     observer: &'a mut O,
     /// The unrestricted occurrences both premises of the current node need.
     shared: Vec<OccId>,
+    /// The most bytes the pass may hold, or none for any number.
+    memory: Option<u64>,
+    /// The bytes the pass holds: its two tables, what the observer says
+    /// it holds, and every sequent in `live` or in the hands of the
+    /// current rule, each as [`State::bytes`] counts it. Every part is
+    /// allocated, and counted at no more than it takes, so the sum is
+    /// below what the process holds and far from 2⁶⁴; it saturates all
+    /// the same, so that no estimate, however wrong, could wrap it.
+    held: u64,
+    /// The bytes among them of the sequents the current rule was handed.
+    passed: u64,
 }
 
 impl<'a, O: Observer> Pass<'a, O> {
-    /// The pass before its first node.
+    /// The pass before its first node, which [`afford`] has allowed its
+    /// tables.
     fn new(
         proof: &'a Proof,
         goal: usize,
         mode: Mode,
         reading: Option<&'a Reading<'a>>,
+        memory: Option<u64>,
         observer: &'a mut O,
     ) -> Self {
         let mut readers = vec![0; proof.nodes().len()];
@@ -627,6 +836,7 @@ impl<'a, O: Observer> Pass<'a, O> {
         }
         let mut live = Vec::new();
         live.resize_with(readers.len(), || None);
+        let held = tables(proof).saturating_add(observer.bytes());
         Self {
             proof,
             forest: proof.forest(),
@@ -637,16 +847,31 @@ impl<'a, O: Observer> Pass<'a, O> {
             live,
             observer,
             shared: Vec::new(),
+            memory,
+            held,
+            passed: 0,
+        }
+    }
+
+    /// Counts `bytes` more as held, or refuses them when the pass would
+    /// hold more than its bound.
+    fn charge(&mut self, bytes: u64) -> Result<(), Problem> {
+        self.held = self.held.saturating_add(bytes);
+        match self.memory {
+            Some(limit) if self.held > limit => Err(Problem::Memory { limit }),
+            _ => Ok(()),
         }
     }
 
     /// Derives the nodes before `end` in arena order, or returns the first
     /// that misapplies its rule, uses one the mode forbids, derives more
     /// than the proof can conclude or breaks the one-succedent condition,
-    /// with the problem.
+    /// with the problem; or the node at which the pass would hold more
+    /// than its bound.
     fn run(&mut self, end: usize) -> Result<(), (NodeId, Problem)> {
         for id in self.proof.ids().take(end) {
             let mut facts = Facts::default();
+            self.passed = 0;
             let state = self
                 .rule(self.proof.node(id), &mut facts)
                 .and_then(|state| self.within(id, state))
@@ -654,8 +879,14 @@ impl<'a, O: Observer> Pass<'a, O> {
                 .map_err(|problem| (id, problem))?;
             facts.shared = &self.shared;
             self.observer.derived(id, &state, &facts);
+            // The premises' sequents are gone into the node's own. Each was
+            // counted when it was kept or copied, so the difference is exact
+            // as long as the count never saturated.
+            self.held = self.held.saturating_sub(self.passed);
             // The root has no reader and is read at the end.
             if self.readers[id.index()] > 0 || id == self.proof.root() {
+                self.charge(state.bytes())
+                    .map_err(|problem| (id, problem))?;
                 self.live[id.index()] = Some(state);
             }
         }
@@ -682,17 +913,22 @@ impl<'a, O: Observer> Pass<'a, O> {
     }
 
     /// What premise `p` derived: the sequent itself for its last reader, a
-    /// copy for the others.
-    fn premise(&mut self, p: NodeId) -> Box<State> {
-        let slot = &mut self.live[p.index()];
+    /// copy for the others, unless the pass would hold more than its bound
+    /// with the copy.
+    fn premise(&mut self, p: NodeId) -> Result<Box<State>, Problem> {
         // The count includes this reader, so it is one at least.
         self.readers[p.index()] -= 1;
-        if self.readers[p.index()] == 0 {
-            slot.take()
-        } else {
-            slot.clone()
+        let last = self.readers[p.index()] == 0;
+        let kept = "a premise's sequent is kept until its last reader";
+        let bytes = self.live[p.index()].as_deref().expect(kept).bytes();
+        // A copy takes what its original does, and is counted before it is
+        // made; the original is counted already.
+        if !last {
+            self.charge(bytes)?;
         }
-        .expect("a premise's sequent is kept until its last reader")
+        self.passed = self.passed.saturating_add(bytes);
+        let slot = &mut self.live[p.index()];
+        Ok(if last { slot.take() } else { slot.clone() }.expect(kept))
     }
 
     /// Whether `o` is in output position, under a reading.
@@ -800,7 +1036,7 @@ impl<'a, O: Observer> Pass<'a, O> {
     /// The sequent with only the given occurrences in its linear zone.
     fn just(&self, ids: impl IntoIterator<Item = OccId>, any: bool) -> Box<State> {
         let mut d = Box::new(State {
-            theta: HashSet::default(),
+            theta: Zone::default(),
             gamma: Bag::default(),
             outputs: 0,
             linear: 0,
@@ -821,7 +1057,7 @@ impl<'a, O: Observer> Pass<'a, O> {
             std::mem::swap(&mut l.theta, &mut r.theta);
             std::mem::swap(&mut l.unrestricted, &mut r.unrestricted);
         }
-        for a in r.theta.drain() {
+        for a in r.theta.members.drain() {
             if l.theta.insert(a) {
                 l.unrestricted += u64::from(self.observer.weight(self.quest(a)));
             } else {
@@ -871,13 +1107,13 @@ impl<'a, O: Observer> Pass<'a, O> {
             }
             Bot(o, p) => {
                 self.expect(o, Kind::Bot)?;
-                let mut d = self.premise(p);
+                let mut d = self.premise(p)?;
                 self.put(&mut d, o);
                 Ok(d)
             }
             Par(o, p) => {
                 self.expect(o, Kind::Par)?;
-                let mut d = self.premise(p);
+                let mut d = self.premise(p)?;
                 facts.absent[0] = self.take(&mut d, self.left(o), 0)?;
                 facts.absent[1] = self.take(&mut d, self.right(o), 0)?;
                 self.put(&mut d, o);
@@ -885,7 +1121,7 @@ impl<'a, O: Observer> Pass<'a, O> {
             }
             Tensor(o, l, r) => {
                 self.expect(o, Kind::Tensor)?;
-                let (mut dl, mut dr) = (self.premise(l), self.premise(r));
+                let (mut dl, mut dr) = (self.premise(l)?, self.premise(r)?);
                 facts.needs = [dl.theta.len(), dr.theta.len()];
                 facts.left_goal = dl.outputs > 0 || self.is_output(self.left(o));
                 facts.absent[0] = self.take(&mut dl, self.left(o), 0)?;
@@ -896,7 +1132,7 @@ impl<'a, O: Observer> Pass<'a, O> {
             }
             With(o, l, r) => {
                 self.expect(o, Kind::With)?;
-                let (mut dl, mut dr) = (self.premise(l), self.premise(r));
+                let (mut dl, mut dr) = (self.premise(l)?, self.premise(r)?);
                 facts.needs = [dl.theta.len(), dr.theta.len()];
                 facts.absent[0] = self.take(&mut dl, self.left(o), 0)?;
                 facts.absent[1] = self.take(&mut dr, self.right(o), 1)?;
@@ -922,7 +1158,7 @@ impl<'a, O: Observer> Pass<'a, O> {
             }
             Plus(o, side, p) => {
                 self.expect(o, Kind::Plus)?;
-                let mut d = self.premise(p);
+                let mut d = self.premise(p)?;
                 let chosen = match side {
                     Side::Left => self.left(o),
                     Side::Right => self.right(o),
@@ -933,7 +1169,7 @@ impl<'a, O: Observer> Pass<'a, O> {
             }
             Bang(o, p) => {
                 self.expect(o, Kind::Bang)?;
-                let mut d = self.premise(p);
+                let mut d = self.premise(p)?;
                 facts.absent[0] = self.take(&mut d, self.left(o), 0)?;
                 if !d.gamma.is_empty() {
                     return Err(Problem::NotEmpty);
@@ -946,8 +1182,8 @@ impl<'a, O: Observer> Pass<'a, O> {
             }
             Quest(o, p) => {
                 self.expect(o, Kind::Quest)?;
-                let mut d = self.premise(p);
-                if d.theta.remove(&self.left(o)) {
+                let mut d = self.premise(p)?;
+                if d.theta.remove(self.left(o)) {
                     // What the member added when it came in.
                     facts.used = true;
                     d.unrestricted -= u64::from(self.observer.weight(o));
@@ -959,7 +1195,7 @@ impl<'a, O: Observer> Pass<'a, O> {
                 if f.parent(a).map(|q| f.kind(q)) != Some(Kind::Quest) {
                     return Err(Problem::NotUnderQuest(a));
                 }
-                let mut d = self.premise(p);
+                let mut d = self.premise(p)?;
                 facts.absent[0] = self.take(&mut d, a, 0)?;
                 if d.theta.insert(a) {
                     d.unrestricted += u64::from(self.observer.weight(self.quest(a)));
@@ -977,7 +1213,7 @@ impl<'a, O: Observer> Pass<'a, O> {
                 if self.is_output(o) {
                     return Err(Problem::Succedents(0));
                 }
-                let mut d = self.premise(p);
+                let mut d = self.premise(p)?;
                 self.put(&mut d, o);
                 Ok(d)
             }
@@ -987,7 +1223,7 @@ impl<'a, O: Observer> Pass<'a, O> {
                 if !self.mode.mix || self.mode.intuitionistic {
                     return Err(Problem::Forbidden);
                 }
-                let (dl, dr) = (self.premise(l), self.premise(r));
+                let (dl, dr) = (self.premise(l)?, self.premise(r)?);
                 facts.needs = [dl.theta.len(), dr.theta.len()];
                 facts.left_goal = dl.outputs > 0;
                 Ok(self.join(dl, dr))
@@ -1552,9 +1788,138 @@ mod tests {
         let e = p.check(mode).unwrap_err();
         // Node 8 holds 256 copies with 122 nodes to come.
         assert_eq!((e.node, &e.problem), (n(8), &Problem::Surplus));
+        assert!(!e.is_refusal());
         assert_eq!(Err(e.clone()), oracle::check(&p, mode));
         // The pass that adds up weights for the size refuses it there too.
         assert_eq!(p.derivation_size(false), Err(e));
+    }
+
+    /// A proof of `⊢ 1, ⊥, …, ⊥, T` with `width` formulas `⊥` and `T` a
+    /// balanced tree of `&` over `2^depth` leaves `⊥`: the `⊥` formulas are
+    /// introduced once, into one sequent that every leaf of the tree then
+    /// reads, and all the leaves come before the first `&` that joins two
+    /// of them. So a pass holds a copy of that sequent for every leaf.
+    fn shared(width: u32, depth: u32) -> Proof {
+        use crate::sequents::{Term, TermId};
+        use Node::*;
+        // Terms: 0 is 1, 1 is ⊥, and 2 + j the tree of depth j + 1 over
+        // two of depth j, so the arena has the tree once per depth.
+        let mut terms = vec![Term::One, Term::Bot];
+        for j in 0..depth {
+            terms.push(Term::With(TermId::new(1 + j), TermId::new(1 + j)));
+        }
+        let mut roots = vec![TermId::new(0)];
+        roots.extend((0..width).map(|_| TermId::new(1)));
+        roots.push(TermId::new(1 + depth));
+        let sequent = Sequent {
+            terms,
+            roots,
+            atoms: vec![],
+        };
+        // Occurrences: 0 is 1, 1 to `width` the ⊥ formulas, then the tree
+        // in preorder.
+        let mut nodes = vec![One(o(0))];
+        for i in 1..=width {
+            nodes.push(Bot(o(i), n(i - 1)));
+        }
+        let context = n(width);
+        // The tree's occurrences with their depths, in preorder: a tree of
+        // depth j has 2^(j + 1) − 1 of them.
+        let mut tree = vec![];
+        let mut stack = vec![(width + 1, depth)];
+        while let Some((at, d)) = stack.pop() {
+            tree.push((at, d));
+            if d > 0 {
+                stack.push((at + (1 << d), d - 1));
+                stack.push((at + 1, d - 1));
+            }
+        }
+        let mut proved = crate::hash::HashMap::default();
+        for &(at, d) in &tree {
+            if d == 0 {
+                proved.insert(at, n(nodes.len() as u32));
+                nodes.push(Bot(o(at), context));
+            }
+        }
+        // A subtree's occurrences follow its root, so the reverse of the
+        // preorder has both subformulas before their `&`.
+        for &(at, d) in tree.iter().rev() {
+            if d > 0 {
+                let (l, r) = (proved[&(at + 1)], proved[&(at + (1 << d))]);
+                proved.insert(at, n(nodes.len() as u32));
+                nodes.push(With(o(at), l, r));
+            }
+        }
+        let root = n(nodes.len() as u32 - 1);
+        Proof::new(Forest::new(&sequent).unwrap(), nodes, root).unwrap()
+    }
+
+    /// A check holds no more than it is allowed: a proof file of a megabyte
+    /// whose pass would hold 16 384 copies of a sequent of 14 001 formulas,
+    /// over two gigabytes, is refused after a few hundred of them, and the
+    /// refusal is no verdict. So are its size and its derivation. The same
+    /// proof at a size that fits is valid.
+    #[test]
+    fn holds_no_more_than_its_bound() {
+        let mode = Mode::CLASSICAL;
+        let small = shared(200, 6);
+        assert_eq!(small.check_within(mode, None), Ok(()));
+        assert_eq!(small.check(mode), oracle::check(&small, mode));
+        // 201 formulas take 256 slots of nine bytes: under 3 KB a copy, 64
+        // copies and as many nodes within 256 KB, and not within 64 KB.
+        assert_eq!(small.check_within(mode, Some(256 << 10)), Ok(()));
+        let e = small.check_within(mode, Some(64 << 10)).unwrap_err();
+        assert!(e.is_refusal(), "{e}");
+        // The pass's own tables, twelve bytes for each of 328 nodes, are
+        // refused before the first node.
+        let e = small.check_within(mode, Some(3900)).unwrap_err();
+        assert!(e.is_refusal() && e.node == n(0), "{e}");
+
+        let (width, depth) = (14_000, 14);
+        let large = shared(width, depth);
+        #[cfg(feature = "serialize")]
+        {
+            let file = serde_json::to_string(&large).unwrap().len();
+            assert!((900_000..1_200_000).contains(&file), "{file} bytes");
+        }
+        let limit = 64 << 20;
+        let e = large.check_within(mode, Some(limit)).unwrap_err();
+        assert!(e.is_refusal());
+        assert_eq!(e.problem, Problem::Memory { limit });
+        assert_eq!(e.premises, vec![]);
+        // A copy takes 16 384 slots of nine bytes, 144 KiB: the bound is
+        // reached within 512 leaves of the tree.
+        let leaf = e.node.get() - width - 1;
+        assert!((256..512).contains(&leaf), "leaf {leaf}");
+        assert_eq!(
+            e.to_string(),
+            format!(
+                "node {} (⊥ on {} from {width}): the check was given up here, without a \
+                 verdict on the proof: the sequents it holds at once take more than the \
+                 memory limit of 67108864 bytes",
+                e.node.get(),
+                e.rule.principal().unwrap().get(),
+            )
+        );
+        // The size and the derivation are under the same bound, and their
+        // refusal is no invalid proof either.
+        assert!(
+            large
+                .derivation_size_within(false, Some(limit))
+                .unwrap_err()
+                .is_refusal()
+        );
+        let view = crate::proofs::ViewOptions::UNBOUNDED.memory(Some(limit));
+        let refused = large.derivation_with(&view, || false).unwrap_err();
+        assert_eq!(
+            refused,
+            crate::proofs::ViewError::Memory { size: None, limit }
+        );
+        assert_eq!(
+            refused.to_string(),
+            "the derivation is not built: reading the proof takes more than the memory limit \
+             of 67108864 bytes"
+        );
     }
 
     /// Intuitionistic mode accepts the classical terms of intuitionistic

@@ -44,6 +44,14 @@ use crate::occurrences::{Forest, OccId};
 use crate::sequents::Sequent;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+/// The default bound, in bytes, of what a check or a search may hold at
+/// once: 1 GiB. A proof with shared subproofs can take its checker far
+/// more than the proof's own size, and a search its memo and its arena; a
+/// call that would pass the bound ends with an error that names it
+/// instead. [`Proof::check_within`] and
+/// [`ViewOptions::memory`](ViewOptions) take another bound, or none.
+pub const DEFAULT_MEMORY_LIMIT: u64 = 1 << 30;
+
 /// The index of a node in a proof's arena.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NodeId(u32);
@@ -353,9 +361,19 @@ impl Proof {
     }
 
     /// Checks that the proof proves its sequent under the rules the mode
-    /// allows; see [`check::check`].
+    /// allows, holding [`DEFAULT_MEMORY_LIMIT`] bytes at most; see
+    /// [`check::check`].
     pub fn check(&self, mode: Mode) -> Result<(), CheckError> {
         check::check(self, mode)
+    }
+
+    /// Checks the proof as [`check`](Self::check) does, holding `memory`
+    /// bytes at most, or any number with `None`. A check that would pass
+    /// the bound ends with an error that
+    /// [`is_refusal`](CheckError::is_refusal): the proof is then neither
+    /// valid nor invalid. See [`check::check_within`] for what is counted.
+    pub fn check_within(&self, mode: Mode, memory: Option<u64>) -> Result<(), CheckError> {
+        check::check_within(self, mode, memory)
     }
 
     /// Unfolds the proof into the derivation of the standard sequent

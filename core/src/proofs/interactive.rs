@@ -894,7 +894,8 @@ impl Interactive {
     /// returning the proof. Fails while goals are open
     /// ([`Error::OpenGoals`]) or if the checker rejects the term
     /// ([`Error::InvalidProof`]), which it never does for a derivation built
-    /// through this interface.
+    /// through this interface, or gives the check up for the memory it
+    /// would hold ([`Error::Unchecked`]).
     pub fn proof(&self) -> Result<Proof, Error> {
         let open = self.goals().count();
         if open > 0 {

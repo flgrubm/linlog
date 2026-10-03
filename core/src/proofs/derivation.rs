@@ -25,7 +25,7 @@
 use super::check::{self, CheckError, Facts, Observer, State};
 use super::multiset::Multiset;
 use super::size::{self, Size};
-use super::{Node, NodeId, Proof, Side};
+use super::{DEFAULT_MEMORY_LIMIT, Node, NodeId, Proof, Side};
 use crate::fragment::Mode;
 use crate::hash::HashMap;
 use crate::occurrences::{Forest, OccId, Position, Reading};
@@ -298,7 +298,7 @@ impl std::str::FromStr for Rule {
 
 /// How a derivation is shown: the one value that every path which builds
 /// a derivation takes, whatever it then draws or writes. It holds the
-/// bound that keeps a call from building what the machine cannot hold.
+/// bounds that keep a call from building what the machine cannot hold.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serialize", serde(default))]
@@ -309,27 +309,49 @@ pub struct ViewOptions {
     /// and every inference carries its whole sequent, so a derivation can
     /// be larger than its proof by any factor.
     pub limit: Option<u64>,
+    /// The most bytes the making of a derivation may hold at once, or
+    /// `None` for no bound: every pass of the checker over the proof on
+    /// the way ([`Proof::check_within`]), and the derivation itself by
+    /// the same estimate as `limit`. So a derivation is refused past this
+    /// bound even with no `limit`. The two differ in what they are for:
+    /// `limit` is what a reader or a typesetter still takes, this is
+    /// what the machine has.
+    pub memory: Option<u64>,
 }
 
 impl ViewOptions {
-    /// The bound of the default options, 64 MiB: about what an editor
-    /// still opens and a typesetter still takes.
+    /// The size bound of the default options, 64 MiB: about what an
+    /// editor still opens and a typesetter still takes.
     pub const DEFAULT_LIMIT: u64 = 64 << 20;
 
-    /// The options that build a derivation of any size.
-    pub const UNBOUNDED: Self = Self { limit: None };
+    /// The options that build a derivation of any size the memory bound
+    /// allows: no `limit`, and the default `memory`
+    /// ([`DEFAULT_MEMORY_LIMIT`]). For no bound at all, lift that one too
+    /// with [`memory`](Self::memory()).
+    pub const UNBOUNDED: Self = Self {
+        limit: None,
+        memory: Some(DEFAULT_MEMORY_LIMIT),
+    };
 
-    /// Returns the options with the bound set, or lifted with `None`.
+    /// Returns the options with the size bound set, or lifted with `None`.
     pub const fn limit(self, limit: Option<u64>) -> Self {
-        Self { limit }
+        Self { limit, ..self }
+    }
+
+    /// Returns the options with the memory bound set, or lifted with
+    /// `None`.
+    pub const fn memory(self, memory: Option<u64>) -> Self {
+        Self { memory, ..self }
     }
 }
 
 impl Default for ViewOptions {
-    /// A bound of [`DEFAULT_LIMIT`](Self::DEFAULT_LIMIT).
+    /// A size bound of [`DEFAULT_LIMIT`](Self::DEFAULT_LIMIT) and a memory
+    /// bound of [`DEFAULT_MEMORY_LIMIT`].
     fn default() -> Self {
         Self {
             limit: Some(Self::DEFAULT_LIMIT),
+            memory: Some(DEFAULT_MEMORY_LIMIT),
         }
     }
 }
@@ -338,14 +360,29 @@ impl Default for ViewOptions {
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ViewError {
-    /// The proof does not pass the checker.
+    /// The proof does not pass the checker. Never a refusal of the
+    /// checker's ([`CheckError::is_refusal`]): that one is
+    /// [`Memory`](Self::Memory).
     Invalid(CheckError),
-    /// The derivation is estimated to take more than the options allow;
-    /// nothing was built. The proof is not in doubt: it passed the checker
-    /// on the way to its size.
+    /// The derivation is estimated to take more than
+    /// [`ViewOptions::limit`](ViewOptions) allows; nothing was built. The
+    /// proof is not in doubt: it passed the checker on the way to its
+    /// size.
     TooLarge {
         /// The derivation's size.
         size: Size,
+        /// The bound in force, in bytes.
+        limit: u64,
+    },
+    /// Making the derivation would hold more than
+    /// [`ViewOptions::memory`](ViewOptions) allows; nothing was built.
+    Memory {
+        /// The derivation's size, when it is the derivation that is
+        /// estimated over the bound; the proof has then passed the
+        /// checker. `None` when a pass of the checker over the proof
+        /// would itself hold more, which leaves the proof without a
+        /// verdict.
+        size: Option<Size>,
         /// The bound in force, in bytes.
         limit: u64,
     },
@@ -361,24 +398,46 @@ pub enum ViewError {
 }
 
 impl From<CheckError> for ViewError {
-    /// Wraps the checker's complaint.
+    /// Wraps the checker's complaint, its refusal as a refusal.
     fn from(error: CheckError) -> Self {
-        Self::Invalid(error)
+        match error.problem {
+            check::Problem::Memory { limit } => Self::Memory { size: None, limit },
+            _ => Self::Invalid(error),
+        }
     }
 }
 
 impl Display for ViewError {
-    /// Writes the reason, with the size of a derivation left out.
+    /// Writes the reason, with the size of a derivation left out and the
+    /// bound it passed.
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        match self {
-            Self::Invalid(error) => write!(f, "{error}"),
-            Self::TooLarge { size, limit } => write!(
+        let estimate = |f: &mut Formatter<'_>, size: &Size| {
+            write!(
                 f,
-                "the derivation is not built: its {} inferences with {} characters of sequents \
-                 are estimated at {} bytes, over the bound of {limit}",
+                "the derivation is not built: its {} inferences with {} characters of \
+                 sequents are estimated at {} bytes",
                 size.inferences,
                 size.characters,
                 size.bytes()
+            )
+        };
+        match self {
+            Self::Invalid(error) => write!(f, "{error}"),
+            Self::TooLarge { size, limit } => {
+                estimate(f, size)?;
+                write!(f, ", over the size limit of {limit} bytes")
+            }
+            Self::Memory {
+                size: Some(size),
+                limit,
+            } => {
+                estimate(f, size)?;
+                write!(f, ", over the memory limit of {limit} bytes")
+            }
+            Self::Memory { size: None, limit } => write!(
+                f,
+                "the derivation is not built: reading the proof takes more than the memory \
+                 limit of {limit} bytes"
             ),
             Self::TooMany { size } => write!(
                 f,
@@ -569,9 +628,9 @@ impl<'a> Derivation<'a> {
 
 /// Unfolds a proof that concludes `goal` into the inferences of its
 /// derivation, premises before conclusions and the root last: one pass of
-/// the checker for the size, which must be within the bound and of no
-/// more inferences than an id counts, a second for what the translation
-/// reads, then the translation.
+/// the checker for the size, which must be within the bounds, a second for
+/// what the translation reads, then the translation. Every pass holds no
+/// more than the memory bound, and so does the derivation by its estimate.
 fn unfold(
     proof: &Proof,
     goal: &[OccId],
@@ -580,17 +639,25 @@ fn unfold(
     view: &ViewOptions,
     mut stop: impl FnMut() -> bool,
 ) -> Result<Vec<Inference>, ViewError> {
-    let size = size::measure(proof, goal, mode, reading)?;
+    let size = size::measure(proof, goal, mode, reading, view.memory)?;
     if let Some(limit) = view.limit
         && size.bytes() > limit
     {
         return Err(ViewError::TooLarge { size, limit });
     }
+    if let Some(limit) = view.memory
+        && size.bytes() > limit
+    {
+        return Err(ViewError::Memory {
+            size: Some(size),
+            limit,
+        });
+    }
     if size.inferences > Derivation::MOST {
         return Err(ViewError::TooMany { size });
     }
     let mut record = Record::new(proof);
-    check::examine(proof, goal, mode, reading, &mut record)?;
+    check::examine(proof, goal, mode, reading, view.memory, &mut record)?;
     let mut build = Build {
         proof,
         record: &record,
@@ -656,6 +723,13 @@ impl<'a> Record<'a> {
 }
 
 impl Observer for Record<'_> {
+    fn bytes(&self) -> u64 {
+        // Three flags for each of fewer than 2³² nodes. The sequents kept
+        // are not counted here: each is in the derivation, whose estimate
+        // was within the bound before this pass began.
+        self.kept.len() as u64 * 3
+    }
+
     fn derived(&mut self, id: NodeId, state: &State, facts: &Facts<'_>) {
         self.absorbs[id.index()] = state.absorbs();
         self.used[id.index()] = facts.used;
@@ -1480,19 +1554,64 @@ mod tests {
         Proof::new(Forest::new(&sequent).unwrap(), nodes, root).unwrap()
     }
 
-    /// A derivation of more inferences than an id counts is not built
-    /// even with no bound on its size, and a size that no `u64` holds
-    /// saturates.
+    /// A derivation past a bound is not built, and the error says which
+    /// bound: the size limit, the memory limit when that is the one it
+    /// passes, or the number of inferences a derivation holds when both
+    /// are lifted. A size that no `u64` holds saturates.
     #[test]
-    fn refuses_more_inferences_than_it_can_index() {
+    fn refuses_a_derivation_past_its_bounds() {
+        let never = || false;
+        // 2²⁷ − 3 inferences, each with a sequent of up to 26 formulas.
+        let p = tower(25);
+        let size = p.derivation_size(false).unwrap();
+        assert_eq!(size.inferences, (1 << 27) - 3);
+        assert_eq!(size.height, 51);
+        assert!(size.bytes() > DEFAULT_MEMORY_LIMIT);
+        let limit = ViewOptions::DEFAULT_LIMIT;
+        let too_large = p.derivation().unwrap_err();
+        assert_eq!(too_large, ViewError::TooLarge { size, limit });
+        assert_eq!(
+            too_large.to_string(),
+            format!(
+                "the derivation is not built: its 134217725 inferences with {} characters of \
+                 sequents are estimated at {} bytes, over the size limit of 67108864 bytes",
+                size.characters,
+                size.bytes()
+            )
+        );
+        let memory = p
+            .derivation_with(&ViewOptions::UNBOUNDED, never)
+            .unwrap_err();
+        assert_eq!(
+            memory,
+            ViewError::Memory {
+                size: Some(size),
+                limit: DEFAULT_MEMORY_LIMIT
+            }
+        );
+        assert_eq!(
+            memory.to_string(),
+            format!(
+                "the derivation is not built: its 134217725 inferences with {} characters of \
+                 sequents are estimated at {} bytes, over the memory limit of 1073741824 bytes",
+                size.characters,
+                size.bytes()
+            )
+        );
+        // Options read without a memory bound have the default one.
+        #[cfg(feature = "serialize")]
+        assert_eq!(
+            serde_json::from_str::<ViewOptions>(r#"{"limit":null}"#).unwrap(),
+            ViewOptions::UNBOUNDED
+        );
+
         // More than 2⁷⁰ inferences.
         let p = tower(70);
         let size = p.derivation_size(false).unwrap();
         assert_eq!((size.inferences, size.characters), (u64::MAX, u64::MAX));
         assert_eq!((size.bytes(), size.height), (u64::MAX, 141));
-        let too_many = p
-            .derivation_with(&ViewOptions::UNBOUNDED, || false)
-            .unwrap_err();
+        let unbounded = ViewOptions::UNBOUNDED.memory(None);
+        let too_many = p.derivation_with(&unbounded, never).unwrap_err();
         assert_eq!(too_many, ViewError::TooMany { size });
         assert_eq!(
             too_many.to_string(),

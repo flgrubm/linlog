@@ -109,8 +109,8 @@ pub use fragment::{Fragment, Mode};
 pub use nets::{NetError, ProofStructure, Scratch};
 pub use occurrences::{Bias, Forest, OccId, OccSet, Polarity, Position, Reading, ShapeError, Sign};
 pub use proofs::{
-    CheckError, Derivation, InfId, Inference, Node, NodeId, Proof, Rule, Side, Size, ViewError,
-    ViewOptions,
+    CheckError, DEFAULT_MEMORY_LIMIT, Derivation, InfId, Inference, Node, NodeId, Proof, Rule,
+    Side, Size, ViewError, ViewOptions,
 };
 #[cfg(feature = "interactive")]
 pub use proofs::{Interactive, Refusal};
