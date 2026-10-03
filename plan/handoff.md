@@ -2,7 +2,7 @@
 
 You are taking over the planning and review session of the linlog
 repository from an earlier Claude Code session that ran from 2026-09-29 to
-2026-09-30. The author (Fabian, GitHub `flgrubm`) runs a stepped plan in
+2026-09-30. The author (Fabian, GitHub `flgrubm`, the repository under the organization `linlog-prover`) runs a stepped plan in
 which every step is its own Claude Code session started from a prompt file
 under `plan/`; this session is the one that writes those prompts, reviews
 each step when the author reports it finished, amends the later prompts,
@@ -92,10 +92,9 @@ release (D18); the fastest engine per fragment and feature, by
 measurement (D19); the Rocq library is `linlog` under `rocq/` (D20);
 research and teaching are equal, the command first (D21); one
 workspace, the web client in a repository of its own, everything under
-the GitHub organization `linlog-prover`, which the author creates and
-transfers the repository to (D22). After the transfer the remote,
-CLAUDE.md and README change (`plan/notes/distribution.md` lists what);
-do that when the author says it is done. Remind the author at step 31
+the GitHub organization `linlog-prover` (D22), where the repository
+has been since 2026-10-03 (`origin` is
+`git@github.com:linlog-prover/linlog.git`). Remind the author at step 31
 that the report of the wrong LLTP headers is ready to send.
 
 The lesson of steps 16 and 17, for every review: run the command on the

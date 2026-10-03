@@ -31,10 +31,9 @@ publication) are the last and smallest part.
    builds, a dry run of publishing, the release workflow, the Rocq
    library's opam file, as `plan/notes/distribution.md` lays out. The
    owner is the organization `linlog-prover` (D22): every address
-   written is `github.com/linlog-prover/linlog`, and if the repository
-   has not been transferred yet, the step says so first and lists what
-   the note says a transfer touches. Pushing, tagging, transferring and
-   publishing are the author's.
+   written is `github.com/linlog-prover/linlog`, where the repository
+   has been since 2026-10-03. Pushing, tagging and publishing are the
+   author's.
 3. **The reminder** (the author, 2026-10-03): the final message of this
    step tells the author that `plan/notes/lltp-headers.md` is ready to
    send to the LLTP library's maintainers, and asks whether to send it.

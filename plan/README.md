@@ -1367,3 +1367,10 @@ publishing are the author's acts.
   the author: creating the organization and transferring the
   repository, after which the remote, CLAUDE.md and README follow here.
   Next: step 18.
+- 2026-10-03 (night): the author created the organization
+  `linlog-prover` and transferred the repository to it (D22). Here: the
+  remote set to `git@github.com:linlog-prover/linlog.git`, CLAUDE.md's
+  `origin` and README's documentation link and `nix run` address
+  changed, `notes/distribution.md`, prompt 31 and `handoff.md` brought
+  in line. The rustdoc is served at `linlog-prover.github.io/linlog`;
+  the old Pages address no longer answers.

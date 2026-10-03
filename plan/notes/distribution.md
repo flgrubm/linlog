@@ -51,8 +51,16 @@ answered 404). An organization on github.com is created in the browser
 by the account that will own it (github.com/account/organizations/new,
 the Free plan); no session can do it. Creating it at once holds the
 name; the repository can follow at any quiet moment before step 31
-(Settings, Danger Zone, Transfer). What a transfer touches, for the
-session that prepares the release to bring in line:
+(Settings, Danger Zone, Transfer).
+
+**Done on 2026-10-03**: the author created the organization and
+transferred the repository; it is `github.com/linlog-prover/linlog`,
+public, with Pages serving the rustdoc at
+`linlog-prover.github.io/linlog` (the old Pages address answers 404,
+as expected). The planning session set the remote and changed CLAUDE.md
+and README's two addresses on the same day. Of the list below, the
+first two entries are therefore done; the others are written for the
+first time by steps 28 and 31. What a transfer touches:
 
 - the remote, which is over SSH: `jj git remote set-url origin
   git@github.com:linlog-prover/linlog.git` (the old address redirects,
