@@ -742,9 +742,10 @@ Planned, in roughly this order:
   net search, essential nets), the Lambek calculus, the inverse method,
   and first-order linear logic.
 
-The design follows [Click and Collect](https://www.click-and-collect.linear-logic.org)
-where it is good and departs from it where it is not. Feature requests and
-contributions are welcome. All code is licensed under the EUPL.
+linlog is very much inspired by [Click & coLLecT](https://www.click-and-collect.linear-logic.org).
+It aims to support more use cases on a modern, more efficient base.
+Feature requests and contributions are welcome. All code is licensed
+under the EUPL.
 
 ## Architecture
 
