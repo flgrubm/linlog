@@ -56,7 +56,7 @@ use self::classes::Classes;
 use self::context::Context;
 use self::counts::{Counts, Split, Tally};
 use self::memo::{Entry, Failure, Key, Memo, Table};
-use super::{Options, Reason, Statistics, Stop, Verdict};
+use super::{Options, Reason, Statistics, Stop, Verdict, set_up_stopped};
 use crate::fragment::{Fragment, Mode};
 use crate::occurrences::{Bias, Forest, OccId, OccSet, Position, Reading};
 use crate::proofs::{Node, NodeId, Proof, Side};
@@ -149,10 +149,20 @@ pub(crate) fn search_goal(
     options: &Options,
     stop: &mut dyn FnMut() -> bool,
 ) -> (Search, Vec<Node>, Statistics) {
+    // On a large forest every pass of the set-up is followed by a poll.
+    let stopped = || (Err(Reason::Stopped), Vec::new(), Statistics::default());
     let classes = Classes::new(forest, reading);
+    if set_up_stopped(forest, stop) {
+        return stopped();
+    }
     let (first, second) = plan(forest, fragment, mode, options);
+    if set_up_stopped(forest, stop) {
+        return stopped();
+    }
     let Some(second) = second else {
-        let counts = Counts::new(forest, first.bias);
+        let Some(counts) = Counts::new_until(forest, first.bias, stop) else {
+            return stopped();
+        };
         let (result, nodes, statistics, _) = first.search(
             forest,
             goal,
@@ -165,8 +175,13 @@ pub(crate) fn search_goal(
         );
         return (result.map_err(|r| reason(r, options)), nodes, statistics);
     };
-    let counts = [first, second].map(|rule| Counts::new(forest, rule.bias));
-    let searches = [(first, &counts[0]), (second, &counts[1])];
+    let Some(first_counts) = Counts::new_until(forest, first.bias, stop) else {
+        return stopped();
+    };
+    let Some(second_counts) = Counts::new_until(forest, second.bias, stop) else {
+        return stopped();
+    };
+    let searches = [(first, &first_counts), (second, &second_counts)];
     // With threads the two searches alternate in slices and none starts
     // again; without them, or when a thread cannot start, they take
     // turns from their start.

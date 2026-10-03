@@ -8,6 +8,7 @@
 
 use crate::occurrences::{Bias, Forest, OccId, Sign};
 use crate::proofs::Side;
+use crate::search::set_up_stopped;
 use crate::sequents::{Atom, Kind};
 
 /// What a formula occurrence can contribute to the per-atom balance of a
@@ -83,6 +84,28 @@ impl Counts {
     /// Computes the rows and weights of every occurrence of a forest, and
     /// the literals that are positive under the bias given.
     pub(crate) fn new(forest: &Forest, bias: Bias) -> Self {
+        Self::new_until(forest, bias, &mut || false).expect("nothing stops it")
+    }
+
+    /// Computes what [`Self::new`] does, polling `stop` on a large forest
+    /// once every so many occurrences visited, as the passes around it
+    /// are polled between them: this one is several, and the longest of
+    /// a search's set-up. Returns `None` when the condition fired.
+    pub(crate) fn new_until(
+        forest: &Forest,
+        bias: Bias,
+        stop: &mut dyn FnMut() -> bool,
+    ) -> Option<Self> {
+        /// How many occurrences are visited between two polls.
+        const PERIOD: usize = 1 << 16;
+        let mut visited = 0;
+        let mut stopped = |steps: usize| {
+            visited += steps;
+            visited >= PERIOD && {
+                visited = 0;
+                set_up_stopped(forest, stop)
+            }
+        };
         let positive = forest.bias_under(bias);
         let n = forest.len();
         // An atom with a literal below a `?` or `!` anywhere in the problem
@@ -92,13 +115,18 @@ impl Counts {
         let mut exponential = vec![false; num_atoms];
         let mut absorbs_from_copies = false;
         for o in forest.ids() {
+            let mut steps = 1;
             if matches!(forest.kind(o), Kind::Bang | Kind::Quest) {
                 for below in forest.subtree(o) {
                     if let Some(atom) = forest.atom(below) {
                         exponential[atom.index()] = true;
                     }
                     absorbs_from_copies |= forest.kind(below) == Kind::Top;
+                    steps += 1;
                 }
+            }
+            if stopped(steps) {
+                return None;
             }
         }
         // The literals that a `?` can put into the unrestricted zone: those
@@ -127,6 +155,9 @@ impl Counts {
         let mut weight = vec![0i32; n];
         for o in forest.ids().rev() {
             use Kind::*;
+            if stopped(1) {
+                return None;
+            }
             let kind = forest.kind(o);
             let (row, absorb, w) = match kind {
                 Var | DualVar => {
@@ -199,7 +230,7 @@ impl Counts {
             }
         }
         row_start.push(atom.len() as u32);
-        Self {
+        Some(Self {
             row_start: row_start.into_boxed_slice(),
             atom: atom.into_boxed_slice(),
             lo: lo.into_boxed_slice(),
@@ -210,7 +241,7 @@ impl Counts {
             absorbs_from_copies,
             literal_tensor: literal_tensor.into_boxed_slice(),
             positive,
-        }
+        })
     }
 
     /// Returns whether the occurrence is a positive literal: the literal

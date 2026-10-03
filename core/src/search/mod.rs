@@ -69,6 +69,20 @@ impl Stop<'_> {
     }
 }
 
+/// The occurrences a forest must have for a search to poll the stop
+/// condition between the passes that set it up: a pass over fewer takes
+/// under a millisecond, and a condition that counts its polls then sees
+/// the engine's own and no others.
+const SET_UP_POLL: usize = 1 << 16;
+
+/// Polls the caller's stop condition between two passes over a forest
+/// that set a search up, when the forest is large enough for a pass to
+/// take time ([`SET_UP_POLL`]): on millions of occurrences the set-up
+/// takes a second, and the engine's first poll comes after it.
+pub(crate) fn set_up_stopped(forest: &Forest, stop: &mut dyn FnMut() -> bool) -> bool {
+    forest.len() >= SET_UP_POLL && stop()
+}
+
 /// Decides a sequent under a mode with the engine its fragment calls for,
 /// and returns the outcome: the verdict with a proof if there is one, the
 /// fragment detected, the engine used and the statistics of the run. The
@@ -123,10 +137,19 @@ pub fn prove(sequent: &Sequent, mode: Mode, options: &Options) -> Result<Outcome
     prove_until(sequent, mode, options, || false)
 }
 
-/// Decides a sequent as [`prove`] does, polling `stop` at every stable
-/// sequent and giving up with [`Reason::Stopped`] once it returns true. The
-/// condition is the caller's: a deadline on a clock the caller has, a flag
-/// an interrupt handler sets. This crate has no clock of its own.
+/// Decides a sequent as [`prove`] does, polling `stop` and giving up with
+/// [`Reason::Stopped`] once it returns true. The condition is the
+/// caller's: a deadline on a clock the caller has, a flag an interrupt
+/// handler sets. This crate has no clock of its own. The engines poll at
+/// every stable sequent or literal chosen and inside every loop that can
+/// run long between two of them, and on a forest of tens of thousands of
+/// occurrences also between the passes that set the search up; what is
+/// not polled is the building of the forest before the search, the check
+/// of the proof after it, and single passes over the forest, each linear
+/// in it. A condition that is cheap to ask is asked often enough: one
+/// that reads a clock only every so many polls is late by that many
+/// polls, and on a large sequent a poll can be many milliseconds from the
+/// last.
 ///
 /// # Examples
 ///
@@ -255,6 +278,18 @@ pub fn prove_goal(
             });
         }
         _ => {}
+    }
+    // The fragment, the reading and the dispatch were passes over the
+    // forest: the caller's condition is asked before the engine's own.
+    if set_up_stopped(forest, &mut stop) {
+        return Ok(Outcome {
+            verdict: Verdict::Unknown(Reason::Stopped),
+            fragment,
+            mode,
+            engine,
+            statistics: Statistics::default(),
+            net: None,
+        });
     }
     // Several threads run the focused engine and the net engine on pools
     // of their own; the additive path is sequential in every case.

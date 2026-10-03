@@ -32,7 +32,7 @@ use crate::fragment::{Fragment, Mode};
 use crate::occurrences::{Forest, OccId, OccSet, Reading};
 use crate::proofs::{Node, NodeId, Side};
 use crate::search::parallel::{Flags, Runtime};
-use crate::search::{Options, Reason, Statistics, Stop};
+use crate::search::{Options, Reason, Statistics, Stop, set_up_stopped};
 use std::hash::BuildHasher as _;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex};
@@ -66,9 +66,18 @@ pub(crate) fn search_goal(
     options: &Options,
     stop: &mut dyn FnMut() -> bool,
 ) -> Result<(Search, Vec<Node>, Statistics), Error> {
+    // On a large forest the passes of the set-up are followed by a poll;
+    // from the pool's start the driver polls.
+    let stopped = || Ok((Err(Reason::Stopped), Vec::new(), Statistics::default()));
     let classes = Classes::new(forest, reading);
+    if set_up_stopped(forest, stop) {
+        return stopped();
+    }
     let stack = options.stack_size();
     let (first, second) = super::plan(forest, fragment, mode, options);
+    if set_up_stopped(forest, stop) {
+        return stopped();
+    }
     let search = |rule: Rule, runtime: &Runtime, flags: Flags<'_>| {
         rule.search_on(
             forest, goal, fragment, mode, reading, &classes, options, runtime, flags,
@@ -401,7 +410,10 @@ impl Rule {
         runtime: &Runtime,
         flags: Flags<'_>,
     ) -> (Search, Vec<Node>, Statistics) {
-        let counts = Counts::new(forest, self.bias);
+        // The longest pass of the set-up reads the flags too.
+        let Some(counts) = Counts::new_until(forest, self.bias, &mut || flags.raised()) else {
+            return (Err(Reason::Stopped), Vec::new(), Statistics::default());
+        };
         let rules = Rules::new(fragment, mode, &counts);
         let memo = Shared::new(options.memo_limit);
         let arena = Mutex::new(Vec::new());
