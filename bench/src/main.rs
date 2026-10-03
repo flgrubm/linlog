@@ -104,10 +104,12 @@ pub struct RunArgs {
     /// The thread counts to run every problem with; `all` is every core
     #[arg(long, value_delimiter = ',', default_value = "1")]
     jobs: Vec<String>,
-    /// The copy bound, overriding the one a generated problem names
-    /// (default: the problem's, else 3)
-    #[arg(long)]
-    copies: Option<u32>,
+    /// The copy bound, overriding the one a generated problem names, or
+    /// `none` for a search that deepens until it decides or its time
+    /// limit passes, as the command's default does (default: the
+    /// problem's, else 3)
+    #[arg(long, value_name = "N")]
+    copies: Option<run::Bound>,
     /// How the focused engines pick the positive literal of every atom:
     /// `auto`, `rarer` or `factors`
     #[arg(long, default_value = "auto")]
@@ -128,6 +130,11 @@ pub struct RunArgs {
     /// library's Petri nets with long markings reach
     #[arg(long)]
     recursion_limit: Option<u32>,
+    /// Seconds one thread searches before the `--jobs` threads take over
+    /// afresh, as the command does by default (default: the threads from
+    /// the start)
+    #[arg(long, value_name = "SECONDS")]
+    pool_after: Option<f64>,
     /// The time limit per run, in seconds
     #[arg(long, default_value_t = 60.0)]
     timeout: f64,
@@ -177,9 +184,9 @@ pub struct OneArgs {
     /// The threads
     #[arg(long)]
     jobs: usize,
-    /// The copy bound, overriding the problem's
+    /// The copy bound, overriding the problem's, or `none`
     #[arg(long)]
-    copies: Option<u32>,
+    copies: Option<run::Bound>,
     /// The bias
     #[arg(long, default_value = "auto")]
     bias: run::BiasChoice,
@@ -195,6 +202,9 @@ pub struct OneArgs {
     /// The recursion limit
     #[arg(long)]
     recursion_limit: Option<u32>,
+    /// Seconds one thread searches before the pool takes over
+    #[arg(long)]
+    pool_after: Option<f64>,
     /// The time limit, in seconds
     #[arg(long)]
     timeout: f64,

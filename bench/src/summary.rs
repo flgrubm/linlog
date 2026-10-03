@@ -122,6 +122,10 @@ pub fn summary(files: &[PathBuf]) -> Result<()> {
         {
             label.push_str(&format!(" memory {memory}"));
         }
+        // A file from before the column ran every pool from its start.
+        if !row.get("pool_after").is_empty() {
+            label.push_str(&format!(" pool after {}s", row.get("pool_after")));
+        }
         label
     };
     let mut groups: Vec<Group> = Vec::new();

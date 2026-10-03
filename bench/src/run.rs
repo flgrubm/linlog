@@ -33,10 +33,10 @@ pub const HEADER: &str = "source,family,size,index,problem,mode,engine_requested
                           test_period,timeout_s,run,copies,expected,verdict,reason,checked,engine,\
                           fragment,occurrences,multiplicity,time_ms,nodes,memo_hits,memo_entries,\
                           splits,links,tests,recursion_limit,cpu_ms,wait_ms,bias,forward_copies,\
-                          check_ms,memory_limit";
+                          check_ms,memory_limit,copies_reached,pool_after";
 
 /// The columns the child prints.
-const TAIL: usize = 23;
+const TAIL: usize = 25;
 
 /// The line the child prints when its problem is loaded and its search
 /// starts, from which the parent counts the time limit.
@@ -110,6 +110,42 @@ fn memory_limit(asked: Option<u64>) -> Option<u64> {
 /// none.
 fn memory_column(asked: Option<u64>) -> String {
     memory_limit(asked).unwrap_or(0).to_string()
+}
+
+/// A copy bound as `--copies` reads it: a number, or `none` for a search
+/// that deepens until it decides or its time limit passes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Bound(pub Option<u32>);
+
+impl std::str::FromStr for Bound {
+    type Err = String;
+
+    /// Reads a number, or `none`.
+    fn from_str(text: &str) -> Result<Self, String> {
+        match text {
+            "none" => Ok(Self(None)),
+            n => n
+                .parse()
+                .map(|n| Self(Some(n)))
+                .map_err(|_| format!("{n:?} is not a number of copies, or `none`")),
+        }
+    }
+}
+
+impl std::fmt::Display for Bound {
+    /// Writes the bound as `--copies` reads it and its column has it.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(n) => write!(f, "{n}"),
+            None => f.write_str("none"),
+        }
+    }
+}
+
+/// The column of how long one thread searched before the pool: the
+/// seconds, or empty for a pool from the start.
+fn pool_column(asked: Option<f64>) -> String {
+    asked.map_or(String::new(), |t| t.to_string())
 }
 
 /// The forward search's copy bound of a run: the one asked for, or the
@@ -240,6 +276,7 @@ pub fn run(args: &RunArgs) -> Result<()> {
                         &name(&args.bias),
                         &forward_copies(args.forward_copies).to_string(),
                         &memory_column(args.memory_limit),
+                        &pool_column(args.pool_after),
                     ]
                     .join(",");
                     if done_before.contains(&key) {
@@ -328,6 +365,8 @@ fn finished(path: &Path) -> Result<HashSet<String>> {
     let forward = at("forward_copies");
     // A file from before the bound ran without one.
     let memory = at("memory_limit");
+    // A file from before the column ran every pool from its start.
+    let pool = at("pool_after");
     Ok(lines
         .map(|line| {
             let fields: Vec<&str> = line.split(',').collect();
@@ -339,6 +378,7 @@ fn finished(path: &Path) -> Result<HashSet<String>> {
                     bias,
                     forward.map_or("", field),
                     memory.map(field).filter(|m| !m.is_empty()).unwrap_or("0"),
+                    pool.map_or("", field),
                 ])
                 .collect::<Vec<_>>()
                 .join(",")
@@ -381,6 +421,9 @@ fn child(
     }
     if let Some(period) = args.test_period {
         command.args(["--test-period", &period.to_string()]);
+    }
+    if let Some(alone) = args.pool_after {
+        command.args(["--pool-after", &alone.to_string()]);
     }
     let mut process = command
         .stdin(Stdio::null())
@@ -453,6 +496,7 @@ fn child(
             fields[19] = name(&args.bias);
             fields[20] = forward_copies(args.forward_copies).to_string();
             fields[22] = memory_column(args.memory_limit);
+            fields[24] = pool_column(args.pool_after);
             let since = searching.unwrap_or(spawned);
             fields[9] = format!("{:.3}", since.elapsed().as_secs_f64() * 1000.0);
             fields.join(",")
@@ -522,10 +566,11 @@ fn tail(args: &OneArgs) -> String {
         Err(error) => return row(&[(2, "error"), (3, &clean(&format!("{error:#}")))]),
     };
     let mode = args.mode.apply(problem.mode);
-    let copies = args
-        .copies
-        .or(problem.copies)
-        .unwrap_or(Options::DEFAULT_COPIES);
+    let copies = match args.copies {
+        Some(Bound(bound)) => bound,
+        None => Some(problem.copies.unwrap_or(Options::DEFAULT_COPIES)),
+    };
+    let bound = Bound(copies).to_string();
     let recursion = args
         .recursion_limit
         .unwrap_or(Options::DEFAULT_RECURSION_LIMIT);
@@ -543,7 +588,7 @@ fn tail(args: &OneArgs) -> String {
     let options = Options::default()
         .engine(args.engine.engine())
         .jobs(args.jobs)
-        .copies(Some(copies))
+        .copies(copies)
         .bias(args.bias.bias())
         .forward_copies(forward_copies(args.forward_copies))
         .memory_limit(memory_limit(args.memory_limit))
@@ -568,9 +613,7 @@ fn tail(args: &OneArgs) -> String {
             expired.store(true, Ordering::Relaxed);
         });
     }
-    let outcome = prove_until(&problem.sequent, mode, &options, || {
-        expired.load(Ordering::Relaxed)
-    });
+    let outcome = alone_first(&problem.sequent, mode, &options, args, &expired);
     let time = start.elapsed().as_secs_f64() * 1000.0;
     // The time the search took on the CPUs, and the time its thread was
     // ready but waited for one: a run another process slowed down has the
@@ -594,7 +637,7 @@ fn tail(args: &OneArgs) -> String {
                 _ => "error",
             };
             return row(&[
-                (0, &copies.to_string()),
+                (0, &bound),
                 (1, expected),
                 (2, verdict),
                 (3, &clean(&error.to_string())),
@@ -604,6 +647,7 @@ fn tail(args: &OneArgs) -> String {
                 (19, &name(&args.bias)),
                 (20, &forward_copies(args.forward_copies).to_string()),
                 (22, &memory_column(args.memory_limit)),
+                (24, &pool_column(args.pool_after)),
             ]);
         }
     };
@@ -625,7 +669,7 @@ fn tail(args: &OneArgs) -> String {
     let s = outcome.statistics;
     let tail = |checked: &str, check_ms: &str| {
         [
-            copies.to_string(),
+            bound.clone(),
             expected.to_owned(),
             verdict.to_owned(),
             reason.to_owned(),
@@ -648,6 +692,8 @@ fn tail(args: &OneArgs) -> String {
             forward_copies(args.forward_copies).to_string(),
             check_ms.to_owned(),
             memory_column(args.memory_limit),
+            s.copies.to_string(),
+            pool_column(args.pool_after),
         ]
         .join(",")
     };
@@ -665,6 +711,49 @@ fn tail(args: &OneArgs) -> String {
     };
     let check = start.elapsed().as_secs_f64() * 1000.0;
     tail(&checked, &format!("{check:.3}"))
+}
+
+/// Decides a problem under the options until the flag is raised: with
+/// the options' threads from the start, or with `--pool-after` on one
+/// thread first and, if that has not decided when the time has passed,
+/// afresh on the pool, as the command does by default. The outcome of two
+/// runs has the counters of both.
+fn alone_first(
+    sequent: &linlog::Sequent,
+    mode: linlog::Mode,
+    options: &Options,
+    args: &OneArgs,
+    expired: &AtomicBool,
+) -> Result<linlog::search::Outcome, Error> {
+    let stop = || expired.load(Ordering::Relaxed);
+    let Some(alone) = args.pool_after.filter(|_| args.jobs > 1) else {
+        return prove_until(sequent, mode, options, stop);
+    };
+    let passed = Arc::new(AtomicBool::new(false));
+    {
+        let passed = Arc::clone(&passed);
+        let alone = Duration::from_secs_f64(alone);
+        thread::spawn(move || {
+            thread::sleep(alone);
+            passed.store(true, Ordering::Relaxed);
+        });
+    }
+    let first = prove_until(sequent, mode, &options.clone().jobs(1), || {
+        stop() || passed.load(Ordering::Relaxed)
+    })?;
+    if !matches!(first.verdict, Verdict::Unknown(Reason::Stopped)) || stop() {
+        return Ok(first);
+    }
+    let mut second = prove_until(sequent, mode, options, stop)?;
+    let (s, f) = (&mut second.statistics, &first.statistics);
+    s.nodes += f.nodes;
+    s.memo_hits += f.memo_hits;
+    s.memo_entries = s.memo_entries.max(f.memo_entries);
+    s.splits += f.splits;
+    s.links += f.links;
+    s.tests += f.tests;
+    s.copies = s.copies.max(f.copies);
+    Ok(second)
 }
 
 /// A tail with the given fields filled in and the others empty.
