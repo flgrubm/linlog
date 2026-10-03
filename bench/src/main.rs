@@ -130,9 +130,10 @@ pub struct RunArgs {
     /// library's Petri nets with long markings reach
     #[arg(long)]
     recursion_limit: Option<u32>,
-    /// Seconds one thread searches before the `--jobs` threads take over
-    /// afresh, as the command does by default (default: the threads from
-    /// the start)
+    /// Seconds one thread searches before a pool of the other `--jobs`
+    /// threads (at least two) searches beside it, the first to decide
+    /// answering, as the command does by default (default: the threads
+    /// from the start)
     #[arg(long, value_name = "SECONDS")]
     pool_after: Option<f64>,
     /// The time limit per run, in seconds
