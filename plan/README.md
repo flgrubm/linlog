@@ -1333,3 +1333,37 @@ publishing are the author's acts.
   repositories and policies; README's list of what is planned follows
   the roadmap. Checked by the session: clippy and the workspace's tests
   pass at the head; no code changed. Next: step 18.
+- 2026-10-03 (evening): step 17 reviewed and accepted, both parts. Five
+  commits, "Assess the project and the work ahead", "Plan the steps from
+  18" and two that record the author's later decisions (the organization
+  `linlog-prover`, the web client's own repository); no code changed,
+  and `nix flake check` passes. The planning session reproduced what
+  the roadmap rests on: the JSON sequent with a repeated atom name
+  answered "unprovable" for `⊢ ~A, A`; the net engine on a pool
+  (`wide-m1` at 512 pairs 47 ms on one thread and 13.7 s on two, at
+  1 024 pairs 204 ms against a 30 s limit); a pool missing a 5 s limit
+  on `SYJ202+1.008` in cbv (5.2 s on one thread, 53 s on two, 35 s on
+  four); the engines' check under `debug_assert!` only; and the
+  comparison with the Maude prover's result files (196 theorems lost at
+  the bound of 3, three with the bounds lifted, no verdict differing).
+  These overturn what this log said on 2026-10-03 about the default of
+  every core: the rows did not argue against it, the calls do, and the
+  author chose one thread first. Passed to the session through the
+  author and taken up: the JSON defect as step 18's first commit, the
+  search's limits as two steps, the debug-assertion run owned by step
+  18, the rule for sub-agents' briefs in `conduct.md`. Accepted as
+  planned: twenty steps, 18 to 37, in the order of the report's section
+  9; the models and efforts; D16 to D22; the prompts 18 to 23 in full
+  and the later ones as what is fixed, to be finished here at the
+  reviews their rows name; `notes/distribution.md`. Amended here:
+  prompt 21 gets the count that sets the default time limit (of 288
+  problems that larger bounds decide, 269 within 1 s and 282 within
+  2 s; 445 that nothing decides would each wait the whole budget, where
+  the author wants an undecided sequent not to be slow), so the budget
+  is decided from that trade and 10 s is no longer the proposal; prompt
+  18 names its seam should it take two sessions; the distribution note
+  has the remote as it is (SSH) and README's `nix run` address among
+  what a transfer touches; `handoff.md` is brought up to date. Open with
+  the author: creating the organization and transferring the
+  repository, after which the remote, CLAUDE.md and README follow here.
+  Next: step 18.

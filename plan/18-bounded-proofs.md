@@ -102,6 +102,12 @@ where it fits, and one line that says how to get it where it does not.
     what the estimate promises), CLAUDE.md, and README, whose "returns a
     checked proof" becomes true.
 
+If the step takes two sessions, the seam is after item 3: the wrong
+verdict, the checker and the check of every proof first, with the
+harness's part of item 9 (they are what soundness and the baselines
+rest on, and step 28 waits for them); then the estimate, the bounds and
+the renderers. The report of the first session says where it stopped.
+
 ## Constraints
 
 - No change to what any engine searches: the counters of

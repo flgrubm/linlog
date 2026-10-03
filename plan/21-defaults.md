@@ -32,6 +32,17 @@ and the LLTP library's own results say what that costs:
   369 in 5 s, and 293 that answered "unknown" in a fraction of a
   millisecond run into the time limit instead. So the bound cannot
   simply rise.
+- What a deepening default costs is the wait for an "unknown" (the
+  planning session's count from the second baseline's rows, at the
+  review of step 17). Outside the nets, 288 problems that the default
+  leaves at its bound are decided by `--copies 10` or by the forward
+  search at 30 copies: 195 of them within 1 ms, 242 within 100 ms, 269
+  within 1 s, 282 within 2 s, all within 4.2 s. And 445 are decided by
+  neither: today each answers "unknown" in a fraction of a millisecond,
+  and under a deepening default each takes the whole budget. The author
+  said on 2026-10-02 that an undecided sequent must not be slow. So the
+  budget is a trade between a few late proofs and every such wait, and
+  the rows put its knee near two seconds, not ten.
 - Without a time limit 1 594 Petri nets of the library run until
   interrupted.
 - A pool costs milliseconds on small problems (1.1 ms against 4.6 ms in
@@ -63,9 +74,14 @@ name, a flag and a line of documentation.
    the contract of `.claude/rules/core.md`: with no limit firing the
    default decides whatever either explicit search decides.
    `Unprovable` keeps its meaning exactly.
-2. **A default time limit** for the command (10 s proposed; decide from
-   the rows), lifted or changed by `--timeout`. The library keeps no
-   clock (D11): the budget is the caller's stop closure, as before.
+2. **A default time limit** for the command, lifted or changed by
+   `--timeout`: decide it from the rows, by what a longer budget still
+   decides against what every "unknown" then waits (step 17 proposed
+   10 s; the count above speaks for about 2 s; the report shows the
+   table for the values you compared). While it deepens past the first
+   bound on a terminal, the command may say so on standard error, so
+   that a wait is never silent. The library keeps no clock (D11): the
+   budget is the caller's stop closure, as before.
 3. **One thread first.** By default the command tries the sequential
    engines for a short budget (a tenth of a second proposed) and takes
    the pool only if that has not answered; `--jobs N` and

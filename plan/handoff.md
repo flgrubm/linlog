@@ -13,11 +13,11 @@ own: read, then wait for the author to say what happened.
 
 1. `plan/README.md` from its first line to its last: the step table, how
    the steps are numbered, "Why these models and efforts", the commands,
-   "Review protocol", the design decisions D1 to D15, and the Status log,
+   "Review protocol", the design decisions D1 to D22, and the Status log,
    which is the detailed history of every review so far.
-2. `plan/conduct.md` (appended to every step's prompt), the prompt of
-   the step still to run (`17-assessment.md`), `plan/later.md`, and the
-   latest reports (`plan/reports/15-performance.md`, `16-baseline.md`).
+2. `plan/conduct.md` (appended to every step's prompt), the prompts of
+   the next steps (`18-bounded-proofs.md` on), `plan/later.md`, and the
+   latest reports (`plan/reports/16-baseline.md`, `17-assessment.md`).
 3. `CLAUDE.md` and your memory index. The memory directory of this
    project carries the author's standing instructions as notes written by
    the earlier session (commit identity and signing, testing, fonts,
@@ -67,33 +67,41 @@ session's transcript is
   holds unnumbered candidates (among them a code audit with refactoring,
   added at the author's request) and follow-up lists by area.
 - `main` is pushed after every review; on 2026-10-03 it is at "Plan:
-  review step 16".
+  review step 17".
 
 ## Where things stand
 
-As of 2026-10-03 steps 14, 15 and 16 are finished, reviewed and pushed:
-the first baseline is `bench/results/2026-09-30/` (two nights), the
-performance pass is in (`bench/TARGETS.md`,
-`plan/reports/15-performance.md`), and the second baseline is
-`bench/results/2026-10-02/` with `bench/COMPARISON.md`. The review of
-step 16 corrected its report (the Status log has how): the large nets
-that seemed to run out of memory are proved, and it is the proof check
-and the derivation that cannot hold them. The next command is step 17:
+As of 2026-10-03 (evening) steps 1 to 17 are finished, reviewed and
+pushed. Step 17 assessed the project (`plan/reports/17-assessment.md`)
+and, on the author's answers, planned steps 18 to 37: the step table,
+the decisions D16 to D22 and the commands are in `plan/README.md`, the
+prompts are `plan/18-…md` to `plan/37-…md` (18 to 23 written in full;
+each later one says what is fixed and is finished by you at the review
+its row names), `plan/later.md` says where every candidate and follow-up
+went, and `plan/notes/distribution.md` has the facts on releases,
+repositories and the organization. The next command is step 18:
 
 ```nu
-claude --model claude-fable-5-1 --effort xhigh --name step-17 ((open --raw plan/17-assessment.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-18 ((open --raw plan/18-bounded-proofs.md) + "\n" + (open --raw plan/conduct.md))
 ```
 
-Step 17 has two parts with the author between them: an assessment that
-ends in questions, then the plan from 18 with its prompts. It writes no
-code. When it is done, review what it planned as any step (the prompts
-it wrote are then yours to amend after each later step). The author
-wants the tool usable in practice, which is what the efficiency is for
-(2026-10-02): judge defaults by what a user without flags meets. On
-2026-10-03 three candidates were added to `plan/later.md` at the
-author's questions (a batch mode for the CLI, ordinary logic through
-its embeddings, first-order linear logic). By day the machine is
-shared; no baseline night is planned.
+What the author decided on 2026-10-03, in a line each: sensible
+defaults, every one an option (D16); quantifiers will come and the
+propositional case must not pay (D17); the API is free until the first
+release (D18); the fastest engine per fragment and feature, by
+measurement (D19); the Rocq library is `linlog` under `rocq/` (D20);
+research and teaching are equal, the command first (D21); one
+workspace, the web client in a repository of its own, everything under
+the GitHub organization `linlog-prover`, which the author creates and
+transfers the repository to (D22). After the transfer the remote,
+CLAUDE.md and README change (`plan/notes/distribution.md` lists what);
+do that when the author says it is done. Remind the author at step 31
+that the report of the wrong LLTP headers is ready to send.
+
+The lesson of steps 16 and 17, for every review: run the command on the
+largest problems yourself. Rows and reports hid a checker that takes
+gigabytes, time limits missed by minutes and a wrong verdict at the
+JSON boundary; each was found by a call, not by reading.
 
 ## What a review is
 

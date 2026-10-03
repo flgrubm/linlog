@@ -54,11 +54,13 @@ name; the repository can follow at any quiet moment before step 31
 (Settings, Danger Zone, Transfer). What a transfer touches, for the
 session that prepares the release to bring in line:
 
-- the remote: `jj git remote set-url origin
-  https://github.com/linlog-prover/linlog` (the old address redirects,
-  so nothing breaks before that);
+- the remote, which is over SSH: `jj git remote set-url origin
+  git@github.com:linlog-prover/linlog.git` (the old address redirects,
+  so nothing breaks before that, as long as no repository named
+  `linlog` is created under the old owner again);
 - CLAUDE.md, which names `github.com/flgrubm/linlog` as `origin`, and
-  README, which links the documentation site: Pages moves to
+  README, which links the documentation site and names
+  `nix run github:flgrubm/linlog`: Pages moves to
   `linlog-prover.github.io/linlog` and is not redirected, and the
   repository's description and homepage on GitHub point at the old one;
 - the manifests' `repository` and `homepage`, the `CITATION.cff`, the
