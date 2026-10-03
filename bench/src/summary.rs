@@ -112,6 +112,16 @@ pub fn summary(files: &[PathBuf]) -> Result<()> {
         {
             label.push_str(&format!(" forward {forward}"));
         }
+        // A file from before the bound has no such column, and ran
+        // without one.
+        let memory = row.get("memory_limit");
+        if memory == "0" {
+            label.push_str(" memory none");
+        } else if !memory.is_empty()
+            && memory != linlog::search::Options::DEFAULT_MEMORY_LIMIT.to_string()
+        {
+            label.push_str(&format!(" memory {memory}"));
+        }
         label
     };
     let mut groups: Vec<Group> = Vec::new();

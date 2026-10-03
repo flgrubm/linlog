@@ -116,6 +116,10 @@ pub struct RunArgs {
     /// a Horn program (default: the library's)
     #[arg(long)]
     forward_copies: Option<u32>,
+    /// The most bytes a search may hold at once, 0 for no bound (default:
+    /// the library's)
+    #[arg(long, value_name = "BYTES")]
+    memory_limit: Option<u64>,
     /// The net engine's links between two exact acyclicity tests
     /// (default: every link up to 200 occurrences, every fourth above)
     #[arg(long)]
@@ -182,6 +186,9 @@ pub struct OneArgs {
     /// The forward search's copy bound
     #[arg(long)]
     forward_copies: Option<u32>,
+    /// The memory bound in bytes, 0 for none
+    #[arg(long)]
+    memory_limit: Option<u64>,
     /// The net engine's test period
     #[arg(long)]
     test_period: Option<u32>,

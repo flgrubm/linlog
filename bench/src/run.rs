@@ -33,10 +33,10 @@ pub const HEADER: &str = "source,family,size,index,problem,mode,engine_requested
                           test_period,timeout_s,run,copies,expected,verdict,reason,checked,engine,\
                           fragment,occurrences,multiplicity,time_ms,nodes,memo_hits,memo_entries,\
                           splits,links,tests,recursion_limit,cpu_ms,wait_ms,bias,forward_copies,\
-                          check_ms";
+                          check_ms,memory_limit";
 
 /// The columns the child prints.
-const TAIL: usize = 22;
+const TAIL: usize = 23;
 
 /// The line the child prints when its problem is loaded and its search
 /// starts, from which the parent counts the time limit.
@@ -94,6 +94,22 @@ impl BiasChoice {
             Self::Factors => Bias::Factors,
         }
     }
+}
+
+/// The memory bound of a run in bytes: the one asked for, none for 0, or
+/// the library's default.
+fn memory_limit(asked: Option<u64>) -> Option<u64> {
+    match asked {
+        None => Some(Options::DEFAULT_MEMORY_LIMIT),
+        Some(0) => None,
+        bound => bound,
+    }
+}
+
+/// The memory bound of a run as its column has it: the bytes, or 0 for
+/// none.
+fn memory_column(asked: Option<u64>) -> String {
+    memory_limit(asked).unwrap_or(0).to_string()
 }
 
 /// The forward search's copy bound of a run: the one asked for, or the
@@ -223,6 +239,7 @@ pub fn run(args: &RunArgs) -> Result<()> {
                         &args.test_period.map_or(String::new(), |p| p.to_string()),
                         &name(&args.bias),
                         &forward_copies(args.forward_copies).to_string(),
+                        &memory_column(args.memory_limit),
                     ]
                     .join(",");
                     if done_before.contains(&key) {
@@ -309,6 +326,8 @@ fn finished(path: &Path) -> Result<HashSet<String>> {
     };
     let bias = at("bias");
     let forward = at("forward_copies");
+    // A file from before the bound ran without one.
+    let memory = at("memory_limit");
     Ok(lines
         .map(|line| {
             let fields: Vec<&str> = line.split(',').collect();
@@ -316,7 +335,11 @@ fn finished(path: &Path) -> Result<HashSet<String>> {
             let bias = bias.map(field).filter(|b| !b.is_empty()).unwrap_or("auto");
             key.iter()
                 .map(|&i| field(i))
-                .chain([bias, forward.map_or("", field)])
+                .chain([
+                    bias,
+                    forward.map_or("", field),
+                    memory.map(field).filter(|m| !m.is_empty()).unwrap_or("0"),
+                ])
                 .collect::<Vec<_>>()
                 .join(",")
         })
@@ -349,6 +372,9 @@ fn child(
     command.args(["--bias", &name(&args.bias)]);
     if let Some(copies) = args.forward_copies {
         command.args(["--forward-copies", &copies.to_string()]);
+    }
+    if let Some(bytes) = args.memory_limit {
+        command.args(["--memory-limit", &bytes.to_string()]);
     }
     if let Some(limit) = args.recursion_limit {
         command.args(["--recursion-limit", &limit.to_string()]);
@@ -426,6 +452,7 @@ fn child(
             fields[3] = reason;
             fields[19] = name(&args.bias);
             fields[20] = forward_copies(args.forward_copies).to_string();
+            fields[22] = memory_column(args.memory_limit);
             let since = searching.unwrap_or(spawned);
             fields[9] = format!("{:.3}", since.elapsed().as_secs_f64() * 1000.0);
             fields.join(",")
@@ -519,6 +546,7 @@ fn tail(args: &OneArgs) -> String {
         .copies(copies)
         .bias(args.bias.bias())
         .forward_copies(forward_copies(args.forward_copies))
+        .memory_limit(memory_limit(args.memory_limit))
         .test_period(args.test_period)
         .recursion_limit(recursion)
         // The check is the child's own, outside the time measured.
@@ -575,6 +603,7 @@ fn tail(args: &OneArgs) -> String {
                 (16, &recursion.to_string()),
                 (19, &name(&args.bias)),
                 (20, &forward_copies(args.forward_copies).to_string()),
+                (22, &memory_column(args.memory_limit)),
             ]);
         }
     };
@@ -618,6 +647,7 @@ fn tail(args: &OneArgs) -> String {
             name(&args.bias),
             forward_copies(args.forward_copies).to_string(),
             check_ms.to_owned(),
+            memory_column(args.memory_limit),
         ]
         .join(",")
     };
