@@ -571,13 +571,11 @@ fn unfold(
         record: &record,
         reading,
         inferences: Vec::with_capacity(proof.nodes().len()),
+        tasks: Vec::new(),
+        done: Vec::new(),
         stop: &mut stop,
-        stopped: false,
     };
-    build.build(proof.root(), Multiset::of(goal.iter().copied()));
-    if build.stopped {
-        return Err(ViewError::Stopped);
-    }
+    build.run(proof.root(), Multiset::of(goal.iter().copied()))?;
     Ok(build.inferences)
 }
 
@@ -649,6 +647,46 @@ impl Observer for Record<'_> {
     }
 }
 
+/// A step the translation has yet to take. The steps wait on a stack of
+/// the translation's own, so a derivation of any height is built on a call
+/// stack of any size.
+enum Task {
+    /// Unfold the subproof at a node under a conclusion: the standard
+    /// sequent it derives plus whatever a `⊤` in it absorbs.
+    Unfold(NodeId, Multiset),
+    /// Unfold the subproof at a node under a conclusion that may hold `?`
+    /// formulas the subproof does not use, weakening them above it unless
+    /// a `⊤` in it absorbs them.
+    Pad(NodeId, Multiset),
+    /// Conclude a sequent by a rule from the subtrees finished last, as
+    /// many as the rule has premises.
+    Infer {
+        /// The conclusion.
+        sequent: Multiset,
+        /// The rule.
+        rule: Rule,
+        /// The formula it introduces.
+        principal: Option<OccId>,
+        /// How many premises it has.
+        premises: usize,
+    },
+    /// Weaken `?` formulas one by one below the subtree finished last.
+    Weaken {
+        /// The conclusion of the subtree.
+        sequent: Multiset,
+        /// The formulas to add, in ascending order.
+        unused: Multiset,
+    },
+    /// Contract, below the subtree finished last, the `?` formulas that
+    /// both premises of the `⊗` or Mix at a node use.
+    Contract {
+        /// The conclusion of the subtree, which holds each of them twice.
+        sequent: Multiset,
+        /// The node.
+        id: NodeId,
+    },
+}
+
 /// The translation in progress.
 struct Build<'a> {
     /// The proof being unfolded.
@@ -659,16 +697,18 @@ struct Build<'a> {
     reading: Option<&'a Reading<'a>>,
     /// The inferences made so far.
     inferences: Vec<Inference>,
+    /// The steps yet to take, the next one last.
+    tasks: Vec<Task>,
+    /// The roots of the subtrees that are finished and wait for the
+    /// inference below them, the latest last.
+    done: Vec<InfId>,
     /// The caller's stop condition, polled once per node.
     stop: &'a mut dyn FnMut() -> bool,
-    /// Whether the condition fired: the inferences are then worthless and
-    /// every call returns at once.
-    stopped: bool,
 }
 
-impl Build<'_> {
+impl<'a> Build<'a> {
     /// The forest.
-    fn forest(&self) -> &Forest {
+    fn forest(&self) -> &'a Forest {
         self.proof.forest()
     }
 
@@ -686,6 +726,56 @@ impl Build<'_> {
     /// Whether a `⊤` in the subproof absorbs any context.
     fn absorbs(&self, id: NodeId) -> bool {
         self.record.absorbs[id.index()]
+    }
+
+    /// The unrestricted occurrences both premises of the `⊗` or Mix at
+    /// `id` need, ascending.
+    fn shared(&self, id: NodeId) -> &'a [OccId] {
+        self.record.shared.get(&id).map_or(&[], Vec::as_slice)
+    }
+
+    /// Unfolds the subproof at `root`, whose conclusion is `conclusion`,
+    /// into the inferences, unless the caller's condition stops it.
+    fn run(&mut self, root: NodeId, conclusion: Multiset) -> Result<(), ViewError> {
+        self.tasks.push(Task::Unfold(root, conclusion));
+        while let Some(task) = self.tasks.pop() {
+            match task {
+                Task::Unfold(id, actual) => {
+                    if (self.stop)() {
+                        return Err(ViewError::Stopped);
+                    }
+                    self.unfold(id, actual);
+                }
+                Task::Pad(id, actual) => self.pad(id, actual),
+                Task::Infer {
+                    sequent,
+                    rule,
+                    principal,
+                    premises,
+                } => {
+                    let premises = self.done.split_off(self.done.len() - premises);
+                    let inference = self.infer(sequent, rule, principal, premises);
+                    self.done.push(inference);
+                }
+                Task::Weaken {
+                    mut sequent,
+                    unused,
+                } => {
+                    for &q in unused.as_slice() {
+                        sequent.insert(q);
+                        self.below(sequent.clone(), Rule::Weakening, q);
+                    }
+                }
+                Task::Contract { mut sequent, id } => {
+                    for &a in self.shared(id) {
+                        let q = self.quest(a);
+                        sequent.remove(q);
+                        self.below(sequent.clone(), Rule::Contraction, q);
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Adds an inference and returns its id; in a two-sided derivation the
@@ -711,16 +801,38 @@ impl Build<'_> {
         InfId::new(self.inferences.len() as u32 - 1)
     }
 
+    /// Adds an inference without premises: a subtree of its own.
+    fn leaf(&mut self, sequent: Multiset, rule: Rule, principal: Option<OccId>) {
+        let inference = self.infer(sequent, rule, principal, vec![]);
+        self.done.push(inference);
+    }
+
+    /// Adds an inference on `principal` below the subtree finished last.
+    fn below(&mut self, sequent: Multiset, rule: Rule, principal: OccId) {
+        let premise = self.done.pop().expect("a subtree is finished");
+        let inference = self.infer(sequent, rule, Some(principal), vec![premise]);
+        self.done.push(inference);
+    }
+
+    /// Plans an inference that concludes `sequent` on `principal` from the
+    /// subproof at `p` under the conclusion `up`.
+    fn from(&mut self, sequent: Multiset, rule: Rule, principal: OccId, p: NodeId, up: Multiset) {
+        self.tasks.push(Task::Infer {
+            sequent,
+            rule,
+            principal: Some(principal),
+            premises: 1,
+        });
+        self.tasks.push(Task::Unfold(p, up));
+    }
+
     /// Unfolds the subproof at `id`, whose conclusion is `actual`: the
-    /// standard sequent it derives plus whatever a `⊤` in it absorbs.
-    fn build(&mut self, id: NodeId, actual: Multiset) -> InfId {
+    /// standard sequent it derives plus whatever a `⊤` in it absorbs. A
+    /// leaf is concluded at once; any other rule leaves its premises and
+    /// then its own inference as steps to take.
+    fn unfold(&mut self, id: NodeId, actual: Multiset) {
         use Node::*;
-        if self.stopped || (self.stop)() {
-            self.stopped = true;
-            return InfId::new(0);
-        }
         let f = self.forest();
-        let node = self.proof.node(id);
         let (left, right) = (
             |o: OccId| f.left(o).unwrap(),
             |o: OccId| f.right(o).unwrap(),
@@ -737,19 +849,17 @@ impl Build<'_> {
             }
             up
         };
-        match node {
-            Ax(..) => self.infer(actual, Rule::Ax, None, vec![]),
-            One(o) => self.infer(actual, Rule::One, Some(o), vec![]),
-            Top(o) => self.infer(actual, Rule::Top, Some(o), vec![]),
+        match self.proof.node(id) {
+            Ax(..) => self.leaf(actual, Rule::Ax, None),
+            One(o) => self.leaf(actual, Rule::One, Some(o)),
+            Top(o) => self.leaf(actual, Rule::Top, Some(o)),
             Bot(o, p) => {
                 let up = above(&actual, &[o], &[]);
-                let premise = self.build(p, up);
-                self.infer(actual, Rule::Bot, Some(o), vec![premise])
+                self.from(actual, Rule::Bot, o, p, up);
             }
             Par(o, p) => {
                 let up = above(&actual, &[o], &[left(o), right(o)]);
-                let premise = self.build(p, up);
-                self.infer(actual, Rule::Par, Some(o), vec![premise])
+                self.from(actual, Rule::Par, o, p, up);
             }
             Plus(o, side, p) => {
                 let (chosen, rule) = match side {
@@ -757,13 +867,11 @@ impl Build<'_> {
                     Side::Right => (right(o), Rule::PlusRight),
                 };
                 let up = above(&actual, &[o], &[chosen]);
-                let premise = self.build(p, up);
-                self.infer(actual, rule, Some(o), vec![premise])
+                self.from(actual, rule, o, p, up);
             }
             Bang(o, p) => {
                 let up = above(&actual, &[o], &[left(o)]);
-                let premise = self.build(p, up);
-                self.infer(actual, Rule::Promotion, Some(o), vec![premise])
+                self.from(actual, Rule::Promotion, o, p, up);
             }
             Weaken(o, p) => {
                 let rule = if f.kind(o) == Kind::Quest {
@@ -772,18 +880,16 @@ impl Build<'_> {
                     Rule::AffineWeakening
                 };
                 let up = above(&actual, &[o], &[]);
-                let premise = self.build(p, up);
-                self.infer(actual, rule, Some(o), vec![premise])
+                self.from(actual, rule, o, p, up);
             }
             Quest(o, p) => {
                 if self.record.used[id.index()] {
                     // Used above: `?A` in Γ becomes `?A` in Θ, which the
                     // standard sequent does not distinguish.
-                    self.build(p, actual)
+                    self.tasks.push(Task::Unfold(p, actual));
                 } else {
                     let up = above(&actual, &[o], &[]);
-                    let premise = self.build(p, up);
-                    self.infer(actual, Rule::Weakening, Some(o), vec![premise])
+                    self.from(actual, Rule::Weakening, o, p, up);
                 }
             }
             Copy(a, p) => {
@@ -792,14 +898,17 @@ impl Build<'_> {
                     // Used again above: derelict the copy, then contract it
                     // with the `?A` that stays.
                     let up = above(&actual, &[], &[a]);
-                    let premise = self.build(p, up);
                     let derelicted = above(&actual, &[], &[q]);
-                    let d = self.infer(derelicted, Rule::Dereliction, Some(q), vec![premise]);
-                    self.infer(actual, Rule::Contraction, Some(q), vec![d])
+                    self.tasks.push(Task::Infer {
+                        sequent: actual,
+                        rule: Rule::Contraction,
+                        principal: Some(q),
+                        premises: 1,
+                    });
+                    self.from(derelicted, Rule::Dereliction, q, p, up);
                 } else {
                     let up = above(&actual, &[q], &[a]);
-                    let premise = self.build(p, up);
-                    self.infer(actual, Rule::Dereliction, Some(q), vec![premise])
+                    self.from(actual, Rule::Dereliction, q, p, up);
                 }
             }
             Tensor(o, l, r) => self.split(id, actual, Some((o, left(o), right(o))), l, r),
@@ -807,14 +916,19 @@ impl Build<'_> {
             With(o, l, r) => {
                 let up_l = above(&actual, &[o], &[left(o)]);
                 let up_r = above(&actual, &[o], &[right(o)]);
-                let pl = self.padded(l, up_l);
-                let pr = self.padded(r, up_r);
-                self.infer(actual, Rule::With, Some(o), vec![pl, pr])
+                self.tasks.push(Task::Infer {
+                    sequent: actual,
+                    rule: Rule::With,
+                    principal: Some(o),
+                    premises: 2,
+                });
+                self.tasks.push(Task::Pad(r, up_r));
+                self.tasks.push(Task::Pad(l, up_l));
             }
         }
     }
 
-    /// Unfolds a `⊗` on `o` with subformulas `a` and `b`, or a Mix, at `id`
+    /// Plans a `⊗` on `o` with subformulas `a` and `b`, or a Mix, at `id`
     /// with premises `l` and `r`: the context is split as the premises
     /// derived it, an absorbing premise taking what the `⊤` absorbs, and
     /// the `?` formulas both premises use are contracted below the rule.
@@ -825,7 +939,7 @@ impl Build<'_> {
         tensor: Option<(OccId, OccId, OccId)>,
         l: NodeId,
         r: NodeId,
-    ) -> InfId {
+    ) {
         let extra = actual.difference(&self.standard(id));
         let (mut up_l, mut up_r) = (self.standard(l), self.standard(r));
         if let Some((_, a, b)) = tensor {
@@ -852,53 +966,64 @@ impl Build<'_> {
             debug_assert!(extra.is_empty() || self.absorbs(r));
             up_r = up_r.sum(&extra);
         }
-        let pl = self.build(l, up_l.clone());
-        let pr = self.build(r, up_r.clone());
-        if self.stopped {
-            return pl;
-        }
-        let (rule, principal) = match tensor {
+        // The rule's conclusion: both contexts, and the `⊗` for its
+        // subformulas.
+        let (rule, principal, sequent) = match tensor {
             Some((o, a, b)) => {
-                up_l.remove(a);
-                up_r.remove(b);
-                (Rule::Tensor, Some(o))
+                let (mut rest_l, mut rest_r) = (up_l.clone(), up_r.clone());
+                rest_l.remove(a);
+                rest_r.remove(b);
+                let mut sequent = rest_l.sum(&rest_r);
+                sequent.insert(o);
+                (Rule::Tensor, Some(o), sequent)
             }
-            None => (Rule::Mix, None),
+            None => (Rule::Mix, None, up_l.sum(&up_r)),
         };
-        let mut sequent = up_l.sum(&up_r);
-        if let Some(o) = principal {
-            sequent.insert(o);
+        let shared = self.shared(id);
+        debug_assert_eq!(
+            {
+                let mut contracted = sequent.clone();
+                for &a in shared {
+                    contracted.remove(self.quest(a));
+                }
+                contracted
+            },
+            actual
+        );
+        if !shared.is_empty() {
+            self.tasks.push(Task::Contract {
+                sequent: sequent.clone(),
+                id,
+            });
         }
-        let mut inference = self.infer(sequent.clone(), rule, principal, vec![pl, pr]);
-        let record = self.record;
-        for &a in record.shared.get(&id).map_or(&[][..], Vec::as_slice) {
-            let q = self.quest(a);
-            sequent.remove(q);
-            inference = self.infer(sequent.clone(), Rule::Contraction, Some(q), vec![inference]);
-        }
-        debug_assert_eq!(sequent, actual);
-        inference
+        self.tasks.push(Task::Infer {
+            sequent,
+            rule,
+            principal,
+            premises: 2,
+        });
+        self.tasks.push(Task::Unfold(r, up_r));
+        self.tasks.push(Task::Unfold(l, up_l));
     }
 
-    /// Unfolds the subproof at `id` under a conclusion that may hold `?`
-    /// formulas the subproof does not use, weakening them above it unless a
-    /// `⊤` in it absorbs them.
-    fn padded(&mut self, id: NodeId, actual: Multiset) -> InfId {
+    /// Plans the subproof at `id` under a conclusion that may hold `?`
+    /// formulas the subproof does not use, weakening them above it unless
+    /// a `⊤` in it absorbs them.
+    fn pad(&mut self, id: NodeId, actual: Multiset) {
         if self.absorbs(id) {
-            return self.build(id, actual);
+            self.tasks.push(Task::Unfold(id, actual));
+            return;
         }
-        let mut sequent = self.standard(id);
+        let sequent = self.standard(id);
+        debug_assert!(sequent.is_subset(&actual));
         let unused = actual.difference(&sequent);
-        let mut inference = self.build(id, sequent.clone());
-        if self.stopped {
-            return inference;
+        if !unused.is_empty() {
+            self.tasks.push(Task::Weaken {
+                sequent: sequent.clone(),
+                unused,
+            });
         }
-        for &q in unused.as_slice() {
-            sequent.insert(q);
-            inference = self.infer(sequent.clone(), Rule::Weakening, Some(q), vec![inference]);
-        }
-        debug_assert_eq!(sequent, actual);
-        inference
+        self.tasks.push(Task::Unfold(id, sequent));
     }
 }
 
@@ -1249,6 +1374,50 @@ mod tests {
         assert!(p.two_sided_derivation().is_err());
         let p = proof("A, B |- A", vec![Ax(o(0), o(2)), Weaken(o(2), n(0))]);
         assert!(p.two_sided_derivation().is_err());
+    }
+
+    /// A derivation of any height is built on a small stack: 120 000
+    /// inferences, one above the other, on a thread with 256 KiB.
+    #[test]
+    fn any_height_on_a_small_stack() {
+        use crate::sequents::{Term, TermId};
+        use Node::*;
+        const ROUNDS: u32 = 40_000;
+        // ⊢ ?⊥, 1: 0 ?, 1 ⊥, 2 1. Every round puts the ⊥ under the ? into
+        // the linear zone and copies it out again: a ⊥ rule, a
+        // dereliction and, but for the topmost, a contraction.
+        let sequent = Sequent {
+            terms: vec![Term::Bot, Term::Quest(TermId::new(0)), Term::One],
+            roots: vec![TermId::new(1), TermId::new(2)],
+            atoms: vec![],
+        };
+        let mut nodes = vec![One(o(2))];
+        for _ in 0..ROUNDS {
+            nodes.push(Bot(o(1), n(nodes.len() as u32 - 1)));
+            nodes.push(Copy(o(1), n(nodes.len() as u32 - 1)));
+        }
+        nodes.push(Quest(o(0), n(nodes.len() as u32 - 1)));
+        let root = n(nodes.len() as u32 - 1);
+        let build = move || {
+            let p = Proof::new(Forest::new(&sequent).unwrap(), nodes, root).unwrap();
+            let d = p.derivation().unwrap();
+            let inferences = d.inferences();
+            assert_eq!(inferences.len(), 3 * ROUNDS as usize);
+            // One branch: every inference is over the one before it.
+            for (i, inference) in inferences.iter().enumerate().skip(1) {
+                assert_eq!(inference.premises, [InfId::new(i as u32 - 1)]);
+            }
+            let size = p.derivation_size(false).unwrap();
+            assert_eq!(size.height, u64::from(3 * ROUNDS));
+            assert_eq!(inferences[0].rule, Rule::One);
+            assert_eq!(d.inference(d.root()).rule, Rule::Contraction);
+        };
+        std::thread::Builder::new()
+            .stack_size(256 << 10)
+            .spawn(build)
+            .unwrap()
+            .join()
+            .unwrap();
     }
 
     /// The inferences carry the sequents as ids with repeats, the rule, the
