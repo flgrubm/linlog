@@ -25,7 +25,7 @@ use crate::Error;
 use crate::fragment::{Fragment, Mode};
 use crate::nets::ProofStructure;
 use crate::occurrences::{Bias, Forest, OccId, Reading};
-use crate::proofs::Proof;
+use crate::proofs::{Bytes, Proof};
 use crate::sequents::{Atom, Sequent};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
@@ -970,23 +970,6 @@ impl Display for Reason {
                 write!(f, "the memory limit of {} was reached", Bytes(*bytes))
             }
             Reason::IndexLimit => f.write_str("the search outgrew what its indices address"),
-        }
-    }
-}
-
-/// A number of bytes, written in the largest binary unit that divides it:
-/// `1 GiB`, `512 MiB`, `1500 B`.
-struct Bytes(u64);
-
-impl Display for Bytes {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        let units = [(30, "GiB"), (20, "MiB"), (10, "KiB")];
-        match units
-            .into_iter()
-            .find(|&(shift, _)| self.0 != 0 && self.0.is_multiple_of(1 << shift))
-        {
-            Some((shift, unit)) => write!(f, "{} {unit}", self.0 >> shift),
-            None => write!(f, "{} B", self.0),
         }
     }
 }

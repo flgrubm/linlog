@@ -574,7 +574,8 @@ impl CheckError {
             Memory { limit } => write!(
                 f,
                 "the check was given up here, without a verdict on the proof: the sequents \
-                 it holds at once take more than the memory limit of {limit} bytes"
+                 it holds at once take more than the memory limit of {}",
+                super::Bytes(*limit)
             ),
         }
     }
@@ -1923,7 +1924,7 @@ mod tests {
             format!(
                 "node {} (⊥ on {} from {width}): the check was given up here, without a \
                  verdict on the proof: the sequents it holds at once take more than the \
-                 memory limit of 67108864 bytes",
+                 memory limit of 64 MiB",
                 e.node.get(),
                 e.rule.principal().unwrap().get(),
             )

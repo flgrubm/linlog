@@ -44,6 +44,24 @@ use crate::occurrences::{Forest, OccId};
 use crate::sequents::Sequent;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+/// A number of bytes, written in the largest binary unit that divides it:
+/// `1 GiB`, `512 MiB`, `1500 B`.
+pub(crate) struct Bytes(pub(crate) u64);
+
+impl std::fmt::Display for Bytes {
+    /// Writes the number with its unit.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let units = [(30, "GiB"), (20, "MiB"), (10, "KiB")];
+        match units
+            .into_iter()
+            .find(|&(shift, _)| self.0 != 0 && self.0.is_multiple_of(1 << shift))
+        {
+            Some((shift, unit)) => write!(f, "{} {unit}", self.0 >> shift),
+            None => write!(f, "{} B", self.0),
+        }
+    }
+}
+
 /// The default bound, in bytes, of what a check or a search may hold at
 /// once: 1 GiB. A proof with shared subproofs can take its checker far
 /// more than the proof's own size, and a search its memo and its arena; a
