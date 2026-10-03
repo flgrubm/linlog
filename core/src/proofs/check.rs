@@ -8,11 +8,14 @@
 //! never: an engine's proofs are validated by something that cannot repeat
 //! the engine's mistakes.
 //!
-//! The pass is bottom-up, one node at a time in arena order, so it costs one
-//! multiset operation per node and never recurses. What a subproof proves is
-//! a `Derived` sequent; the one rule whose conclusion the premises do not
+//! The pass is bottom-up, one node at a time in arena order, and never
+//! recurses. What a subproof proves is a `State`, a sequent kept as two
+//! tables of its members; the one rule whose conclusion the premises do not
 //! determine, `⊤`, is handled by a flag that says the subproof proves its
-//! sequent under any further context.
+//! sequent under any further context. A node's sequent is built from its
+//! premises' own: the last node to read a premise takes its sequent and
+//! changes it in place, an earlier reader a copy, so what the pass holds at
+//! any moment is the sequents some later node still reads.
 //!
 //! In intuitionistic mode the same pass also checks the one-succedent
 //! condition against the sequent's intuitionistic reading: every derived
@@ -22,12 +25,108 @@
 //! a goal at all. Every intuitionistic rule is a classical rule on the
 //! one-sided sequent, so nothing else is intuitionistic about a proof.
 
-use super::multiset::Multiset;
 use super::{Node, NodeId, Proof, Side};
 use crate::fragment::Mode;
-use crate::occurrences::{Forest, OccId, OccSet, Position, Reading, ShapeError};
+use crate::hash::{HashMap, HashSet};
+use crate::occurrences::{Forest, OccId, Position, Reading, ShapeError};
 use crate::sequents::Kind;
 use std::fmt::{Display, Formatter, Result as FmtResult};
+
+/// How many copies of each occurrence a linear zone holds: a multiset
+/// whose insertions and removals cost the same whatever its size.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Bag {
+    /// The copies of every member, never zero.
+    counts: HashMap<OccId, u32>,
+    /// The number of members, with repeats.
+    len: usize,
+}
+
+impl Bag {
+    /// Returns the multiset of the given ids.
+    fn of(ids: impl IntoIterator<Item = OccId>) -> Self {
+        let mut bag = Self::default();
+        for o in ids {
+            bag.insert(o);
+        }
+        bag
+    }
+
+    /// Returns whether the multiset has no member.
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Returns the members with their numbers of copies, in no particular
+    /// order.
+    fn counts(&self) -> impl Iterator<Item = (OccId, u32)> + '_ {
+        self.counts.iter().map(|(&o, &n)| (o, n))
+    }
+
+    /// Returns the members in ascending order, with repeats.
+    fn sorted(&self) -> Vec<OccId> {
+        let mut ids: Vec<OccId> = self
+            .counts()
+            .flat_map(|(o, n)| std::iter::repeat_n(o, n as usize))
+            .collect();
+        ids.sort_unstable();
+        ids
+    }
+
+    /// Adds one copy of `o`.
+    fn insert(&mut self, o: OccId) {
+        *self.counts.entry(o).or_insert(0) += 1;
+        self.len += 1;
+    }
+
+    /// Removes one copy of `o` and returns whether there was one.
+    fn remove(&mut self, o: OccId) -> bool {
+        let Some(n) = self.counts.get_mut(&o) else {
+            return false;
+        };
+        *n -= 1;
+        if *n == 0 {
+            self.counts.remove(&o);
+        }
+        self.len -= 1;
+        true
+    }
+
+    /// Adds every copy of every member of `other`: the multiset sum, the
+    /// smaller table poured into the larger.
+    fn add(&mut self, mut other: Self) {
+        if other.counts.len() > self.counts.len() {
+            std::mem::swap(self, &mut other);
+        }
+        for (o, n) in other.counts {
+            *self.counts.entry(o).or_insert(0) += n;
+        }
+        self.len += other.len;
+    }
+
+    /// Raises every member's copies to those `other` has of it: the
+    /// multiset union.
+    fn unite(&mut self, mut other: Self) {
+        if other.counts.len() > self.counts.len() {
+            std::mem::swap(self, &mut other);
+        }
+        for (o, n) in other.counts {
+            let own = self.counts.entry(o).or_insert(0);
+            if n > *own {
+                self.len += (n - *own) as usize;
+                *own = n;
+            }
+        }
+    }
+
+    /// Returns whether no id has more copies here than in `other`.
+    fn is_subset(&self, other: &Self) -> bool {
+        self.len <= other.len
+            && self
+                .counts()
+                .all(|(o, n)| other.counts.get(&o).is_some_and(|&m| n <= m))
+    }
+}
 
 /// What a subproof proves, as the checker derives it from the node's
 /// premises: the dyadic sequent `⊢ Θ ; Γ`, or with `any` set `⊢ Θ ; Γ, Δ` for
@@ -38,24 +137,71 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 /// contraction on `Θ` are implicit, any larger zone does as well. So a proof
 /// is correct when its root needs an empty `Θ` and derives the sequent's
 /// formulas, and the checker never has to know the actual zone.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Derived {
+///
+/// Both zones are tables of their members, so a sequent takes memory for
+/// what it holds and none for the width of the forest.
+#[derive(Clone, Debug)]
+pub(crate) struct State {
     /// The unrestricted zone the subproof needs.
-    pub(crate) theta: OccSet,
+    theta: HashSet<OccId>,
     /// The linear zone.
-    pub(crate) gamma: Multiset,
+    gamma: Bag,
+    /// The members of the linear zone in output position, under a reading.
+    outputs: usize,
+    /// The weights of the linear zone's members, added up.
+    linear: u64,
+    /// The weights of the `?` formulas of the unrestricted zone's members,
+    /// added up.
+    unrestricted: u64,
+    /// The weights of the linear zone's members in output position.
+    goal: u64,
     /// Whether a `⊤` above absorbs any further linear context.
-    pub(crate) any: bool,
+    any: bool,
 }
 
-impl Derived {
+impl State {
     /// Returns the sequent as ids for an error report.
     fn to_dyadic(&self) -> Dyadic {
+        let mut theta: Vec<OccId> = self.theta.iter().copied().collect();
+        theta.sort_unstable();
         Dyadic {
-            theta: self.theta.iter().collect(),
-            gamma: self.gamma.as_slice().to_vec(),
+            theta,
+            gamma: self.gamma.sorted(),
             any: self.any,
         }
+    }
+
+    /// Returns the unrestricted occurrences the subproof needs, in no
+    /// particular order.
+    pub(crate) fn unrestricted(&self) -> impl Iterator<Item = OccId> + '_ {
+        self.theta.iter().copied()
+    }
+
+    /// Returns the linear zone's members with their numbers of copies, in
+    /// no particular order.
+    pub(crate) fn linear(&self) -> impl Iterator<Item = (OccId, u32)> + '_ {
+        self.gamma.counts()
+    }
+
+    /// Returns how many unrestricted occurrences the subproof needs.
+    pub(crate) fn needs(&self) -> usize {
+        self.theta.len()
+    }
+
+    /// Returns whether a `⊤` above absorbs any further linear context.
+    pub(crate) fn absorbs(&self) -> bool {
+        self.any
+    }
+
+    /// Returns the weight of the standard sequent `⊢ ?Θ, Γ`: its formulas'
+    /// weights added up.
+    pub(crate) fn weight(&self) -> u64 {
+        self.linear + self.unrestricted
+    }
+
+    /// Returns the weight of the linear zone's members in output position.
+    pub(crate) fn goal_weight(&self) -> u64 {
+        self.goal
     }
 }
 
@@ -282,163 +428,285 @@ impl std::error::Error for CheckError {}
 /// zone; in intuitionistic mode also that the sequent has an intuitionistic
 /// reading and every sequent of the proof one formula on the right of `⊢`.
 /// Returns the first node that fails, in arena order, with what it needed.
+///
+/// The memory taken is that of the sequents some later node still reads,
+/// which for a proof without shared subproofs is proportional to the proof.
 pub fn check(proof: &Proof, mode: Mode) -> Result<(), CheckError> {
-    let reading = if mode.intuitionistic {
-        match Reading::new(proof.forest()) {
-            Ok(reading) => Some(reading),
-            Err(e) => {
-                return Err(CheckError {
-                    node: proof.root(),
-                    rule: proof.node(proof.root()),
-                    premises: vec![],
-                    problem: Problem::Shape(e),
-                });
-            }
-        }
-    } else {
-        None
-    };
-    let derived = derive(proof, mode, reading.as_ref())?;
-    conclude(proof, mode, &derived)
+    let reading = reading(proof, mode)?;
+    examine(
+        proof,
+        proof.forest().roots(),
+        mode,
+        reading.as_ref(),
+        &mut (),
+    )
 }
 
-/// Derives what every node proves, in arena order, or reports the first
-/// node that misapplies its rule or uses one the mode forbids; with a
-/// reading, also the first sequent that breaks the one-succedent condition.
-pub(crate) fn derive(
+/// Returns the intuitionistic reading of the proof's sequent in
+/// intuitionistic mode and none otherwise, or the error of a sequent that
+/// has no reading.
+pub(crate) fn reading(proof: &Proof, mode: Mode) -> Result<Option<Reading<'_>>, CheckError> {
+    if !mode.intuitionistic {
+        return Ok(None);
+    }
+    match Reading::new(proof.forest()) {
+        Ok(reading) => Ok(Some(reading)),
+        Err(e) => Err(CheckError {
+            node: proof.root(),
+            rule: proof.node(proof.root()),
+            premises: vec![],
+            problem: Problem::Shape(e),
+        }),
+    }
+}
+
+/// Checks that a proof concludes `goal`, a multiset of occurrences in any
+/// order (the roots, for a proof of the sequent), as [`check`] does, with
+/// the one-succedent condition when a reading is given, and shows every
+/// node's sequent to `observer` on the way.
+pub(crate) fn examine<O: Observer>(
     proof: &Proof,
+    goal: &[OccId],
     mode: Mode,
     reading: Option<&Reading>,
-) -> Result<Vec<Derived>, CheckError> {
-    let mut derived = Vec::with_capacity(proof.nodes().len());
-    for id in proof.ids() {
-        let d = Step::new(proof, mode, id, &derived, reading).derive()?;
-        derived.push(d);
-    }
-    Ok(derived)
-}
-
-/// Checks that the root derives the proof's sequent.
-pub(crate) fn conclude(proof: &Proof, mode: Mode, derived: &[Derived]) -> Result<(), CheckError> {
-    let root = proof.root();
-    let d = &derived[root.index()];
-    let roots = Multiset::of(proof.forest().roots().iter().copied());
-    let concludes = if d.any {
-        d.gamma.is_subset(&roots)
-    } else {
-        d.gamma == roots
+    observer: &mut O,
+) -> Result<(), CheckError> {
+    let mut pass = Pass::new(proof, mode, reading, observer);
+    let end = proof.nodes().len();
+    let (node, problem) = match pass.run(end) {
+        Err(failure) => failure,
+        Ok(()) => match pass.conclude(goal) {
+            Ok(()) => return Ok(()),
+            Err(problem) => (proof.root(), problem),
+        },
     };
-    if d.theta.is_empty() && concludes {
-        Ok(())
-    } else {
-        Err(Step::new(proof, mode, root, derived, None).fail(Problem::Conclusion(d.to_dyadic())))
+    drop(pass);
+    // The premises' sequents are gone, moved into the node that failed, so
+    // the pass runs once more up to it and keeps them.
+    let rule = proof.node(node);
+    let mut nobody = ();
+    let mut pass = Pass::new(proof, mode, reading, &mut nobody);
+    for p in rule.premises() {
+        pass.readers[p.index()] += 1;
     }
+    let again = pass.run(node.index());
+    debug_assert!(again.is_ok());
+    let premises = rule
+        .premises()
+        .filter_map(|p| pass.live[p.index()].as_deref().map(State::to_dyadic))
+        .collect();
+    Err(CheckError {
+        node,
+        rule,
+        premises,
+        problem,
+    })
 }
 
-/// One node being checked, with what its premises derived.
-struct Step<'a> {
-    /// The forest the occurrences index.
+/// What a caller of [`examine`] learns about every node of a correct
+/// proof, in arena order.
+pub(crate) trait Observer {
+    /// Returns the weight of an occurrence, which a [`State`] adds up over
+    /// its sequent.
+    fn weight(&self, o: OccId) -> u64 {
+        let _ = o;
+        0
+    }
+
+    /// Takes what node `id` derived and how its rule applied.
+    fn derived(&mut self, id: NodeId, state: &State, facts: &Facts<'_>);
+}
+
+impl Observer for () {
+    fn derived(&mut self, _: NodeId, _: &State, _: &Facts<'_>) {}
+}
+
+/// How a node's rule applied to its premises, beyond the sequent derived.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Facts<'a> {
+    /// For a `?` step, whether a copy above uses its formula; for a copy,
+    /// whether another copy above uses the same occurrence.
+    pub(crate) used: bool,
+    /// For `⊗` and Mix, the unrestricted occurrences both premises need,
+    /// in no particular order.
+    pub(crate) shared: &'a [OccId],
+    /// Whether a subformula the rule consumes was missing from its premise
+    /// and absorbed by a `⊤` above: the left and the right one of `⅋`, `⊗`
+    /// and `&`, and the first for a rule that consumes one.
+    pub(crate) absent: [bool; 2],
+    /// For `⊗`, `&` and Mix, how many unrestricted occurrences each
+    /// premise needs.
+    pub(crate) needs: [usize; 2],
+    /// For `⊗` and Mix under a reading, whether the left premise's sequent
+    /// holds a formula in output position, its subformula included.
+    pub(crate) left_goal: bool,
+}
+
+/// The pass over a proof's nodes.
+struct Pass<'a, O> {
+    /// The proof.
+    proof: &'a Proof,
+    /// Its forest.
     forest: &'a Forest,
     /// The rules in force.
     mode: Mode,
-    /// The node.
-    id: NodeId,
-    /// Its rule instance.
-    node: Node,
-    /// What the nodes before it derived.
-    derived: &'a [Derived],
     /// The intuitionistic reading, in intuitionistic mode.
     reading: Option<&'a Reading<'a>>,
+    /// How many later nodes still read each node's sequent.
+    readers: Vec<u32>,
+    /// The sequents of the nodes that a later node still reads.
+    live: Vec<Option<Box<State>>>,
+    /// Who is shown every node.
+    observer: &'a mut O,
+    /// The unrestricted occurrences both premises of the current node need.
+    shared: Vec<OccId>,
 }
 
-impl<'a> Step<'a> {
-    /// The step for node `id`, whose premises have their entries in
-    /// `derived`.
+impl<'a, O: Observer> Pass<'a, O> {
+    /// The pass before its first node.
     fn new(
         proof: &'a Proof,
         mode: Mode,
-        id: NodeId,
-        derived: &'a [Derived],
         reading: Option<&'a Reading<'a>>,
+        observer: &'a mut O,
     ) -> Self {
+        let mut readers = vec![0; proof.nodes().len()];
+        for node in proof.nodes() {
+            for p in node.premises() {
+                readers[p.index()] += 1;
+            }
+        }
+        let mut live = Vec::new();
+        live.resize_with(readers.len(), || None);
         Self {
+            proof,
             forest: proof.forest(),
             mode,
-            id,
-            node: proof.node(id),
-            derived,
             reading,
+            readers,
+            live,
+            observer,
+            shared: Vec::new(),
         }
     }
 
-    /// The error for this node.
-    fn fail(&self, problem: Problem) -> CheckError {
-        CheckError {
-            node: self.id,
-            rule: self.node,
-            premises: self
-                .node
-                .premises()
-                .map(|p| self.derived[p.index()].to_dyadic())
-                .collect(),
-            problem,
+    /// Derives the nodes before `end` in arena order, or returns the first
+    /// that misapplies its rule, uses one the mode forbids or breaks the
+    /// one-succedent condition, with the problem.
+    fn run(&mut self, end: usize) -> Result<(), (NodeId, Problem)> {
+        for id in self.proof.ids().take(end) {
+            let mut facts = Facts::default();
+            let state = self
+                .rule(self.proof.node(id), &mut facts)
+                .and_then(|state| self.one_succedent(state))
+                .map_err(|problem| (id, problem))?;
+            facts.shared = &self.shared;
+            self.observer.derived(id, &state, &facts);
+            // The root has no reader and is read at the end.
+            if self.readers[id.index()] > 0 || id == self.proof.root() {
+                self.live[id.index()] = Some(state);
+            }
+        }
+        Ok(())
+    }
+
+    /// Checks that the root derived `goal` and needs no unrestricted
+    /// occurrence.
+    fn conclude(&self, goal: &[OccId]) -> Result<(), Problem> {
+        let root = self.live[self.proof.root().index()]
+            .as_deref()
+            .expect("the root's sequent is kept");
+        let goal = Bag::of(goal.iter().copied());
+        let concludes = if root.any {
+            root.gamma.is_subset(&goal)
+        } else {
+            root.gamma == goal
+        };
+        if root.theta.is_empty() && concludes {
+            Ok(())
+        } else {
+            Err(Problem::Conclusion(root.to_dyadic()))
         }
     }
 
-    /// What premise `p` derived.
-    fn premise(&self, p: NodeId) -> Derived {
-        self.derived[p.index()].clone()
+    /// What premise `p` derived: the sequent itself for its last reader, a
+    /// copy for the others.
+    fn premise(&mut self, p: NodeId) -> Box<State> {
+        let slot = &mut self.live[p.index()];
+        self.readers[p.index()] -= 1;
+        if self.readers[p.index()] == 0 {
+            slot.take()
+        } else {
+            slot.clone()
+        }
+        .expect("a premise's sequent is kept until its last reader")
+    }
+
+    /// Whether `o` is in output position, under a reading.
+    fn is_output(&self, o: OccId) -> bool {
+        self.reading
+            .is_some_and(|r| r.position(o) == Position::Output)
     }
 
     /// Fails unless `o` has the kind the rule acts on.
-    fn expect(&self, o: OccId, kind: Kind) -> Result<(), CheckError> {
+    fn expect(&self, o: OccId, kind: Kind) -> Result<(), Problem> {
         if self.forest.kind(o) == kind {
             Ok(())
         } else {
-            Err(self.fail(Problem::Kind(o)))
+            Err(Problem::Kind(o))
+        }
+    }
+
+    /// Adds one copy of `o` to the linear zone of `d`.
+    fn put(&self, d: &mut State, o: OccId) {
+        d.gamma.insert(o);
+        let weight = self.observer.weight(o);
+        d.linear += weight;
+        if self.is_output(o) {
+            d.outputs += 1;
+            d.goal += weight;
         }
     }
 
     /// Consumes one copy of `o` from the linear zone of `d`, the derived
-    /// sequent of premise `premise`; a `⊤` above stands in for a missing
-    /// one, but never for a second goal.
-    fn take(&self, d: &mut Derived, o: OccId, premise: usize) -> Result<(), CheckError> {
+    /// sequent of premise `premise`, and returns whether there was none: a
+    /// `⊤` above stands in for a missing one, but never for a second goal.
+    fn take(&self, d: &mut State, o: OccId, premise: usize) -> Result<bool, Problem> {
         if d.gamma.remove(o) {
-            return Ok(());
+            let weight = self.observer.weight(o);
+            d.linear -= weight;
+            if self.is_output(o) {
+                d.outputs -= 1;
+                d.goal -= weight;
+            }
+            return Ok(false);
         }
         if !d.any {
-            return Err(self.fail(Problem::Missing {
+            return Err(Problem::Missing {
                 premise,
                 occurrence: o,
-            }));
+            });
         }
         // The premise's sequent holds `o` besides its zone: one goal at
         // most.
-        if let Some(reading) = self.reading
-            && reading.position(o) == Position::Output
-            && self.outputs(&d.gamma) > 0
-        {
-            return Err(self.fail(Problem::Succedents(2)));
+        if self.is_output(o) && d.outputs > 0 {
+            return Err(Problem::Succedents(2));
         }
-        Ok(())
+        Ok(true)
     }
 
-    /// Counts the formulas of a linear zone in output position, in
-    /// intuitionistic mode.
-    fn outputs(&self, gamma: &Multiset) -> usize {
-        self.reading
-            .map_or(0, |r| r.outputs(gamma.as_slice().iter().copied()))
+    /// The `?` formula an unrestricted occurrence stands for.
+    fn quest(&self, a: OccId) -> OccId {
+        self.forest
+            .parent(a)
+            .expect("an unrestricted occurrence is under a ?")
     }
 
-    /// Checks the one-succedent condition on what the node derived: one
+    /// Checks the one-succedent condition on what a node derived: one
     /// output at most, and exactly one unless a `⊤` above supplies it.
-    fn one_succedent(&self, d: Derived) -> Result<Derived, CheckError> {
-        if self.reading.is_none() {
-            return Ok(d);
-        }
-        let outputs = self.outputs(&d.gamma);
-        if outputs > 1 || (outputs == 0 && !d.any) {
-            return Err(self.fail(Problem::Succedents(outputs)));
+    fn one_succedent(&self, d: Box<State>) -> Result<Box<State>, Problem> {
+        if self.reading.is_some() && (d.outputs > 1 || (d.outputs == 0 && !d.any)) {
+            return Err(Problem::Succedents(d.outputs));
         }
         Ok(d)
     }
@@ -453,104 +721,128 @@ impl<'a> Step<'a> {
         self.forest.right(o).unwrap()
     }
 
-    /// The sequent with only `o` in its linear zone.
-    fn just(&self, o: OccId, any: bool) -> Derived {
-        Derived {
-            theta: self.forest.empty_set(),
-            gamma: Multiset::of([o]),
+    /// The sequent with only the given occurrences in its linear zone.
+    fn just(&self, ids: impl IntoIterator<Item = OccId>, any: bool) -> Box<State> {
+        let mut d = Box::new(State {
+            theta: HashSet::default(),
+            gamma: Bag::default(),
+            outputs: 0,
+            linear: 0,
+            unrestricted: 0,
+            goal: 0,
             any,
+        });
+        for o in ids {
+            self.put(&mut d, o);
+        }
+        d
+    }
+
+    /// Unites the unrestricted zone of `r` into that of `l`, the smaller
+    /// set into the larger, and notes the occurrences both hold.
+    fn unite(&mut self, l: &mut State, r: &mut State) {
+        if r.theta.len() > l.theta.len() {
+            std::mem::swap(&mut l.theta, &mut r.theta);
+            std::mem::swap(&mut l.unrestricted, &mut r.unrestricted);
+        }
+        for a in r.theta.drain() {
+            if l.theta.insert(a) {
+                l.unrestricted += self.observer.weight(self.quest(a));
+            } else {
+                self.shared.push(a);
+            }
         }
     }
 
     /// The sequent both premises of a two-premise rule give together: the
     /// unrestricted zones united, the linear zones summed, absorbing if
     /// either is.
-    fn join(&self, l: Derived, r: Derived) -> Derived {
-        Derived {
-            theta: &l.theta | &r.theta,
-            gamma: l.gamma.sum(&r.gamma),
-            any: l.any || r.any,
-        }
+    fn join(&mut self, mut l: Box<State>, mut r: Box<State>) -> Box<State> {
+        self.unite(&mut l, &mut r);
+        l.gamma.add(std::mem::take(&mut r.gamma));
+        l.outputs += r.outputs;
+        l.linear += r.linear;
+        l.goal += r.goal;
+        l.any |= r.any;
+        l
     }
 
-    /// Derives what the node proves from what its premises derived.
-    fn derive(self) -> Result<Derived, CheckError> {
-        let d = self.rule()?;
-        self.one_succedent(d)
-    }
-
-    /// Applies the node's rule to what its premises derived.
-    fn rule(&self) -> Result<Derived, CheckError> {
+    /// Applies a node's rule to what its premises derived, noting in
+    /// `facts` how it applied.
+    fn rule(&mut self, node: Node, facts: &mut Facts<'_>) -> Result<Box<State>, Problem> {
         use Node::*;
         let f = self.forest;
-        match self.node {
+        self.shared.clear();
+        match node {
             Ax(a, b) => {
                 for o in [a, b] {
                     if !f.is_literal(o) {
-                        return Err(self.fail(Problem::Kind(o)));
+                        return Err(Problem::Kind(o));
                     }
                 }
                 if f.atom(a) != f.atom(b) || f.sign(a) == f.sign(b) {
-                    return Err(self.fail(Problem::NotDual));
+                    return Err(Problem::NotDual);
                 }
-                Ok(Derived {
-                    theta: f.empty_set(),
-                    gamma: Multiset::of([a, b]),
-                    any: false,
-                })
+                Ok(self.just([a, b], false))
             }
             One(o) => {
                 self.expect(o, Kind::One)?;
-                Ok(self.just(o, false))
+                Ok(self.just([o], false))
             }
             Top(o) => {
                 self.expect(o, Kind::Top)?;
-                Ok(self.just(o, true))
+                Ok(self.just([o], true))
             }
             Bot(o, p) => {
                 self.expect(o, Kind::Bot)?;
                 let mut d = self.premise(p);
-                d.gamma.insert(o);
+                self.put(&mut d, o);
                 Ok(d)
             }
             Par(o, p) => {
                 self.expect(o, Kind::Par)?;
                 let mut d = self.premise(p);
-                self.take(&mut d, self.left(o), 0)?;
-                self.take(&mut d, self.right(o), 0)?;
-                d.gamma.insert(o);
+                facts.absent[0] = self.take(&mut d, self.left(o), 0)?;
+                facts.absent[1] = self.take(&mut d, self.right(o), 0)?;
+                self.put(&mut d, o);
                 Ok(d)
             }
             Tensor(o, l, r) => {
                 self.expect(o, Kind::Tensor)?;
                 let (mut dl, mut dr) = (self.premise(l), self.premise(r));
-                self.take(&mut dl, self.left(o), 0)?;
-                self.take(&mut dr, self.right(o), 1)?;
+                facts.needs = [dl.theta.len(), dr.theta.len()];
+                facts.left_goal = dl.outputs > 0 || self.is_output(self.left(o));
+                facts.absent[0] = self.take(&mut dl, self.left(o), 0)?;
+                facts.absent[1] = self.take(&mut dr, self.right(o), 1)?;
                 let mut d = self.join(dl, dr);
-                d.gamma.insert(o);
+                self.put(&mut d, o);
                 Ok(d)
             }
             With(o, l, r) => {
                 self.expect(o, Kind::With)?;
                 let (mut dl, mut dr) = (self.premise(l), self.premise(r));
-                self.take(&mut dl, self.left(o), 0)?;
-                self.take(&mut dr, self.right(o), 1)?;
+                facts.needs = [dl.theta.len(), dr.theta.len()];
+                facts.absent[0] = self.take(&mut dl, self.left(o), 0)?;
+                facts.absent[1] = self.take(&mut dr, self.right(o), 1)?;
                 // The conclusion's context is what both premises can prove
                 // it under: an absorbing premise adapts to the other one.
-                let (gamma, any) = match (dl.any, dr.any) {
-                    (false, false) if dl.gamma == dr.gamma => (dl.gamma, false),
-                    (true, false) if dl.gamma.is_subset(&dr.gamma) => (dr.gamma, false),
-                    (false, true) if dr.gamma.is_subset(&dl.gamma) => (dl.gamma, false),
-                    (true, true) => (dl.gamma.union(&dr.gamma), true),
-                    _ => return Err(self.fail(Problem::Differ)),
+                let mut d = match (dl.any, dr.any) {
+                    (false, false) if dl.gamma == dr.gamma => self.over(dl, dr),
+                    (true, false) if dl.gamma.is_subset(&dr.gamma) => self.over(dr, dl),
+                    (false, true) if dr.gamma.is_subset(&dl.gamma) => self.over(dl, dr),
+                    (true, true) => {
+                        let gamma = std::mem::take(&mut dr.gamma);
+                        dl.gamma.unite(gamma);
+                        let mut d = self.over(dl, dr);
+                        d.any = true;
+                        self.recount(&mut d);
+                        d
+                    }
+                    _ => return Err(Problem::Differ),
                 };
-                let mut gamma = gamma;
-                gamma.insert(o);
-                Ok(Derived {
-                    theta: &dl.theta | &dr.theta,
-                    gamma,
-                    any,
-                })
+                self.shared.clear();
+                self.put(&mut d, o);
+                Ok(d)
             }
             Plus(o, side, p) => {
                 self.expect(o, Kind::Plus)?;
@@ -559,64 +851,90 @@ impl<'a> Step<'a> {
                     Side::Left => self.left(o),
                     Side::Right => self.right(o),
                 };
-                self.take(&mut d, chosen, 0)?;
-                d.gamma.insert(o);
+                facts.absent[0] = self.take(&mut d, chosen, 0)?;
+                self.put(&mut d, o);
                 Ok(d)
             }
             Bang(o, p) => {
                 self.expect(o, Kind::Bang)?;
                 let mut d = self.premise(p);
-                self.take(&mut d, self.left(o), 0)?;
+                facts.absent[0] = self.take(&mut d, self.left(o), 0)?;
                 if !d.gamma.is_empty() {
-                    return Err(self.fail(Problem::NotEmpty));
+                    return Err(Problem::NotEmpty);
                 }
                 // Promotion fixes the linear zone: a ⊤ above cannot absorb
                 // past it.
-                Ok(Derived {
-                    theta: d.theta,
-                    gamma: Multiset::of([o]),
-                    any: false,
-                })
+                d.any = false;
+                self.put(&mut d, o);
+                Ok(d)
             }
             Quest(o, p) => {
                 self.expect(o, Kind::Quest)?;
                 let mut d = self.premise(p);
-                d.theta.remove(self.left(o));
-                d.gamma.insert(o);
+                if d.theta.remove(&self.left(o)) {
+                    facts.used = true;
+                    d.unrestricted -= self.observer.weight(o);
+                }
+                self.put(&mut d, o);
                 Ok(d)
             }
             Copy(a, p) => {
                 if f.parent(a).map(|q| f.kind(q)) != Some(Kind::Quest) {
-                    return Err(self.fail(Problem::NotUnderQuest(a)));
+                    return Err(Problem::NotUnderQuest(a));
                 }
                 let mut d = self.premise(p);
-                self.take(&mut d, a, 0)?;
-                d.theta.insert(a);
+                facts.absent[0] = self.take(&mut d, a, 0)?;
+                if d.theta.insert(a) {
+                    d.unrestricted += self.observer.weight(self.quest(a));
+                } else {
+                    facts.used = true;
+                }
                 Ok(d)
             }
             Weaken(o, p) => {
                 // Weakening a `?` formula is a rule of every mode; the goal
                 // is never weakened.
                 if !self.mode.affine && f.kind(o) != Kind::Quest {
-                    return Err(self.fail(Problem::Forbidden));
+                    return Err(Problem::Forbidden);
                 }
-                if self
-                    .reading
-                    .is_some_and(|r| r.position(o) == Position::Output)
-                {
-                    return Err(self.fail(Problem::Succedents(0)));
+                if self.is_output(o) {
+                    return Err(Problem::Succedents(0));
                 }
                 let mut d = self.premise(p);
-                d.gamma.insert(o);
+                self.put(&mut d, o);
                 Ok(d)
             }
             Mix(l, r) => {
                 // Mix has no intuitionistic form: a premise would lack the
                 // goal.
                 if !self.mode.mix || self.mode.intuitionistic {
-                    return Err(self.fail(Problem::Forbidden));
+                    return Err(Problem::Forbidden);
                 }
-                Ok(self.join(self.premise(l), self.premise(r)))
+                let (dl, dr) = (self.premise(l), self.premise(r));
+                facts.needs = [dl.theta.len(), dr.theta.len()];
+                facts.left_goal = dl.outputs > 0;
+                Ok(self.join(dl, dr))
+            }
+        }
+    }
+
+    /// The conclusion of a `&` whose linear zone is that of `keep`: its
+    /// sequent with the unrestricted zone of `other` united into it.
+    fn over(&mut self, mut keep: Box<State>, mut other: Box<State>) -> Box<State> {
+        self.unite(&mut keep, &mut other);
+        keep
+    }
+
+    /// Counts the outputs and the weights of the linear zone of `d` anew,
+    /// after it was replaced.
+    fn recount(&self, d: &mut State) {
+        (d.outputs, d.linear, d.goal) = (0, 0, 0);
+        for (o, n) in d.gamma.counts() {
+            let weight = self.observer.weight(o) * u64::from(n);
+            d.linear += weight;
+            if self.is_output(o) {
+                d.outputs += n as usize;
+                d.goal += weight;
             }
         }
     }
@@ -625,6 +943,8 @@ impl<'a> Step<'a> {
 #[cfg(all(test, feature = "parse"))]
 mod tests {
     use super::*;
+    use crate::proofs::oracle;
+    use crate::search::generate::Rng;
     use crate::{Error, Sequent};
 
     /// Wraps a raw occurrence id.
@@ -644,6 +964,175 @@ mod tests {
         let s: Sequent = input.parse().unwrap_or_else(|e| panic!("{input:?}: {e}"));
         let root = n(nodes.len() as u32 - 1);
         Proof::new(Forest::new(&s).unwrap(), nodes, root).unwrap()
+    }
+
+    /// A proof with one node changed at random, or none when the change
+    /// does not leave a proof term: another occurrence, another premise,
+    /// another rule on the same operands, the premises swapped, or a
+    /// weakening in the node's place.
+    fn mutant(rng: &mut Rng, proof: &Proof) -> Option<Proof> {
+        use Node::*;
+        let mut nodes = proof.nodes().to_vec();
+        let i = rng.below(nodes.len());
+        let occurrences = proof.forest().len();
+        let occ = |rng: &mut Rng| o(rng.below(occurrences) as u32);
+        let earlier = |rng: &mut Rng| n(rng.below(i.max(1)) as u32);
+        let unary = |k: usize, o: OccId, p: NodeId| match k % 8 {
+            0 => Bot(o, p),
+            1 => Par(o, p),
+            2 => Bang(o, p),
+            3 => Quest(o, p),
+            4 => Copy(o, p),
+            5 => Weaken(o, p),
+            6 => Plus(o, Side::Left, p),
+            _ => Plus(o, Side::Right, p),
+        };
+        let choice = rng.below(5);
+        nodes[i] = match (nodes[i], choice) {
+            (Ax(a, _), 0) => Ax(a, occ(rng)),
+            (Ax(a, b), 1) => Ax(b, a),
+            (Ax(a, _), 2) => One(a),
+            (Ax(_, b), 3) => Top(b),
+            (One(a) | Top(a), 0 | 1) => Ax(a, occ(rng)),
+            (One(a), _) => Top(a),
+            (Top(a), _) => One(a),
+            (Tensor(_, l, r) | With(_, l, r), 0) => Tensor(occ(rng), l, r),
+            (Tensor(a, _, r), 1) => Tensor(a, earlier(rng), r),
+            (With(a, l, _), 1) => With(a, l, earlier(rng)),
+            (Tensor(a, l, r), 2) => With(a, l, r),
+            (With(a, l, r), 2) => Tensor(a, l, r),
+            (Tensor(a, l, r), 3) => Tensor(a, r, l),
+            (With(a, l, r), 3) => With(a, r, l),
+            (Tensor(_, l, r) | With(_, l, r), _) => Mix(l, r),
+            (Mix(l, r), 0 | 1) => Tensor(occ(rng), l, r),
+            (Mix(l, r), 2) => With(occ(rng), l, r),
+            (Mix(l, r), 3) => Mix(r, l),
+            (Mix(l, _), _) => Mix(l, earlier(rng)),
+            (node, 0) => unary(rng.below(8), occ(rng), node.premises().next()?),
+            (node, 1) => unary(rng.below(8), node.occurrences().next()?, earlier(rng)),
+            (node, 2) => unary(
+                rng.below(8),
+                node.occurrences().next()?,
+                node.premises().next()?,
+            ),
+            (node, 3) => Weaken(occ(rng), node.premises().next()?),
+            (Ax(a, _), _) => Ax(a, a),
+            (node, _) => {
+                let p = node.premises().next()?;
+                Mix(p, earlier(rng))
+            }
+        };
+        Proof::new(proof.forest().clone(), nodes, proof.root()).ok()
+    }
+
+    /// The checker agrees with its first implementation, which keeps every
+    /// node's sequent, on the verdict and on the error: on the proofs the
+    /// engines find of generated sequents, classical and intuitionistic,
+    /// and of the smallest instance of every family, in the mode they were
+    /// found in and in the others, and on mutants of them.
+    #[test]
+    fn agrees_with_the_first_implementation() {
+        use crate::search::generate::{self, IllRules, Rules};
+        use crate::search::{Options, Verdict, prove_until};
+        let classical = Mode::CLASSICAL;
+        let mut cases: Vec<(String, Mode, Options)> = vec![];
+        for (k, rules) in Rules::ALL.into_iter().enumerate() {
+            let mut rng = Rng::new(900 + k as u64);
+            for _ in 0..25 {
+                let budget = 2 + rng.below(9);
+                let provable = generate::provable(&mut rng, rules, 3, budget);
+                let mode = if rules.mix {
+                    classical.with_mix()
+                } else {
+                    classical
+                };
+                let options = Options::default().copies(provable.copies);
+                let text = generate::sequent(&provable.formulas);
+                cases.push((text.clone(), mode, options.clone()));
+                cases.push((text, mode.affine(), options));
+            }
+        }
+        for (k, rules) in IllRules::ALL.into_iter().enumerate() {
+            let mut rng = Rng::new(950 + k as u64);
+            for _ in 0..25 {
+                let budget = 2 + rng.below(9);
+                let ill = generate::ill(&mut rng, rules, 3, budget);
+                let options = Options::default().copies(ill.copies);
+                let text = generate::two_sided(&ill.hypotheses, &ill.goal);
+                cases.push((text.clone(), Mode::INTUITIONISTIC, options.clone()));
+                cases.push((text, Mode::INTUITIONISTIC.affine(), options));
+            }
+        }
+        let mut proofs: Vec<(Proof, Mode)> = vec![];
+        for (text, mode, options) in cases {
+            let sequent: Sequent = text.parse().unwrap();
+            let mut polls = 0;
+            let outcome = prove_until(&sequent, mode, &options, || {
+                polls += 1;
+                polls > 20_000
+            });
+            if let Ok(Verdict::Proved(proof)) = outcome.map(|o| o.verdict) {
+                proofs.push((*proof, mode));
+            }
+        }
+        for family in crate::families::FAMILIES {
+            let instance = family.instance(family.sizes[0], 0);
+            let options = match instance.copies {
+                Some(copies) => Options::default().copies(copies),
+                None => Options::default(),
+            };
+            let mut polls = 0;
+            let outcome = prove_until(&instance.sequent, instance.mode, &options, || {
+                polls += 1;
+                polls > 20_000
+            });
+            if let Ok(Verdict::Proved(proof)) = outcome.map(|o| o.verdict) {
+                proofs.push((*proof, instance.mode));
+            }
+        }
+        assert!(proofs.len() > 1000, "{} proofs", proofs.len());
+
+        let modes = [
+            classical,
+            classical.affine().with_mix(),
+            Mode::INTUITIONISTIC,
+            Mode::INTUITIONISTIC.affine(),
+        ];
+        let mut rng = Rng::new(7);
+        let (mut mutants, mut rejected) = (0, 0);
+        for (proof, mode) in &proofs {
+            assert_eq!(check(proof, *mode), Ok(()), "{}", proof.sequent());
+            for mode in modes {
+                assert_eq!(
+                    check(proof, mode),
+                    oracle::check(proof, mode),
+                    "{} in {mode} mode",
+                    proof.sequent()
+                );
+            }
+            for _ in 0..8 {
+                let Some(mutant) = mutant(&mut rng, proof) else {
+                    continue;
+                };
+                mutants += 1;
+                for mode in [*mode, classical.affine().with_mix()] {
+                    let result = check(&mutant, mode);
+                    rejected += u32::from(result.is_err());
+                    assert_eq!(
+                        result,
+                        oracle::check(&mutant, mode),
+                        "{:?} of {} in {mode} mode",
+                        mutant.nodes(),
+                        mutant.sequent()
+                    );
+                }
+            }
+        }
+        assert!(mutants > 5000, "{mutants} mutants");
+        assert!(
+            rejected > mutants,
+            "{rejected} of {mutants} mutants rejected"
+        );
     }
 
     /// Every rule applied correctly is accepted: the multiplicatives and

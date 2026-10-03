@@ -22,10 +22,11 @@
 //! `⅋` on one, `!L` for a dereliction, and so on), and what a `⊤` absorbs
 //! is distributed so that each premise keeps exactly one goal.
 
-use super::check::{self, CheckError, Derived};
+use super::check::{self, CheckError, Facts, Observer, State};
 use super::multiset::Multiset;
 use super::{Node, NodeId, Proof, Side};
 use crate::fragment::Mode;
+use crate::hash::HashMap;
 use crate::occurrences::{Forest, OccId, Position, Reading};
 use crate::sequents::Kind;
 use std::fmt::{Display, Formatter, Result as FmtResult};
@@ -383,17 +384,17 @@ impl<'a> Derivation<'a> {
         mode: Mode,
         reading: Option<Reading<'a>>,
     ) -> Result<Self, CheckError> {
-        let derived = check::derive(proof, mode, reading.as_ref())?;
-        check::conclude(proof, mode, &derived)?;
+        let roots = proof.forest().roots();
+        let mut record = Record::new(proof);
+        check::examine(proof, roots, mode, reading.as_ref(), &mut record)?;
         let inferences = {
             let mut build = Build {
                 proof,
-                derived: &derived,
+                record: &record,
                 reading: reading.as_ref(),
-                inferences: Vec::with_capacity(derived.len()),
+                inferences: Vec::with_capacity(proof.nodes().len()),
             };
-            let roots = Multiset::of(proof.forest().roots().iter().copied());
-            build.build(proof.root(), roots);
+            build.build(proof.root(), Multiset::of(roots.iter().copied()));
             build.inferences
         };
         Ok(Self {
@@ -422,44 +423,21 @@ impl<'a> Derivation<'a> {
     /// as the search from a goal returns it, into the inferences of its
     /// derivation, premises before conclusions and the root last, two-sided
     /// in intuitionistic mode. Fails as the checker would on a node that
-    /// misapplies its rule; that the root concludes the goal is the
-    /// engine's guarantee.
+    /// misapplies its rule and on a root that does not conclude the goal.
     pub(crate) fn of_goal(
         proof: &'a Proof,
         goal: &[OccId],
         mode: Mode,
     ) -> Result<Vec<Inference>, CheckError> {
-        let reading = if mode.intuitionistic {
-            match Reading::new(proof.forest()) {
-                Ok(reading) => Some(reading),
-                Err(e) => {
-                    return Err(CheckError {
-                        node: proof.root(),
-                        rule: proof.node(proof.root()),
-                        premises: vec![],
-                        problem: check::Problem::Shape(e),
-                    });
-                }
-            }
-        } else {
-            None
-        };
-        let derived = check::derive(proof, mode.affine(), reading.as_ref())?;
+        let reading = check::reading(proof, mode)?;
+        let mut record = Record::new(proof);
+        check::examine(proof, goal, mode.affine(), reading.as_ref(), &mut record)?;
         let goal = Multiset::of(goal.iter().copied());
-        debug_assert!({
-            let d = &derived[proof.root().index()];
-            d.theta.is_empty()
-                && if d.any {
-                    d.gamma.is_subset(&goal)
-                } else {
-                    d.gamma == goal
-                }
-        });
         let mut build = Build {
             proof,
-            derived: &derived,
+            record: &record,
             reading: reading.as_ref(),
-            inferences: Vec::with_capacity(derived.len()),
+            inferences: Vec::with_capacity(proof.nodes().len()),
         };
         build.build(proof.root(), goal);
         Ok(build.inferences)
@@ -492,12 +470,80 @@ impl<'a> Derivation<'a> {
     }
 }
 
+/// What the translation reads off the checker's pass: for every node a
+/// flag or two, and the sequent of the nodes where a context is split or
+/// padded, which the derivation shows anyway.
+struct Record<'a> {
+    /// The forest.
+    forest: &'a Forest,
+    /// Whether a `⊤` in a node's subproof absorbs any context.
+    absorbs: Vec<bool>,
+    /// For a `?` step, whether a copy above uses its formula; for a copy,
+    /// whether another copy above uses the same occurrence.
+    used: Vec<bool>,
+    /// The nodes whose sequent is kept: every `⊗` and Mix, and the
+    /// premises of `⊗`, Mix and `&`.
+    kept: Vec<bool>,
+    /// The standard sequents of the kept nodes: `?Θ` and `Γ` as the
+    /// checker found them.
+    standard: HashMap<NodeId, Multiset>,
+    /// For a `⊗` or Mix, the unrestricted occurrences both premises need,
+    /// ascending, where there are any.
+    shared: HashMap<NodeId, Vec<OccId>>,
+}
+
+impl<'a> Record<'a> {
+    /// The record of a proof the checker has yet to pass over.
+    fn new(proof: &'a Proof) -> Self {
+        let len = proof.nodes().len();
+        let mut kept = vec![false; len];
+        for id in proof.ids() {
+            let node = proof.node(id);
+            if matches!(node, Node::Tensor(..) | Node::Mix(..)) {
+                kept[id.index()] = true;
+            }
+            if matches!(node, Node::Tensor(..) | Node::Mix(..) | Node::With(..)) {
+                for p in node.premises() {
+                    kept[p.index()] = true;
+                }
+            }
+        }
+        Self {
+            forest: proof.forest(),
+            absorbs: vec![false; len],
+            used: vec![false; len],
+            kept,
+            standard: HashMap::default(),
+            shared: HashMap::default(),
+        }
+    }
+}
+
+impl Observer for Record<'_> {
+    fn derived(&mut self, id: NodeId, state: &State, facts: &Facts<'_>) {
+        self.absorbs[id.index()] = state.absorbs();
+        self.used[id.index()] = facts.used;
+        if self.kept[id.index()] {
+            let quests = state.unrestricted().map(|a| self.forest.parent(a).unwrap());
+            let linear = state
+                .linear()
+                .flat_map(|(o, n)| std::iter::repeat_n(o, n as usize));
+            self.standard.insert(id, Multiset::of(quests.chain(linear)));
+        }
+        if !facts.shared.is_empty() {
+            let mut shared = facts.shared.to_vec();
+            shared.sort_unstable();
+            self.shared.insert(id, shared);
+        }
+    }
+}
+
 /// The translation in progress.
 struct Build<'a> {
     /// The proof being unfolded.
     proof: &'a Proof,
-    /// What the checker derived for each node.
-    derived: &'a [Derived],
+    /// What the checker derived for the nodes.
+    record: &'a Record<'a>,
     /// The intuitionistic reading, for a two-sided derivation.
     reading: Option<&'a Reading<'a>>,
     /// The inferences made so far.
@@ -518,18 +564,12 @@ impl Build<'_> {
     /// The standard sequent a subproof derives: `?Θ` and `Γ` as the checker
     /// found them.
     fn standard(&self, id: NodeId) -> Multiset {
-        let d = &self.derived[id.index()];
-        Multiset::of(
-            d.theta
-                .iter()
-                .map(|a| self.quest(a))
-                .chain(d.gamma.as_slice().iter().copied()),
-        )
+        self.record.standard[&id].clone()
     }
 
     /// Whether a `⊤` in the subproof absorbs any context.
     fn absorbs(&self, id: NodeId) -> bool {
-        self.derived[id.index()].any
+        self.record.absorbs[id.index()]
     }
 
     /// Adds an inference and returns its id; in a two-sided derivation the
@@ -616,7 +656,7 @@ impl Build<'_> {
                 self.infer(actual, rule, Some(o), vec![premise])
             }
             Quest(o, p) => {
-                if self.derived[p.index()].theta.contains(left(o)) {
+                if self.record.used[id.index()] {
                     // Used above: `?A` in Γ becomes `?A` in Θ, which the
                     // standard sequent does not distinguish.
                     self.build(p, actual)
@@ -628,7 +668,7 @@ impl Build<'_> {
             }
             Copy(a, p) => {
                 let q = self.quest(a);
-                if self.derived[p.index()].theta.contains(a) {
+                if self.record.used[id.index()] {
                     // Used again above: derelict the copy, then contract it
                     // with the `?A` that stays.
                     let up = above(&actual, &[], &[a]);
@@ -707,8 +747,8 @@ impl Build<'_> {
             sequent.insert(o);
         }
         let mut inference = self.infer(sequent.clone(), rule, principal, vec![pl, pr]);
-        let shared = &self.derived[l.index()].theta & &self.derived[r.index()].theta;
-        for a in shared.iter() {
+        let record = self.record;
+        for &a in record.shared.get(&id).map_or(&[][..], Vec::as_slice) {
             let q = self.quest(a);
             sequent.remove(q);
             inference = self.infer(sequent.clone(), Rule::Contraction, Some(q), vec![inference]);

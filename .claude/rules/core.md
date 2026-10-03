@@ -233,17 +233,65 @@ serve step 8. Invariants:
 with any engine and must not: an engine's proofs are validated by something
 that cannot repeat the engine's mistakes. Engines only call `Proof::check`.
 
-- One bottom-up pass in arena order, no recursion. Each node gets a
-  `Derived { theta, gamma, any }`: `gamma` is the linear zone as a sorted
-  multiset (`proofs/multiset.rs`, a `Vec<OccId>` with repeats: copies can
-  repeat an occurrence and every subformula of a copied formula), `theta`
-  the **least** unrestricted zone the subproof needs (`Copy` adds the
-  occurrence, `Quest` removes its subformula), and `any` says a `⊤` above
-  absorbs any further linear context. The claim the tests and the review
-  rest on: `Derived` characterises exactly the set of dyadic sequents the
-  subterm proves. At the root, `theta` must be empty (every copy has its
-  `?` step below it) and `gamma` must equal the roots, or be a sub-multiset
-  of them under `any`.
+- One bottom-up pass in arena order, no recursion (`Pass`). Each node
+  gets a `State { theta, gamma, any, … }`: `gamma` is the linear zone as
+  a multiset (`Bag`, a table of counts: copies can repeat an occurrence
+  and every subformula of a copied formula), `theta` the **least**
+  unrestricted zone the subproof needs (`Copy` adds the occurrence,
+  `Quest` removes its subformula), and `any` says a `⊤` above absorbs any
+  further linear context. The claim the tests and the review rest on:
+  `State` characterises exactly the set of dyadic sequents the subterm
+  proves. At the root, `theta` must be empty (every copy has its `?` step
+  below it) and `gamma` must equal the roots, or be a sub-multiset of them
+  under `any`.
+- **The pass holds only the sequents a later node still reads.**
+  `readers` counts, per node, the premise references to it; a node's
+  `State` is built from its premises' own, the last reader *taking* a
+  premise's state and changing it in place, an earlier reader a clone,
+  and a state with no reader left is gone. Both zones are hash tables of
+  their members (the crate's fixed-seed hasher), so a state costs what it
+  holds and nothing for the forest's width, an insertion or a removal
+  costs the same whatever the zone's size, and the two-premise rules pour
+  the smaller table into the larger. The number of members in output
+  position is kept in the state, never recounted (a recount per node made
+  the intuitionistic check quadratic in a zone of thousands). What this
+  buys, and what it does not: on a proof without shared subproofs the
+  live states are those of disjoint subtrees, each no larger than twice
+  its subtree, so the memory is linear in the proof whatever the order of
+  the arena; a node read by several others is cloned for all but the
+  last, so a proof whose shared nodes have large zones can still take
+  nodes × zone (the weakenings of one large sequent under a tower of `&`
+  is the shape), which no engine's proofs were seen to do. The first
+  implementation kept every node's sequent with a bitset as wide as the
+  forest (6 GiB on a net of 65 000 clauses whose proof the search finds
+  in 43 ms; the new pass checks it in a few milliseconds within the
+  search's own memory). It is kept as `proofs/oracle.rs`, compiled for
+  tests only, and `agrees_with_the_first_implementation` requires the
+  same verdict *and the same error* from both on the engines' proofs of
+  the generated sequents and the families, in every mode, and on mutants
+  of them: a change to a rule is made in both, or the test says where
+  they part.
+- **An error costs a second pass.** The states a failing node read are
+  gone or changed by the time it fails, so `examine` runs the pass again
+  up to that node with its premises pinned (one reader more) and reports
+  their sequents from there. `Problem` is found by the first pass; the
+  second cannot fail before the node.
+- **`examine(proof, goal, mode, reading, observer)` is the one pass
+  behind everything**: `check` is it on the roots with no observer; the
+  derivation view and the size estimate are observers (`Observer`: every
+  node's `State` in arena order and the `Facts` of how its rule applied:
+  `used`, `shared`, `absent`, `needs`, `left_goal`), so what they know of
+  a proof is what the checker derived, never a second reading of the
+  rules. An observer may give occurrences a `weight`, which a state adds
+  up over its zones as they change (`State::weight`, `goal_weight`); the
+  checker's own observer is `()` and the sums are zeros. A goal other
+  than the roots is checked the same way (`Derivation::of_goal`).
+- **A malformed term can still take memory beyond its size**: `Mix(p, p)`
+  or a `⊗` on a `⊤` premise taken twice doubles a zone per node, in this
+  pass as in the first implementation, before the root rejects it. No
+  engine builds such a term; a proof file can. A zone longer than the
+  roots plus the nodes still to come can never be consumed, which would
+  be the test.
 - The `any` flag is what makes `⊤` checkable without a recorded context:
   consuming a subformula from an absorbing premise succeeds when it is
   absent; `⊗` and Mix sum the zones and or the flags; `&` needs equal zones,
@@ -318,7 +366,16 @@ so structural rules appear only where needed:
 The builder recurses over the tree, so its depth is the derivation's
 height, and a DAG with heavy sharing unfolds to a tree exponentially
 larger than the arena. `Derivation::new` checks the term first (any mode)
-and fails as the checker would.
+and fails as the checker would. What the builder knows of the term comes
+from the checker's pass through an observer (`Record`): a flag per node
+for `absorbs` and for `used` (a `?` step whose formula a copy above uses,
+a copy whose occurrence is copied again above), the shared unrestricted
+occurrences of a `⊗` or Mix, and the standard sequent `?Θ, Γ` only where
+the builder splits or pads a context, which is at every `⊗` and Mix and
+at the premises of `⊗`, Mix and `&`. Those sequents appear in the
+derivation anyway, so the record is never larger than what is built; a
+table of every node's sequent would be, by any factor, on a chain of `?`
+steps (which are no inferences).
 
 `Rule::Open` is the rule of an open goal in the derivation of a proof in
 progress (below) and appears nowhere else; `Rule::classical` maps every
@@ -1517,11 +1574,11 @@ bound on the time then no longer holds in theory, but the identity of
 depth 16 (7.9 million pairs without a cap) is decided with the default
 limit of 2²⁰ in 11.7 million visits instead of 10.7 million, in less
 time (a table that fits the cache) and in 0.1 GB instead of 0.46 GB.
-What takes gigabytes on such a proof is not the search but the checker,
-whose `derive` keeps a `Θ` bitset of the forest's width for every node
-(262 141 nodes of 32 KB at depth 16, 7.6 GB): the first baseline's
-"8 GB of memo" was this, measured by the peak before and after the
-check. It is the checker's to fix, not the engines'.
+What took gigabytes on such a proof was not the search but the checker's
+first implementation, which kept a `Θ` bitset of the forest's width for
+every node (262 141 nodes of 32 KB at depth 16, 7.6 GB): the first
+baseline's "8 GB of memo" was this, measured by the peak before and
+after the check. The checker no longer keeps one ("The checker").
 
 ## Export
 

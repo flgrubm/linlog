@@ -26,6 +26,9 @@ mod fmt;
 pub mod interactive;
 /// Multisets of occurrence ids.
 mod multiset;
+/// The checker's first implementation, which the tests compare it with.
+#[cfg(test)]
+mod oracle;
 
 pub use check::{CheckError, Described, Dyadic, Problem};
 pub use derivation::{Derivation, InfId, Inference, Rule, UnknownRule};
