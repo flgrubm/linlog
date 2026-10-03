@@ -40,8 +40,7 @@ impl SequentInput {
         if self.json_input {
             serde_json::from_str(&text).context("not a sequent in JSON")
         } else {
-            let text = text.trim();
-            text.parse().map_err(|e| crate::parse_error(text, e))
+            text.parse().map_err(|e| crate::parse_error(&text, e))
         }
     }
 }

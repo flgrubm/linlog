@@ -76,23 +76,85 @@ pub fn catch_interrupt() {
     });
 }
 
+/// How many characters of the input a parse error shows on either side of
+/// the place where parsing failed.
+const CONTEXT: usize = 60;
+
 /// Returns a parse error as a message that points at the place in the input
-/// where parsing failed.
+/// where parsing failed: the line of the input the place is in, with a
+/// caret under the character there. Of a long line only the part around
+/// the place is shown, with `…` where it is cut, and the message then
+/// says which character of the line it is, counting from 1; for an input
+/// of several lines it says which line as well.
 pub fn parse_error(input: &str, error: Error) -> anyhow::Error {
     let Error::SequentParsing(errors) = &error else {
         return error.into();
     };
-    if input.is_empty() {
+    if input.trim().is_empty() {
         return anyhow::Error::msg("the input is empty; the empty sequent is written |-");
     }
     let mut message = String::from("cannot parse the sequent");
     for e in errors {
-        let column = input[..e.span.start].chars().count();
+        // The end of the input is shown after its last visible character,
+        // and a place that is none of this input's as its nearest.
+        let mut at = match e.found {
+            Some(_) => e.span.start.min(input.len()),
+            None => input.trim_end().len(),
+        };
+        while !input.is_char_boundary(at) {
+            at -= 1;
+        }
+        let (before, after) = input.split_at(at);
+        let line = before.rfind('\n').map_or(0, |end| end + 1);
+        let before = &before[line..];
+        let after = &after[..after.find('\n').unwrap_or(after.len())];
+        // The part shown starts at most `CONTEXT` characters before the
+        // place and ends at most as many after its start.
+        let from = before
+            .char_indices()
+            .rev()
+            .nth(CONTEXT - 1)
+            .map_or(0, |(start, _)| start);
+        let to = after
+            .char_indices()
+            .nth(CONTEXT)
+            .map_or(after.len(), |(end, _)| end);
+        // A tab or another character without a width of one would move
+        // the caret off its place.
+        let shown = |part: &str| -> String {
+            part.chars()
+                .map(|c| {
+                    if c.is_whitespace() || c.is_control() {
+                        ' '
+                    } else {
+                        c
+                    }
+                })
+                .collect()
+        };
+        let cut = |is_cut: bool| if is_cut { "…" } else { "" };
+        let indent = usize::from(from > 0) + before[from..].chars().count();
         let found = match &e.found {
             Some(token) => format!("unexpected {token:?}"),
             None => "unexpected end of input".into(),
         };
-        write!(message, "\n  {input}\n  {:column$}^ {found}", "").unwrap();
+        write!(
+            message,
+            "\n  {}{}{}{}\n  {}^ {found}",
+            cut(from > 0),
+            shown(&before[from..]),
+            shown(&after[..to]),
+            cut(to < after.len()),
+            " ".repeat(indent),
+        )
+        .unwrap();
+        let character = before.chars().count() + 1;
+        if input.trim_end().contains('\n') {
+            let number = input[..line].matches('\n').count() + 1;
+            write!(message, " at line {number}, character {character}").unwrap();
+        } else if from > 0 {
+            write!(message, " at character {character}").unwrap();
+        }
     }
     anyhow::Error::msg(message)
 }

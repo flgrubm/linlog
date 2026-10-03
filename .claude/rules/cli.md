@@ -20,12 +20,19 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
 - `lib.rs`: the package's library `linlog_cli`, which holds everything
   (public modules, so rustdoc documents them next to the core crate under
   a name of their own): dispatch, the exit status, the Ctrl-C flag, and
-  the parse error with a caret under the failing character. `main.rs` is
+  the parse error with a caret under the failing character
+  (`parse_error`: the line of the input the character is in; of a long
+  line the `CONTEXT` characters on either side, with `…` where it is
+  cut, and then the character's number in the line, as the line's number
+  when the input has several; the caret's indent is written as spaces,
+  never as a format width, which panics above 65 535). `main.rs` is
   one call into it and is `doc = false`: the binary is named `linlog` like
   the core crate, and documenting it would overwrite the library's docs.
 - `io.rs`: input from the argument, `--file` (`-` is standard input) or
   standard input, refused when standard input is a terminal; output to
-  `--output` or standard output.
+  `--output` or standard output. The text goes to the parser as it was
+  read, untrimmed, so that the line and character a parse error names
+  are those of the file.
 - `interact.rs`: `interact`, a line-based session over `Interactive`:
   the state comes from the sequent argument or `--state FILE` (a session
   `save` wrote; the mode is then the file's), the commands from standard

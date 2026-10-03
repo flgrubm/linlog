@@ -32,6 +32,45 @@ fn linlog(args: &[&str], stdin: &str) -> (i32, String, String) {
     )
 }
 
+/// A parse error shows the line it is in with a caret under the character
+/// that cannot go on a sequent. Of a long line it shows the part around
+/// that character, cut between characters, and says which character it
+/// is; in an input of several lines it says which line.
+#[test]
+fn parse_errors() {
+    let error = |args: &[&str], stdin: &str| {
+        let (status, out, err) = linlog(args, stdin);
+        assert_eq!((status, out.as_str()), (2, ""), "{err}");
+        err
+    };
+    assert_eq!(
+        error(&["seq", "fragment", "|- A * )"], ""),
+        "error: cannot parse the sequent\n  |- A * )\n         ^ unexpected \")\"\n"
+    );
+
+    // The 70 001st character of one line, after 17 499 characters of
+    // three bytes each.
+    let head = format!("|- a{}", " ⊗ a".repeat(17_499));
+    assert_eq!(head.chars().count(), 70_000);
+    let input = format!("{head}${}", " ⊗ a".repeat(100));
+    assert_eq!(
+        error(&["seq", "fragment"], &input),
+        format!(
+            "error: cannot parse the sequent\n  …{}${} ⊗ …\n  {}^ unexpected \"$\" at \
+             character 70001\n",
+            " ⊗ a".repeat(15),
+            " ⊗ a".repeat(14),
+            " ".repeat(61)
+        )
+    );
+
+    assert_eq!(
+        error(&["seq", "fragment"], "A,\n  B * |- C\n"),
+        "error: cannot parse the sequent\n    B * |- C\n        ^ unexpected \"|\" at line 2, \
+         character 7\n"
+    );
+}
+
 /// `--timeout` ends a search that would run for hours (2⁴² splits that no
 /// count cuts) with an unknown verdict, the limit in its line and exit
 /// status 3, on one thread and on a pool; and it counts from the start of
