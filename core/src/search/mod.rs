@@ -469,9 +469,6 @@ pub struct Options {
     /// How many threads the search may use; one runs the sequential
     /// engines.
     jobs: usize,
-    /// Whether the workers of a parallel search order the alternatives of
-    /// their choices by seeds of their own rather than by id.
-    portfolio: bool,
     /// How the focused engine picks each atom's positive literal.
     bias: Bias,
     /// The most copies of `?` formulas one branch may take in the forward
@@ -501,7 +498,6 @@ impl Default for Options {
             test_period: None,
             copies: Self::DEFAULT_COPIES,
             jobs: 1,
-            portfolio: false,
             bias: Bias::Auto,
             forward_copies: Self::DEFAULT_FORWARD_COPIES,
             check: Self::DEFAULT_CHECK,
@@ -619,15 +615,6 @@ impl Options {
             jobs: jobs.max(1),
             ..self
         }
-    }
-
-    /// Sets whether the workers of a parallel search try the alternatives
-    /// of a choice in orders of their own, one seed per worker, rather
-    /// than in the order by id the sequential engine uses: a portfolio,
-    /// which can find a proof sooner and cannot change a verdict. Without
-    /// the `parallel` feature, or on one thread, it has no effect.
-    pub fn portfolio(self, portfolio: bool) -> Self {
-        Self { portfolio, ..self }
     }
 
     /// Sets how the focused engine picks the positive literal of every

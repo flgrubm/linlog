@@ -649,12 +649,6 @@ struct Engine<'a> {
     /// How many choices among alternatives on this branch ran on several
     /// threads: the levels of cube-and-conquer above the current sequent.
     or_depth: u32,
-    /// The seed of the order in which this engine tries the alternatives
-    /// of a choice, zero for the order by id.
-    seed: u64,
-    /// Whether the workers of a parallel search order their choices by
-    /// seeds of their own.
-    portfolio: bool,
     /// The stable sequents of the current branch, the root end first; only
     /// the first `stack_len` are live, the rest are spare buffers.
     stack: Vec<Key>,
@@ -731,8 +725,6 @@ impl<'a> Engine<'a> {
             #[cfg(feature = "parallel")]
             runtime: None,
             or_depth: 0,
-            seed: 0,
-            portfolio: options.portfolio,
             stack: Vec::new(),
             hashes: Vec::new(),
             stack_len: 0,
@@ -1134,7 +1126,7 @@ impl<'a> Engine<'a> {
         self.one_of_each(candidates);
         // Forced splits first, then `⊕`, then the free splits; by id within
         // a class, so that the run is deterministic.
-        candidates.sort_by_key(|&o| (self.focus_class(o), self.rank(o)));
+        candidates.sort_by_key(|&o| (self.focus_class(o), o));
         // After them the copies from `Θ`, a formula with an unconsumed copy
         // in `Γ` skipped (a second copy cannot help before the first is
         // used), those that can meet a literal of `Γ` first, then by id.
@@ -1149,9 +1141,9 @@ impl<'a> Engine<'a> {
                 self.exhausted |= !copies.is_empty();
                 copies.clear();
             } else {
-                // By rank, those that meet a member first: the heuristic is
+                // By id, those that meet a member first: the heuristic is
                 // asked once per formula, not once per comparison.
-                copies.sort_unstable_by_key(|&a| self.rank(a));
+                copies.sort_unstable();
                 self.work += (copies.len() * members.len() / MEETS_PER_WORK) as u64;
                 self.mark_literals(members);
                 let mut others = self.take_list();
@@ -1216,21 +1208,6 @@ impl<'a> Engine<'a> {
             return self.mix(theta, gamma, members, tally, budget);
         }
         Ok(None)
-    }
-
-    /// The position of an occurrence in the order this engine tries the
-    /// alternatives of a choice: its id, or a mix of the id with the
-    /// engine's seed when it has one, which orders the alternatives
-    /// differently on every worker of a portfolio.
-    fn rank(&self, o: OccId) -> u64 {
-        if self.seed == 0 {
-            return u64::from(o.get());
-        }
-        // The finalizer of splitmix64 over the id and the seed.
-        let mut x = u64::from(o.get()) ^ self.seed;
-        x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        x ^ (x >> 31)
     }
 
     /// The initial rules on a stable sequent: a dual pair in `Γ`, or a

@@ -123,8 +123,7 @@ pool of their own (`search::parallel`: cube-and-conquer over the choices
 near the root, and-parallel `&` premises, a sharded memo and one arena
 shared by the workers, cubes of the first links for the net engine; the
 caller's stop closure is polled on the calling thread and raises the
-workers' flag); `Options::portfolio` gives every worker an order of its
-own; the additive path stays sequential. `Interactive` (`proofs::interactive`,
+workers' flag); the additive path stays sequential. `Interactive` (`proofs::interactive`,
 feature `interactive`) is a proof in progress: `new(&sequent, mode)`,
 `goals()`, `rules(goal, position)`, `apply(goal, position, rule, left)`,
 `undo()`, `close(goal, options, view, stop)`/`close_all`, `derivation()` with open goals as

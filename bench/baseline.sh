@@ -13,7 +13,7 @@
 # atom bias alone; the largest sizes with 20 minutes each, the LLTP
 # problems that ended at the copy bound or the recursion limit with those
 # raised; then the thread counts 2, 4, 8 and every core on the hard
-# families, and every core with and without the portfolio on the LLTP
+# families, and every core on the LLTP
 # problems not decided at once; last, the runs of those that more room lets
 # finish. The LLTP problems of the later stages are those of the first
 # baseline (`reference'), so that every row of it has its counterpart.
@@ -473,8 +473,7 @@ wait "${streams[@]}"
 # Stage 3, alone on the machine: the hard families on 1 (the speedups'
 # baseline, taken alone like the rest), 2, 4, 8 and every core, the net
 # engine on the same thread counts, and the LLTP problems that are not decided at once on
-# every core, with and without the portfolio (every core is the command's
-# default). About three and a half hours.
+# every core (the command's default). About three and a half hours.
 run - parallel --family 3-partition-yes --family 3-partition-no --family partition-yes=5,6,7,20,24 \
   --family partition-no=4,5,12,14 --family qbf=16,20,24,40,44 --family mix=8,9,10,11 --family counter \
   --family counter-over --family wide-m3=24,30,36 --family wide-m4=28,32,36 \
@@ -486,7 +485,6 @@ run - parallel-net --problems bench/problems/slow-tests.txt --only partition-tab
   --jobs 1,2,4,8,all --timeout 60 "${repeat[@]}"
 slow=$(ended slow)
 run - lltp-all-cores --lltp "$lltp/ILL" --only "$slow" --jobs all --timeout 5
-run - lltp-portfolio --lltp "$lltp/ILL" --only "$slow" --jobs all --portfolio --timeout 5
 
 # Stage 4: the runs above that were killed or crashed and that more room
 # lets finish, as bench/reruns.txt lists them (lines `FILE FAMILY/NAME`:
@@ -521,7 +519,6 @@ streams+=($!)
 wait "${streams[@]}"
 cap=32
 again - lltp-all-cores 60 --lltp "$lltp/ILL" --jobs all --timeout 5
-again - lltp-portfolio 60 --lltp "$lltp/ILL" --jobs all --portfolio --timeout 5
 
 fired=$(timers "$now" "$(date +%s)" LastTriggerUSec)
 fired=${fired%, }

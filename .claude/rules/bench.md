@@ -45,8 +45,10 @@ beyond clap and anyhow, which the CLI already has.
   backtraces; the whole error output goes to the parent's standard error,
   which is the run's log).
 - `src/summary.rs`: Markdown from CSV. A problem counts once per
-  configuration (CSV file, family, mode, requested engine, jobs, portfolio, test
-  period): the first run's verdict, the median of the runs' times.
+  configuration (CSV file, family, mode, requested engine, jobs, test
+  period, and in a file from before the portfolio was removed its
+  `portfolio` column, which `run` no longer writes): the first run's
+  verdict, the median of the runs' times.
   `refused` rows (a forced engine that does not apply) are dropped. The
   CSV file's name is part of the configuration's label, since each file
   of the baseline is one `run` with options of its own (a copy bound, a
@@ -79,7 +81,11 @@ beyond clap and anyhow, which the CLI already has.
   `summary` read it; `forward_copies`, the last, came with the default
   bias that runs two searches on a sequent with exponentials: a file
   without it ran `auto` as the rarer-literal search alone, so `--resume`
-  takes none of its rows as done). Fields never contain commas (`clean` turns them into `;`),
+  takes none of its rows as done). One column was taken out, between
+  `jobs` and `test_period`: `portfolio`, with the option it recorded;
+  the summaries read it where a file has it (`true` is part of the
+  configuration's label), and `--resume` refuses a file whose header is
+  not `HEADER`, since the rows it would append do not fit. Fields never contain commas (`clean` turns them into `;`),
   so the files are split on commas without quoting.
 - **`verdict` and `reason`**: `proved`, `unprovable`, `unknown` (reasons
   `timeout`, `copy_bound`, `context_too_wide`, `recursion_limit`,

@@ -603,7 +603,7 @@ level that never hit the copy bound, `Unknown(Reason)`, with
 the `Mode`, the `Engine` that ran, the `Statistics`, and `net`, the
 `ProofStructure` the net engine found (`None` from the focused engine).
 `Options` has private fields and setters (`memo_limit`, `recursion_limit`,
-`engine`, `fragment`, `test_period`, `copies`, `jobs`, `portfolio`,
+`engine`, `fragment`, `test_period`, `copies`, `jobs`,
 `bias`, `forward_copies`, `check`), the
 constants `DEFAULT_MEMO_LIMIT`, `DEFAULT_RECURSION_LIMIT`,
 `DEFAULT_COPIES` and `DEFAULT_FORWARD_COPIES`, which the CLI shows as
@@ -1632,19 +1632,19 @@ has no or-choices worth sharing out). What the code relies on:
   (RecursionLimit)` on another alternative. `Unknown (Stopped)` is the
   caller's stop, never a cancellation. The tests
   (`focus::parallel::tests`, `net::parallel_tests`) assert exactly this
-  on the generated samples with two and four threads, with and without
-  the portfolio; every proof is checked.
-- **`Options::portfolio`** gives every worker a seed (`Spawn::worker`, a
-  mix of the spawning engine's seed and the alternative's index, never
-  zero) that `rank` uses in place of the id to order candidates and
-  copies within their classes, so workers below the levels explore in
-  different orders; the first alternative of every choice keeps the
-  spawning engine's order. It is off by default: the table in the step
-  report shows no consistent gain on the families measured. The two
-  searches of the default bias are the portfolio that does pay, two
-  orders that differ in the one choice that changes the search, so this
-  option has no use left that a measurement supports; it stays until
-  the second baseline has measured it once more, and should go then.
+  on the generated samples with two and four threads; every proof is
+  checked. For the focused engine that is `agree`: the two verdicts
+  never contradict each other, and nothing is asserted about which of
+  them decides within the bound (`b, ((a * 1) -o !a), !(b -o 1),
+  !(1 -o ((1 * 1) -o a)), b |- (!!a * b)` with a copy bound of 2 is at
+  its bound on one thread and proved on four, every time).
+- **There is no portfolio of worker orders.** An option gave every
+  worker a seed that ordered the candidates and copies within their
+  classes; two baselines showed no gain (the second: 627 problems
+  decided against 623, 10 gained and 6 lost, at the same time), and it
+  was removed. The two searches of the default bias are the portfolio
+  that pays: two orders that differ in the one choice that changes the
+  search. Candidates and copies are ordered by id on every engine.
 - **Statistics** add every worker's counters (`Statistics::add`, the
   memo's read off the shared table once), so a parallel `nodes` is the
   work done, not the work one thread would have done, and the CLI's

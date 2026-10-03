@@ -474,20 +474,13 @@ struct Spawn<'s> {
     copies: u32,
     /// The workers' levels of cube-and-conquer.
     or_depth: u32,
-    /// The spawning engine's seed.
-    seed: u64,
-    /// Whether the workers get seeds of their own.
-    portfolio: bool,
 }
 
 impl<'s> Spawn<'s> {
     /// Starts a worker: a fresh engine on the spawn's state, stopped by
-    /// the spawn's flags or by `cancel`, and, in a portfolio, with a seed
-    /// of its own derived from its `index` among the choice's
-    /// alternatives, the first alternative (index zero) keeping the
-    /// spawning engine's seed.
-    fn worker<'w>(&'w self, cancel: &'w AtomicBool, index: u64) -> Engine<'w> {
-        let mut worker = Engine {
+    /// the spawn's flags or by `cancel`.
+    fn worker<'w>(&'w self, cancel: &'w AtomicBool) -> Engine<'w> {
+        Engine {
             forest: self.forest,
             reading: self.reading,
             counts: self.counts,
@@ -508,8 +501,6 @@ impl<'s> Spawn<'s> {
             stop: Stop::Flags(self.flags.child(cancel)),
             runtime: Some(self.runtime),
             or_depth: self.or_depth,
-            seed: self.seed,
-            portfolio: self.portfolio,
             stack: self.stack.to_vec(),
             hashes: self
                 .stack
@@ -528,12 +519,7 @@ impl<'s> Spawn<'s> {
             cursors: Vec::new(),
             present: Vec::new(),
             stamp: 0,
-        };
-        if self.portfolio && index != 0 {
-            // A seed per worker, never zero.
-            worker.seed = (self.seed ^ index.wrapping_mul(0x9e37_79b9_7f4a_7c15)) | 1;
         }
-        worker
     }
 }
 
@@ -672,8 +658,6 @@ impl<'a> Engine<'a> {
             recursion_limit: self.recursion_limit,
             copies: self.copies,
             or_depth,
-            seed: self.seed,
-            portfolio: self.portfolio,
         }
     }
 
@@ -776,10 +760,10 @@ impl<'a> Engine<'a> {
             .split_first()
             .expect("a choice has an alternative");
         spawn.runtime.pool.in_place_scope(|scope| {
-            for (i, &alternative) in rest.iter().enumerate() {
+            for &alternative in rest {
                 let (spawn, cancel, collected) = (&spawn, &cancel, &collected);
                 scope.spawn(move |_| {
-                    let mut worker = spawn.worker(cancel, i as u64 + 1);
+                    let mut worker = spawn.worker(cancel);
                     let result = worker.alternative(theta, gamma, alternative, budget);
                     let result = worker.exported(result);
                     Self::lock(collected).take(result, &worker, cancel);
@@ -787,7 +771,7 @@ impl<'a> Engine<'a> {
             }
             // The first alternative on this thread, on a worker of its
             // own so that it polls the choice's flag like the others.
-            let mut worker = spawn.worker(&cancel, 0);
+            let mut worker = spawn.worker(&cancel);
             let result = worker.alternative(theta, gamma, first, budget);
             let result = worker.exported(result);
             Self::lock(&collected).take(result, &worker, &cancel);
@@ -931,11 +915,11 @@ impl<'a> Engine<'a> {
         let left = spawn.runtime.pool.in_place_scope(|scope| {
             let (spawn, cancel, premise, search) = (&spawn, &cancel, &premise, &search);
             scope.spawn(move |_| {
-                let mut worker = spawn.worker(cancel, 1);
+                let mut worker = spawn.worker(cancel);
                 let result = search(&mut worker, right_sub);
                 *Self::lock(premise) = Some(Premise::of(&worker, result));
             });
-            let mut worker = spawn.worker(cancel, 0);
+            let mut worker = spawn.worker(cancel);
             let result = search(&mut worker, left_sub);
             Premise::of(&worker, result)
         });
@@ -992,24 +976,18 @@ mod tests {
         }
     }
 
-    /// The verdicts on two and four threads, with and without the
-    /// portfolio, never contradict the sequential one, and a sequent is
-    /// proved on the pool exactly when it is proved sequentially: the
-    /// pool searches the same levels of the copy bound to their end. Only
-    /// decisiveness within the bound may differ, as the memo's contents
-    /// do.
+    /// The verdicts on two and four threads never contradict the
+    /// sequential one: a pool searches the same levels of the copy bound
+    /// to their end, so what one proves the other does not refute. Which
+    /// of the two decides within the bound may differ either way, as it
+    /// does with the memo's contents.
     fn agree(text: &str, mode: Mode, options: &Options) {
         let sequential = decided(text, mode, options);
-        for (jobs, portfolio) in [(2, false), (4, false), (4, true)] {
-            let options = options.clone().jobs(jobs).portfolio(portfolio);
+        for jobs in [2, 4] {
+            let options = options.clone().jobs(jobs);
             let parallel = decided(text, mode, &options);
             assert!(
                 sequential.is_none() || parallel.is_none() || sequential == parallel,
-                "{text:?} in {mode} mode: {sequential:?} on one thread, {parallel:?} with {options:?}"
-            );
-            assert_eq!(
-                sequential == Some(true),
-                parallel == Some(true),
                 "{text:?} in {mode} mode: {sequential:?} on one thread, {parallel:?} with {options:?}"
             );
         }

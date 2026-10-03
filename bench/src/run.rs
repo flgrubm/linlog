@@ -25,8 +25,10 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// The columns the parent writes, then those the child prints.
-pub const HEADER: &str = "source,family,size,index,problem,mode,engine_requested,jobs,portfolio,\
+/// The columns the parent writes, then those the child prints. Files
+/// from before the portfolio of worker orders was removed have a column
+/// `portfolio` after `jobs`, which the summaries still read.
+pub const HEADER: &str = "source,family,size,index,problem,mode,engine_requested,jobs,\
                           test_period,timeout_s,run,copies,expected,verdict,reason,checked,engine,\
                           fragment,occurrences,multiplicity,time_ms,nodes,memo_hits,memo_entries,\
                           splits,links,tests,recursion_limit,cpu_ms,wait_ms,bias,forward_copies,\
@@ -208,7 +210,6 @@ pub fn run(args: &RunArgs) -> Result<()> {
                         mode_name(mode),
                         &name(&engine),
                         &threads.to_string(),
-                        &args.portfolio.to_string(),
                         &args.test_period.map_or(String::new(), |p| p.to_string()),
                         &name(&args.bias),
                         &forward_copies(args.forward_copies).to_string(),
@@ -224,7 +225,7 @@ pub fn run(args: &RunArgs) -> Result<()> {
                         let (verdict, time) = (fields[2], fields[9].parse().unwrap_or(0.0));
                         writeln!(
                             out,
-                            "{},{},{},{},{},{},{},{threads},{},{},{},{run},{tail}",
+                            "{},{},{},{},{},{},{},{threads},{},{},{run},{tail}",
                             reference.source,
                             reference.family,
                             reference.size.map_or(String::new(), |s| s.to_string()),
@@ -232,7 +233,6 @@ pub fn run(args: &RunArgs) -> Result<()> {
                             reference.name,
                             mode_name(mode),
                             name(&engine),
-                            args.portfolio,
                             args.test_period.map_or(String::new(), |p| p.to_string()),
                             args.timeout,
                         )?;
@@ -263,17 +263,26 @@ pub fn run(args: &RunArgs) -> Result<()> {
 }
 
 /// The problems and configurations a CSV file has a row for, each as its
-/// source, family, problem, mode, requested engine, jobs, portfolio, test
-/// period, bias and forward copy bound joined by commas; a file from before
+/// source, family, problem, mode, requested engine, jobs, test period,
+/// bias and forward copy bound joined by commas; a file from before
 /// the bias had a column ran them all with `auto`, and one from before the
 /// forward bound had one ran the default bias as one search, which no
-/// bound names, so every row of it is run again.
+/// bound names, so every row of it is run again. A file with other
+/// columns than [`HEADER`] is refused: the rows this run appends would
+/// not fit it.
 fn finished(path: &Path) -> Result<HashSet<String>> {
     let Ok(text) = std::fs::read_to_string(path) else {
         return Ok(HashSet::new());
     };
     let mut lines = text.lines();
-    let columns: Vec<&str> = lines.next().unwrap_or("").split(',').collect();
+    let header = lines.next().unwrap_or("");
+    if header != HEADER {
+        anyhow::bail!(
+            "{} has other columns than this version writes; resume into a new file",
+            path.display()
+        );
+    }
+    let columns: Vec<&str> = header.split(',').collect();
     let at = |column: &str| columns.iter().position(|c| *c == column);
     let key = [
         "source",
@@ -282,7 +291,6 @@ fn finished(path: &Path) -> Result<HashSet<String>> {
         "mode",
         "engine_requested",
         "jobs",
-        "portfolio",
         "test_period",
     ]
     .map(at);
@@ -325,9 +333,6 @@ fn child(
             "--timeout",
             &args.timeout.to_string(),
         ]);
-    if args.portfolio {
-        command.arg("--portfolio");
-    }
     if let Some(copies) = args.copies {
         command.args(["--copies", &copies.to_string()]);
     }
@@ -501,7 +506,6 @@ fn tail(args: &OneArgs) -> String {
     let options = Options::default()
         .engine(args.engine.engine())
         .jobs(args.jobs)
-        .portfolio(args.portfolio)
         .copies(copies)
         .bias(args.bias.bias())
         .forward_copies(forward_copies(args.forward_copies))

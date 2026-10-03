@@ -104,9 +104,6 @@ pub struct RunArgs {
     /// The thread counts to run every problem with; `all` is every core
     #[arg(long, value_delimiter = ',', default_value = "1")]
     jobs: Vec<String>,
-    /// Give the workers of a parallel search orders of their own
-    #[arg(long)]
-    portfolio: bool,
     /// The copy bound, overriding the one a generated problem names
     /// (default: the problem's, else 3)
     #[arg(long)]
@@ -176,9 +173,6 @@ pub struct OneArgs {
     /// The threads
     #[arg(long)]
     jobs: usize,
-    /// The portfolio
-    #[arg(long)]
-    portfolio: bool,
     /// The copy bound, overriding the problem's
     #[arg(long)]
     copies: Option<u32>,
