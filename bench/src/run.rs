@@ -657,8 +657,10 @@ fn tail(args: &OneArgs) -> String {
     // The verdict is out before the check, which a proof can outgrow.
     say(&tail("", ""));
     let start = Instant::now();
-    let checked = match proof.check(mode) {
+    let checked = match proof.check_within(mode, memory_limit(args.memory_limit)) {
         Ok(()) => "ok".to_owned(),
+        // Given up within the run's memory bound: no verdict on the proof.
+        Err(error) if error.is_refusal() => "unchecked: memory limit".to_owned(),
         Err(error) => clean(&format!("failed: {error}")),
     };
     let check = start.elapsed().as_secs_f64() * 1000.0;

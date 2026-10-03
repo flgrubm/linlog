@@ -227,6 +227,17 @@ fn too_large(size: &Size, limit: u64) -> String {
     )
 }
 
+/// Returns the line for a derivation whose proof could not be read
+/// within the memory limit.
+fn proof_unread(limit: u64) -> String {
+    format!(
+        "the derivation is not written: reading the proof for it takes more than the memory \
+         limit of {}; --format json writes the proof itself, and --memory-limit SIZE raises \
+         the limit",
+        bytes_text(limit)
+    )
+}
+
 /// Returns the line for a derivation past the memory limit.
 fn over_memory(size: &Size, limit: u64) -> String {
     format!(
@@ -264,9 +275,14 @@ pub(crate) fn derivation(
     // anything is built.
     let fit = show.fit();
     if let Some((columns, most)) = fit {
-        let size = proof
-            .derivation_size(mode.intuitionistic)
-            .map_err(invalid)?;
+        let size = match proof.derivation_size_within(mode.intuitionistic, show.view.memory) {
+            Ok(size) => size,
+            // No verdict on the proof: the pass was given up.
+            Err(e) if e.is_refusal() => {
+                return Ok(Shown::LeftOut(proof_unread(show.view.memory.unwrap_or(0))));
+            }
+            Err(e) => return Err(invalid(e)),
+        };
         if size.width > columns || size.lines() > most {
             let width = format!("at least {}", size.width);
             return Ok(Shown::LeftOut(unfit(
@@ -294,12 +310,7 @@ pub(crate) fn derivation(
             limit,
         }) => return Ok(Shown::LeftOut(over_memory(&size, limit))),
         Err(ViewError::Memory { size: None, limit }) => {
-            return Ok(Shown::LeftOut(format!(
-                "the derivation is not written: reading the proof for it takes more than the \
-                 memory limit of {}; --format json writes the proof itself, and --memory-limit \
-                 SIZE raises the limit",
-                bytes_text(limit)
-            )));
+            return Ok(Shown::LeftOut(proof_unread(limit)));
         }
         Err(ViewError::Stopped) => return Ok(stopped()),
         // Any other bound of the view's: the error says which.

@@ -93,7 +93,10 @@ reading of a sequent (the `Position` of every occurrence, the goal, and
 two-sided printing `Γ ⊢ A`, or a `ShapeError`), and `Proof` for a proof
 term over the forest: `Proof::new(forest, nodes, root)`, `check(mode)` for
 the independent checker (in intuitionistic mode also the one-succedent
-condition; one pass, in memory proportional to the proof),
+condition; one pass, in memory proportional to the proof and within
+`DEFAULT_MEMORY_LIMIT`, or `check_within(mode, memory)` for another
+bound: a check given up there is a refusal, `CheckError::is_refusal`,
+and no verdict),
 `derivation()` for the standard-calculus view and
 `two_sided_derivation()` for the intuitionistic one with the ILL rule
 names, whose `Display` draws the tree, `derivation_size(two_sided)` for
