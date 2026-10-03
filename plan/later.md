@@ -404,6 +404,97 @@ the single calls on the problem file and on a sample of the LLTP
 library, in both orders of cores, and by a timing that shows what the
 loop paid.
 
+## Ordinary logic through its embeddings: classical, intuitionistic and minimal sequents
+
+Deciding sequents of ordinary propositional logic by translating them
+into linear logic and running the engines that exist (the author's
+question, 2026-10-03, "if something like that is even possible"). It is
+possible, for all three, and part of it is measured already. Only
+propositional logic: linlog has no quantifiers.
+
+- **Classical logic needs no exponentials.** The one-sided calculus of
+  classical propositional logic with invertible rules (an axiom with a
+  context, `∨` keeping both disjuncts in one premise, `∧` copying the
+  context into two) is complete without contraction, and it is affine
+  MALL read with `∨` as `⅋`, `∧` as `&`, true as `⊤` and false as `⊥`.
+  So a classical sequent in negation normal form is valid exactly when
+  its image is provable in affine mode, which the focused engine decides
+  today with no copy bound and no choice to backtrack over (by hand:
+  `--affine '|- ((a^ | b) & a^) | a'`, Peirce's law, is proved, and
+  `'|- (a & b^) | (a^ & b)'` refuted). The cost is one branch per way
+  through the conjunctions, as a tableau's: this is not a SAT solver and
+  should not be offered as one. The translations with exponentials
+  (Girard's, and LKT and LKQ of Danos, Joinet and Schellinx) are for
+  showing, not for deciding.
+- **Intuitionistic logic goes through `!`.** Girard's translation
+  (`A → B` as `!A ⊸ B`, `∧` as `&`, `A ∨ B` as `!A ⊕ !B`, false as `0`,
+  hypotheses under `!`) preserves and reflects provability into ILL,
+  which is intuitionistic mode with the two-sided engine; the
+  call-by-value variant and Liang and Miller's 0/1 translation do the
+  same with the exponentials elsewhere, and which one is taken decides
+  what search the focused engine performs, much as the atom bias does.
+  The LLTP library's `ILL/ILLTP-*` and `ILL/KLE-*` collections are
+  exactly these three translations applied to the ILTP library's
+  propositional problems and to Kleene's theorems, and
+  `bench/lltp/ILTP+KLE` has the originals, so both baselines measure
+  this already.
+- **Minimal logic** is the same with false translated as an atom rather
+  than as `0`.
+
+What the baselines show is the obstacle: the copy bound. In the second
+baseline, at the harness's bound of three copies, `ILLTP-SYJ-cbn` has 12
+problems proved and 22 refuted of about 250, and 185 answered
+`copy_bound`; `KLE-cbn` has 65 of 85 theorems proved and 19 at the bound
+(`bench/results/2026-10-02/lltp-intuitionistic.csv`; `lltp-copies-10.csv`
+says what a larger bound buys). An unknown is no answer for a logic that
+is decidable. On the image of a translation the search can be made to
+terminate: every hypothesis is under `!`, so the unbounded context is a
+set of subformulas of the input, the linear part is small, and a branch
+that meets a sequent it has met is cut. The engine has no such check; it
+deepens to `Options::copies` and answers `Reason::CopyBound`. Either a
+loop check on the branch for dyadic sequents (worth having for MELL and
+LL in general, where it turns some unknowns into refutations, and to be
+weighed against what it costs the memo, whose entries become dependent
+on the branch) or a bound computed from the input that is proved enough
+for the image. This is the engine work of the candidate and its risk;
+the rest is a layer on top.
+
+The layer:
+
+1. A type and a syntax for ordinary formulas and sequents (`->`, `/\`,
+   `\/`, `~`, `<->`, true, false), apart from the linear ones so that
+   nobody writes `&` and gets the wrong connective, and names that do
+   not collide: `--intuitionistic` means ILL today.
+2. The translations as public functions, each by its name, with the
+   image printable (`seq` could show it): for teaching the embeddings
+   are worth seeing by themselves.
+3. Deciding by logic: classical through affine MALL, intuitionistic and
+   minimal through ILL with the termination above, the translation
+   chosen by what the baselines and a run of the ILTP problems show.
+4. The proof read back: a derivation of the image mapped to LK or LJ
+   with their rule names (the exponential rules become contraction and
+   weakening or disappear), drawn by the exporters that take a
+   derivation now. The linear proof is checked by the checker that
+   exists; the read-back needs a check of its own or is trusted, which
+   the design says. A Rocq certificate is cheap here and needs no
+   library: the proposition as a lemma over `Prop` with its proof (the
+   classical ones on the standard library's excluded middle).
+5. The ILTP propositional problems with their statuses as the benchmark,
+   read in their own syntax and translated here. LLTP's translated files
+   are not a substitute: some lost a negation on the way (the original
+   of `KLE078+1` is `(a => b) => ~~(~a | b)` and its `KLE-cbn` file has
+   `!a + !b` in the disjunction; likewise `KLE086+1` there and
+   `KLE069+1` in `KLE-01`), so that their headers say "Theorem" of
+   sequents that linlog refutes, rightly, once the copy bound lets it.
+
+Not competitive with the provers made for these logics (SAT solvers,
+the intuitionistic provers ILTP records) and not meant to be: it is for
+someone who has linlog open and a formula of ordinary logic in hand, and
+for showing how the logics sit inside linear logic. Two sessions, the
+termination on dyadic sequents first, since it stands without the rest
+and the layer is of little use without it; it depends on what step 17
+decides about the default copy bound.
+
 ## The web front end
 
 `linlog-web`: the `core` crate compiled to wasm without the `parallel`
