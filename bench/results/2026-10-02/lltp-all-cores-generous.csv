@@ -1,0 +1,13 @@
+source,family,size,index,problem,mode,engine_requested,jobs,portfolio,test_period,timeout_s,run,copies,expected,verdict,reason,checked,engine,fragment,occurrences,multiplicity,time_ms,nodes,memo_hits,memo_entries,splits,links,tests,recursion_limit,cpu_ms,wait_ms,bias,forward_copies
+lltp,ILL/ILLTP-SYJ-01,,,SYJ206+1.018.p,intuitionistic,auto,16,false,,5,0,3,provable,unknown,copy_bound,,two-sided,ILL,6029278,262144,4789.413,15940,4567,4103,735,0,0,2048,35280.000,0.841,auto,30
+lltp,ILL/ILLTP-SYJ-01,,,SYJ206+1.019.p,intuitionistic,auto,16,false,,5,0,3,provable,unknown,timeout,,two-sided,ILL,12058590,524288,5141.166,5765,1312,1437,265,0,0,2048,41790.000,1.165,auto,30
+lltp,ILL/ILLTP-SYJ-01,,,SYJ206+1.020.p,intuitionistic,auto,16,false,,5,0,3,provable,unknown,timeout,,two-sided,ILL,24117214,1048576,5274.253,1636,282,515,95,0,0,2048,31460.000,0.765,auto,30
+lltp,ILL/ILLTP-SYJ-01,,,SYJ212+1.019.p,intuitionistic,auto,16,false,,5,0,3,unprovable,unknown,timeout,,two-sided,ILL,15204318,524288,5087.532,3942,849,1076,210,0,0,2048,40020.000,0.891,auto,30
+lltp,ILL/ILLTP-SYJ-01,,,SYJ212+1.020.p,intuitionistic,auto,16,false,,5,0,3,unprovable,unknown,timeout,,two-sided,ILL,30408670,1048576,5331.792,1018,119,382,42,0,0,2048,24690.000,0.608,auto,30
+lltp,ILL/ILLTP-SYJ-cbn,,,SYJ206+1.019.p,intuitionistic,auto,16,false,,5,0,3,provable,unknown,copy_bound,,two-sided,ILL,8388585,524288,5283.578,8388,2135,5276,3504,0,0,2048,45620.000,106.485,auto,30
+lltp,ILL/ILLTP-SYJ-cbn,,,SYJ206+1.020.p,intuitionistic,auto,16,false,,5,0,3,provable,unknown,timeout,,two-sided,ILL,16777193,1048576,5234.908,3377,703,1938,1555,0,0,2048,50870.000,111.526,auto,30
+lltp,ILL/ILLTP-SYJ-cbn,,,SYJ212+1.019.p,intuitionistic,auto,16,false,,5,0,3,unprovable,unknown,copy_bound,,two-sided,ILL,10747881,524288,3701.606,4174,1034,2387,1833,0,0,2048,32650.000,89.313,auto,30
+lltp,ILL/ILLTP-SYJ-cbn,,,SYJ212+1.020.p,intuitionistic,auto,16,false,,5,0,3,unprovable,unknown,timeout,,two-sided,ILL,21495785,1048576,5271.056,2463,597,1167,1359,0,0,2048,63830.000,223.451,auto,30
+lltp,ILL/ILLTP-SYJ-cbv,,,SYJ206+1.020.p,intuitionistic,auto,16,false,,5,0,3,provable,unknown,timeout,,two-sided,IMELL,23068641,1048576,5132.986,600,189,331,378,0,0,2048,6670.000,0.737,auto,30
+lltp,ILL/ILLTP-SYJ-cbv,,,SYJ212+1.019.p,intuitionistic,auto,16,false,,5,0,3,unprovable,unknown,timeout,,two-sided,ILL,13893601,524288,5104.122,1634,581,981,934,0,0,2048,7710.000,0.717,auto,30
+lltp,ILL/ILLTP-SYJ-cbv,,,SYJ212+1.020.p,intuitionistic,auto,16,false,,5,0,3,unprovable,unknown,timeout,,two-sided,ILL,27787233,1048576,5162.165,417,146,248,232,0,0,2048,5380.000,0.777,auto,30

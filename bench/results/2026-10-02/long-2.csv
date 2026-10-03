@@ -1,0 +1,6 @@
+source,family,size,index,problem,mode,engine_requested,jobs,portfolio,test_period,timeout_s,run,copies,expected,verdict,reason,checked,engine,fragment,occurrences,multiplicity,time_ms,nodes,memo_hits,memo_entries,splits,links,tests,recursion_limit,cpu_ms,wait_ms,bias,forward_copies
+family,mix,11,0,mix/11,mix,auto,1,false,,1200,0,3,unprovable,unknown,timeout,,focus,MALL,110,1,1200080.951,5837454707,5835496819,1048576,21029190371,0,0,2048,1197000.000,1376.745,auto,30
+family,wide-m3,36,0,wide-m3/36,classical,auto,1,false,,1200,0,3,provable,proved,,ok,focus,MLL,251,3,0.157,37,0,37,970,0,0,2048,0.000,0.000,auto,30
+family,wide-m4,36,0,wide-m4/36,classical,auto,1,false,,1200,0,3,provable,proved,,ok,focus,MLL,251,4,0.144,37,0,37,916,0,0,2048,0.000,0.000,auto,30
+family,qbf,24,0,qbf/24#0,classical,auto,1,false,,1200,0,3,unprovable,unprovable,,,focus,MALL,599,6,161.247,172882,10646,162236,511289,0,0,2048,150.000,0.153,auto,30
+family,qbf,48,0,qbf/48#0,classical,auto,1,false,,1200,0,,,unknown,crash (signal: 6 (SIGABRT) (core dumped)): note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace,,,,,,301009.133,,,,,,,,,,auto,30

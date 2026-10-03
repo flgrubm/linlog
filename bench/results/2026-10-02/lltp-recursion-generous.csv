@@ -1,0 +1,10 @@
+source,family,size,index,problem,mode,engine_requested,jobs,portfolio,test_period,timeout_s,run,copies,expected,verdict,reason,checked,engine,fragment,occurrences,multiplicity,time_ms,nodes,memo_hits,memo_entries,splits,links,tests,recursion_limit,cpu_ms,wait_ms,bias,forward_copies
+lltp,ILL/petri-nets/MCC,,,DatabaseWithMutex_database20UNFOLD_5_1.p,intuitionistic,auto,1,false,,5,0,3,provable,unknown,timeout,,two-sided,IMELL,46672,21,5057.876,158610,76100,82089,64135197,0,0,16384,5040.000,656.693,auto,30
+lltp,ILL/petri-nets/MCC,,,Diffusion2D_2D8_gradient_20x20_50_1_1.p,intuitionistic,auto,1,false,,5,0,3,provable,proved,,ok,two-sided,IMELL,12054,58,1.023,3,0,2,52,0,0,16384,0.000,0.058,auto,30
+lltp,ILL/petri-nets/MCC,,,Diffusion2D_2D8_gradient_30x30_50_1_1.p,intuitionistic,auto,1,false,,5,0,3,provable,proved,,ok,two-sided,IMELL,27574,58,2.390,3,0,2,52,0,0,16384,0.000,0.063,auto,30
+lltp,ILL/petri-nets/MCC,,,Diffusion2D_2D8_gradient_40x40_50_1_1.p,intuitionistic,auto,1,false,,5,0,3,provable,proved,,ok,two-sided,IMELL,49494,58,6.329,7,0,3,102,0,0,16384,10.000,0.038,auto,30
+lltp,ILL/petri-nets/MCC,,,SimpleLoadBal_simple_lbs-20_100_1.p,intuitionistic,auto,1,false,,5,0,3,provable,unknown,timeout,,two-sided,IMELL,31494,2022,5018.385,96559,66849,24775,42865539,0,0,16384,5000.000,957.432,auto,30
+lltp,ILL/petri-nets/MCC,,,SimpleLoadBal_simple_lbs-20_20_1.p,intuitionistic,auto,1,false,,5,0,3,provable,unknown,timeout,,two-sided,IMELL,31462,2022,5013.966,97599,67633,24977,43280153,0,0,16384,5000.000,937.944,auto,30
+lltp,ILL/petri-nets/MCC,,,SimpleLoadBal_simple_lbs-20_50_1.p,intuitionistic,auto,1,false,,5,0,3,provable,unknown,timeout,,two-sided,IMELL,31482,2022,5014.323,98401,68290,25080,43557127,0,0,16384,5000.000,944.838,auto,30
+lltp,ILL/petri-nets/MCC,,,TokenRing-15-unfolded_1_1.p,intuitionistic,auto,1,false,,5,0,3,provable,proved,,ok,two-sided,IMELL,28990,31,1.626,3,0,2,130,0,0,16384,0.000,0.026,auto,30
+lltp,ILL/petri-nets/MCC,,,TokenRing-20-unfolded_1_1.p,intuitionistic,auto,1,false,,5,0,3,provable,proved,,ok,two-sided,IMELL,67450,41,4.048,3,0,2,91,0,0,16384,10.000,0.063,auto,30

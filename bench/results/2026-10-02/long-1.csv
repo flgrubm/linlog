@@ -1,0 +1,8 @@
+source,family,size,index,problem,mode,engine_requested,jobs,portfolio,test_period,timeout_s,run,copies,expected,verdict,reason,checked,engine,fragment,occurrences,multiplicity,time_ms,nodes,memo_hits,memo_entries,splits,links,tests,recursion_limit,cpu_ms,wait_ms,bias,forward_copies
+family,3-partition-no,5,0,3-partition-no/5,classical,auto,1,false,,1200,0,3,unprovable,unprovable,,,focus,MALL,109,10,0.393,971,733,238,3294,0,0,2048,0.000,0.000,auto,30
+family,partition-no,5,0,partition-no/5,classical,auto,1,false,,1200,0,3,unprovable,unprovable,,,focus,MLL,206,22,0.477,811,568,243,4161,0,0,2048,0.000,0.000,auto,30
+family,partition-no,15,0,partition-no/15,classical,auto,1,false,,1200,0,3,unprovable,unknown,timeout,,focus,MLL,1002,114,1200287.585,1018913792,893583087,1048576,7368897421,0,0,2048,1196840.000,1147.912,auto,30
+family,partition-yes,7,0,partition-yes/7,classical,auto,1,false,,1200,0,3,provable,proved,,ok,focus,MLL,266,28,0.230,178,97,81,1097,0,0,2048,0.000,0.000,auto,30
+family,partition-yes,28,0,partition-yes/28,classical,auto,1,false,,1200,0,3,provable,unknown,timeout,,focus,MLL,3992,478,1200040.920,222324416,194975055,1048576,3252712161,0,0,2048,1197220.000,989.276,auto,30
+family,counter,16,0,counter/16,classical,auto,1,false,,1200,0,4,provable,proved,,ok,focus,MELL,41,16,0.280,404,129,35,1529,0,0,2048,0.000,0.011,auto,30
+family,counter,64,0,counter/64,classical,auto,1,false,,1200,0,6,provable,proved,,ok,focus,MELL,101,64,85141.034,435532409,435441820,26799,5340643641,0,0,2048,84920.000,568.352,auto,30
