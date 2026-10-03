@@ -110,6 +110,9 @@ struct Frame {
     /// The position in the list of literals of the other sign at which the
     /// search for the next partner resumes.
     next: u32,
+    /// Whether the literal had one admissible partner when it was chosen:
+    /// its link is no choice.
+    forced: bool,
 }
 
 /// What the choice of the next literal found.
@@ -119,8 +122,9 @@ enum Choice {
     Complete,
     /// Some unlinked literal has no admissible partner.
     DeadEnd,
-    /// The unlinked literal with the fewest admissible partners.
-    Literal(OccId),
+    /// The unlinked literal with the fewest admissible partners, and
+    /// whether it has only one.
+    Literal(OccId, bool),
 }
 
 /// The state of one run: the structure being linked, the working memory
@@ -144,6 +148,8 @@ struct Engine<'a> {
     /// The decisions made so far. Every frame but the top has its current
     /// link made; the top frame is looking for one.
     stack: Vec<Frame>,
+    /// How many frames of the stack are choices: not forced.
+    choices: usize,
     /// How many links go between two exact tests.
     period: u32,
     /// The counters.
@@ -191,6 +197,7 @@ impl<'a> Engine<'a> {
             copy_before: copy_before.into_boxed_slice(),
             copy_after: copy_after.into_boxed_slice(),
             stack: Vec::with_capacity(forest.all_literals().len() / 2 + 1),
+            choices: 0,
             period,
             statistics: Statistics::default(),
             stop,
@@ -206,11 +213,15 @@ impl<'a> Engine<'a> {
     }
 
     /// The search, and the enumeration of its cubes: with a `limit`, a
-    /// branch that reaches that many links is recorded in `cubes` as the
-    /// links made, and taken back instead of followed, so that the cubes
-    /// are the branches of the first `limit` links that the tests do not
-    /// reject; a proof net found within the limit ends the search as
-    /// usual. Without a limit this is the whole search.
+    /// branch that reaches that many choices (links of literals that had
+    /// more than one admissible partner; a forced link is none) is
+    /// recorded in `cubes` as the links made, and taken back instead of
+    /// followed, so that the cubes are the branches of the first `limit`
+    /// choices that the tests do not reject; a proof net found within the
+    /// limit ends the search as usual. Without a limit this is the whole
+    /// search. The stop condition is polled at every literal chosen and
+    /// at every exact test that fails, so a run of failures, which
+    /// chooses no literal, is polled too.
     fn explore(
         &mut self,
         limit: Option<usize>,
@@ -218,16 +229,13 @@ impl<'a> Engine<'a> {
     ) -> Result<bool, Reason> {
         // A dead end before any link is a refutation; a complete structure
         // without a link would have no literal, which the counts exclude.
-        let Choice::Literal(first) = self.decide()? else {
+        let Choice::Literal(first, forced) = self.decide()? else {
             return Ok(false);
         };
-        self.stack.push(Frame {
-            literal: first,
-            next: 0,
-        });
+        self.push(first, forced);
         loop {
             let Some(y) = self.next_partner() else {
-                self.stack.pop();
+                self.pop();
                 if self.stack.is_empty() {
                     return Ok(false);
                 }
@@ -241,23 +249,42 @@ impl<'a> Engine<'a> {
                 self.statistics.tests += 1;
                 if !self.net.is_acyclic(&mut self.scratch) {
                     self.unlink();
+                    if self.stop.fired(1) {
+                        return Err(Reason::Stopped);
+                    }
                     continue;
                 }
             }
             if complete {
                 return Ok(true);
             }
-            if limit == Some(self.net.links().len()) {
+            if limit == Some(self.choices) {
                 cubes.push(self.net.links().to_vec());
                 self.unlink();
                 continue;
             }
             match self.decide()? {
-                Choice::Literal(literal) => self.stack.push(Frame { literal, next: 0 }),
+                Choice::Literal(literal, forced) => self.push(literal, forced),
                 Choice::DeadEnd => self.unlink(),
                 Choice::Complete => unreachable!("an incomplete structure has an unlinked literal"),
             }
         }
+    }
+
+    /// Opens a decision on a literal.
+    fn push(&mut self, literal: OccId, forced: bool) {
+        self.choices += usize::from(!forced);
+        self.stack.push(Frame {
+            literal,
+            next: 0,
+            forced,
+        });
+    }
+
+    /// Closes the top decision, whose partners are used up.
+    fn pop(&mut self) {
+        let frame = self.stack.pop().expect("a decision to close");
+        self.choices -= usize::from(!frame.forced);
     }
 
     /// Polls the stop condition, counts a node, and chooses the next
@@ -286,6 +313,7 @@ impl<'a> Engine<'a> {
     /// counters, so that the engine can run another cube.
     fn reset(&mut self) {
         self.stack.clear();
+        self.choices = 0;
         while !self.net.links().is_empty() {
             self.unlink();
         }
@@ -331,7 +359,7 @@ impl<'a> Engine<'a> {
             }
         }
         match best {
-            Some((_, literal)) => Choice::Literal(literal),
+            Some((count, literal)) => Choice::Literal(literal, count == 1),
             None => Choice::Complete,
         }
     }
@@ -339,7 +367,9 @@ impl<'a> Engine<'a> {
     /// Finds the next admissible partner of the top frame's literal, moves
     /// the frame past it and returns it, or `None` when none is left.
     fn next_partner(&mut self) -> Option<OccId> {
-        let Frame { literal: x, next } = *self.stack.last().unwrap();
+        let Frame {
+            literal: x, next, ..
+        } = *self.stack.last().unwrap();
         let forest = self.net.forest();
         let partners = forest.literals(forest.atom(x).unwrap(), !forest.sign(x).unwrap());
         for (i, &y) in partners.iter().enumerate().skip(next as usize) {
@@ -765,10 +795,11 @@ pub(crate) mod parallel {
     use crate::occurrences::{Forest, OccId};
     use crate::search::parallel::Runtime;
     use crate::search::{Options, Reason, Statistics, Stop, Verdict};
+    use std::collections::VecDeque;
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-    /// How many cubes per thread the enumeration aims for, so that the
+    /// How many cubes per thread the splitting aims for, so that the
     /// cubes that turn out large are shared out among many small ones.
     const CUBES_PER_THREAD: usize = 16;
 
@@ -789,13 +820,17 @@ pub(crate) mod parallel {
 
     /// Runs the net engine on the runtime's pool, as [`super::search`]
     /// does on one thread, polling `stop` on the calling thread while the
-    /// pool searches. The root engine enumerates the branches of the
-    /// first `d` links as cubes, `d` growing until there are
-    /// [`CUBES_PER_THREAD`] cubes per thread or the enumeration decided
-    /// the sequent by itself; then every worker takes cubes from a
-    /// shared counter, one engine of its own reset per cube, until a
-    /// proof net is found, which stops the others, or the cubes run out.
-    /// `Unprovable` needs every cube to have been searched to its end.
+    /// pool searches. The root engine splits the search into cubes: it
+    /// starts from the one cube without a link and replaces the oldest
+    /// cube by the branches of its next choice, the links that choice
+    /// forces included, until there are [`CUBES_PER_THREAD`] cubes per
+    /// thread or the splitting decided the sequent by itself. A cube is
+    /// never searched twice, and where every link is forced the first
+    /// cube's one branch is the whole sequential search. Then every
+    /// worker takes cubes from a shared counter, one engine of its own
+    /// reset per cube, until a proof net is found, which stops the
+    /// others, or the cubes run out. `Unprovable` needs every cube to
+    /// have been searched to its end.
     pub(crate) fn search(
         forest: &Forest,
         mode: Mode,
@@ -807,25 +842,25 @@ pub(crate) mod parallel {
             return (Verdict::Unprovable, Statistics::default(), None);
         }
         let threads = runtime.threads();
-        let pairs = forest.all_literals().len() / 2;
         let (result, statistics, net) = runtime.drive(stop, |flags| {
             let mut root = Engine::new(forest, mode, options, Stop::Flags(flags));
-            let mut cubes = Vec::new();
-            let mut depth = 1;
-            loop {
-                cubes.clear();
-                match root.explore(Some(depth), &mut cubes) {
+            // The cubes are what is left of the search at every moment:
+            // each a branch nobody has followed yet.
+            let mut cubes = VecDeque::from([Cube::new()]);
+            let mut branches = Vec::new();
+            while cubes.len() < CUBES_PER_THREAD * threads {
+                let Some(cube) = cubes.pop_front() else {
+                    return (Ok(false), root.statistics, None);
+                };
+                root.reset();
+                root.seed(&cube);
+                match root.explore(Some(1), &mut branches) {
                     Ok(true) => return (Ok(true), root.statistics, Some(root.net)),
-                    Ok(false) if cubes.is_empty() => return (Ok(false), root.statistics, None),
-                    Ok(false) => {}
+                    Ok(false) => cubes.extend(branches.drain(..)),
                     Err(reason) => return (Err(reason), root.statistics, None),
                 }
-                if cubes.len() >= CUBES_PER_THREAD * threads || depth >= pairs {
-                    break;
-                }
-                root.reset();
-                depth += 1;
             }
+            let cubes = Vec::from(cubes);
             let next = AtomicUsize::new(0);
             let found = AtomicBool::new(false);
             let collected = Mutex::new(Collected {
@@ -944,6 +979,20 @@ mod parallel_tests {
                 );
             }
         }
+    }
+
+    /// Where every link is forced, the pool's splitting into cubes is the
+    /// sequential search: `wide(64, 1)` is proved with the links and the
+    /// literals chosen that one thread takes, none of them a second time.
+    #[test]
+    fn forced_links_are_made_once() {
+        let sequent = crate::families::wide(64, 1);
+        let options = Options::default().engine(Some(Engine::Net));
+        let sequential = prove(&sequent, Mode::CLASSICAL, &options).unwrap();
+        assert!(matches!(sequential.verdict, Verdict::Proved(_)));
+        let parallel = prove(&sequent, Mode::CLASSICAL, &options.jobs(2)).unwrap();
+        assert!(matches!(parallel.verdict, Verdict::Proved(_)));
+        assert_eq!(parallel.statistics, sequential.statistics);
     }
 
     /// A stop condition that fires at once stops the pool: the driver
