@@ -1,18 +1,19 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
+use crate::argument_parsing::Threads;
 use crate::argument_parsing::{InteractArgs, threads};
 use crate::limit::{Deadline, Notice};
 use crate::prove::{
-    Ended, Show, Shown, Stop, alone_first, bytes_text, count_text, derivation, describe,
-    notice_line, on_large_stack, unknown,
+    Ended, Show, Shown, alone_first, bytes_text, count_text, derivation, describe, notice_line,
+    on_large_stack, stopped, unknown,
 };
 use crate::{Status, catch_interrupt, clear_interrupt, interrupted, io};
 use anyhow::{Context, Result, bail};
 use linlog::export::svg::{self, Style};
 use linlog::export::{Form, latex, typst};
-use linlog::search::{Options, Outcome, Verdict};
-use linlog::{Error, InfId, Interactive, Position, Reading, Rule, ViewError, ViewOptions};
+use linlog::search::{Options, Outcome, Verdict, prove_goal};
+use linlog::{Error, InfId, Interactive, Position, Reading, Refusal, Rule, ViewError, ViewOptions};
 use std::fmt::Write as _;
 use std::io::{BufRead, IsTerminal, Write};
 use std::path::Path;
@@ -68,7 +69,8 @@ pub fn interact(args: &InteractArgs) -> Result<Status> {
             ..args.derivation_limit.into()
         },
         timeout: args.timeout.0,
-        alone: threads.alone,
+        threads,
+        memory: args.memory_limit.0,
         deepens: args.copies.0.is_none(),
         recursion_limit: args.recursion_limit,
     };
@@ -92,8 +94,10 @@ struct Session {
     view: ViewOptions,
     /// How long a `close` may take.
     timeout: Option<Duration>,
-    /// How long one thread searches before the others take over.
-    alone: Option<Duration>,
+    /// The threads of a `close`, and how long one searches alone.
+    threads: Threads,
+    /// The memory a `close` may hold.
+    memory: Option<u64>,
     /// Whether a `close` deepens the copy bound without a bound.
     deepens: bool,
     /// The recursion limit of a `close`.
@@ -258,27 +262,25 @@ impl Session {
             crate::prove::NOTICE_AFTER,
             notice_line(self.timeout, self.deepens),
         );
-        let mut stop = None;
-        let mut halt = || {
-            if interrupted() {
-                stop = Some(Stop::Interrupt);
-            } else if deadline.passed() {
-                stop = deadline.limit().map(Stop::Timeout);
-            }
-            stop.is_some()
-        };
-        let (state, view) = (&mut self.state, &self.view);
-        let stopped = |e: &Error| matches!(e, Error::View(ViewError::Stopped));
-        let closed = alone_first(
+        let halt = || interrupted() || deadline.passed();
+        let goal_sequent = self.state.goal(goal).ok_or(Refusal::NoGoal(goal))?.to_vec();
+        let (forest, mode) = (self.state.forest(), self.state.mode());
+        let searched = alone_first(
             &self.options,
-            self.alone,
-            &mut halt,
-            stopped,
-            |options, halt| state.close(goal, options, view, halt),
+            self.threads,
+            self.memory,
+            &halt,
+            |options, halt| prove_goal(forest, &goal_sequent, mode, options, halt),
         );
+        let closed = searched.and_then(|outcome| {
+            if let Verdict::Proved(proof) = &outcome.verdict {
+                self.state.close_with(goal, proof, &self.view, halt)?;
+            }
+            Ok(outcome)
+        });
         drop(notice);
         let ended = Ended {
-            stop,
+            stop: stopped(&deadline),
             elapsed: start.elapsed(),
             recursion_limit: self.recursion_limit,
         };

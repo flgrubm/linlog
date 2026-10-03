@@ -362,9 +362,11 @@ beyond clap and anyhow, which the CLI already has.
   `index_limit` are the two the bound added. After it come
   `copies_reached` (`Statistics::copies`: how far the deepening got) and
   `pool_after` (`--pool-after SECONDS`: the child searches on one thread
-  that long and then afresh on `--jobs` threads, adding the counters of
-  both runs, as the command does by default; empty for threads from the
-  start, which is what a file from before the column ran). `--copies
+  that long and then with a pool of `--jobs` − 1 threads (at least two)
+  beside it, the first to decide answering, each with half the memory,
+  adding the counters of both, as the command does by default; empty for
+  threads from the start, which is what a file from before the column
+  ran). `--copies
   none` (`run::Bound`) is a search without a bound, written `none` in
   the `copies` column; without the flag the copy bound is still the
   problem's, else 3, so the harness's own defaults did not move when the

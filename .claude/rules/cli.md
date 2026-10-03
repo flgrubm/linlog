@@ -139,19 +139,23 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   without `--jobs` every thread the machine runs at once after
   `DEFAULT_POOL_AFTER`, 100 ms; `--jobs N` from the start unless
   `--pool-after` is given; `--deterministic` one thread throughout).
-  `alone_first` in `prove.rs` runs the search on one thread with the
-  command's stop or the pool's timer, and if that answered
-  `Reason::Stopped` by the timer alone, afresh with the threads, adding
-  the first run's counters to the second's (`copies` and `memo_entries`
-  by the maximum). Nothing of the first run is handed on: what it can
-  save is the first budget, a tenth of a second. The timer stops
-  whatever the first run's stop condition stops, and a session's
-  `close` grafts its proof under that condition, so the caller names
-  the errors that only mean "stopped" (`ViewError::Stopped` for the
-  session, none for `prove`, which builds its derivation after
-  `alone_first` under its own limit), and the threads then go on. The sequential engines
-  are what a pinned output (a test's `--stats` counts, a proof compared
-  across runs) needs, since a parallel run's counts add every thread's
+  `alone_first` in `prove.rs` runs the search on a thread of its own
+  and waits for it up to `Threads::alone`; if it has not decided, a pool
+  of the other threads (`jobs − 1`, at least two: a pool of one would be
+  the same search again) searches beside it, each with half of
+  `--memory-limit`, and the first to decide raises a flag that stops the
+  other (its stop is the command's or that flag); the outcome adds the
+  other's counters (`copies` and `memo_entries` by the maximum). The
+  single thread is not stopped when the pool starts, because a pool can
+  search worse than one thread: on two cores, restarting the search on
+  the pool at the switch lost three LLTP problems that one thread proves
+  in two seconds (`SYJ204+1.014` in the `01` translation: 15.7 million
+  stable sequents on one thread, none decided in 66 million on a pool of
+  two). A session's `close` runs the same race over `prove_goal` on the
+  goal's occurrences and grafts the proof with `Interactive::close_with`
+  under the command's own stop, so the switch never stops a graft. The
+  sequential engines are what a pinned output (a test's `--stats`
+  counts, a proof compared across runs) needs, since a parallel run's counts add every thread's
   and its proof is the first found; a test that pins such output names
   `--deterministic`, and one whose verdict could depend on the
   machine's speed names `--copies` or `--timeout`. The CLI enables

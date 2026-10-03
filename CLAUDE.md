@@ -44,7 +44,7 @@ Workspace crates:
   `--bias` picks the focused engines' atom bias (`--forward-copies` the
   bound of the forward search that the default runs on Horn programs
   under a `--copies` bound); by default one thread searches for
-  `--pool-after` (100 ms) and then every core takes over afresh, `--jobs
+  `--pool-after` (100 ms) and then a pool of the other cores joins it, `--jobs
   N` runs N threads from the start (the most a search uses is every
   core; more is taken as that with a note) and `--deterministic` the
   sequential engines; `--timeout DURATION|none` (default 2 s) counts from

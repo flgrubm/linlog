@@ -716,8 +716,9 @@ fn tail(args: &OneArgs) -> String {
 /// Decides a problem under the options until the flag is raised: with
 /// the options' threads from the start, or with `--pool-after` on one
 /// thread first and, if that has not decided when the time has passed,
-/// afresh on the pool, as the command does by default. The outcome of two
-/// runs has the counters of both.
+/// with a pool of the other threads beside it, the first to decide
+/// answering, each with half the memory, as the command does by default.
+/// The outcome of two searches has the counters of both.
 fn alone_first(
     sequent: &linlog::Sequent,
     mode: linlog::Mode,
@@ -729,31 +730,60 @@ fn alone_first(
     let Some(alone) = args.pool_after.filter(|_| args.jobs > 1) else {
         return prove_until(sequent, mode, options, stop);
     };
-    let passed = Arc::new(AtomicBool::new(false));
-    {
-        let passed = Arc::clone(&passed);
-        let alone = Duration::from_secs_f64(alone);
-        thread::spawn(move || {
-            thread::sleep(alone);
-            passed.store(true, Ordering::Relaxed);
-        });
-    }
-    let first = prove_until(sequent, mode, &options.clone().jobs(1), || {
-        stop() || passed.load(Ordering::Relaxed)
-    })?;
-    if !matches!(first.verdict, Verdict::Unknown(Reason::Stopped)) || stop() {
-        return Ok(first);
-    }
-    let mut second = prove_until(sequent, mode, options, stop)?;
-    let (s, f) = (&mut second.statistics, &first.statistics);
-    s.nodes += f.nodes;
-    s.memo_hits += f.memo_hits;
-    s.memo_entries = s.memo_entries.max(f.memo_entries);
-    s.splits += f.splits;
-    s.links += f.links;
-    s.tests += f.tests;
-    s.copies = s.copies.max(f.copies);
-    Ok(second)
+    // A pool of one thread would be the single thread's search again.
+    let pool = args.jobs.saturating_sub(1).max(2);
+    let half = options
+        .clone()
+        .memory_limit(memory_limit(args.memory_limit).map(|m| m / 2));
+    let decided = AtomicBool::new(false);
+    let is_decided = |o: &Result<linlog::search::Outcome, Error>| matches!(o, Ok(o) if !matches!(o.verdict, Verdict::Unknown(_)));
+    let halt = || stop() || decided.load(Ordering::Relaxed);
+    thread::scope(|scope| {
+        let (done, finished) = mpsc::channel::<()>();
+        let (half, decided, is_decided, halt) = (&half, &decided, &is_decided, &halt);
+        let single = thread::Builder::new()
+            .stack_size(options.stack_size())
+            .spawn_scoped(scope, move || {
+                let outcome = prove_until(sequent, mode, &half.clone().jobs(1), halt);
+                if is_decided(&outcome) {
+                    decided.store(true, Ordering::Relaxed);
+                }
+                let _ = done.send(());
+                outcome
+            })
+            .expect("a thread for the single search");
+        let join = |single: thread::ScopedJoinHandle<'_, _>| {
+            single
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+        };
+        if finished
+            .recv_timeout(Duration::from_secs_f64(alone))
+            .is_ok()
+            || stop()
+        {
+            return join(single);
+        }
+        let pooled = prove_until(sequent, mode, &half.clone().jobs(pool), halt);
+        if is_decided(&pooled) {
+            decided.store(true, Ordering::Relaxed);
+        }
+        let first = join(single);
+        let (mut outcome, other) = if is_decided(&first) {
+            (first?, pooled?)
+        } else {
+            (pooled?, first?)
+        };
+        let (s, f) = (&mut outcome.statistics, &other.statistics);
+        s.nodes += f.nodes;
+        s.memo_hits += f.memo_hits;
+        s.memo_entries = s.memo_entries.max(f.memo_entries);
+        s.splits += f.splits;
+        s.links += f.links;
+        s.tests += f.tests;
+        s.copies = s.copies.max(f.copies);
+        Ok(outcome)
+    })
 }
 
 /// A tail with the given fields filled in and the others empty.

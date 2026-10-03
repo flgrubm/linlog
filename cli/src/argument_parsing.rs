@@ -163,9 +163,9 @@ pub struct ProveArgs {
     /// How many threads the search may use
     ///
     /// By default one thread searches first, for the time `--pool-after`
-    /// gives, and then as many threads as the machine runs at once take
-    /// over: a small sequent is decided at once and always the same way,
-    /// a hard one gets every core. A number given here is used from the
+    /// gives, and then the machine's other threads join it: a small
+    /// sequent is decided at once and always the same way, a hard one
+    /// gets every core. A number given here is used from the
     /// start, unless `--pool-after` is given too; a number above the
     /// machine's parallelism is taken as that, with a note on standard
     /// error. More than one runs the focused engine and the net engine on
@@ -173,12 +173,13 @@ pub struct ProveArgs {
     /// the verdict never does.
     #[arg(short, long, value_name = "N")]
     pub jobs: Option<usize>,
-    /// How long one thread searches before the other threads take over,
+    /// How long one thread searches before the other threads join it,
     /// such as 100ms; 0 starts them at once
     ///
     /// The default is 100ms when `--jobs` is not given, and 0 when it is.
-    /// The threads start the search afresh: what the single thread found
-    /// is not handed on.
+    /// The single thread goes on searching beside a pool of the other
+    /// threads, which starts the search afresh, and the first to decide
+    /// answers; the two have half of `--memory-limit` each.
     #[arg(long, value_name = "DURATION", value_parser = parse_duration)]
     pub pool_after: Option<Duration>,
     /// Run the sequential engines, whose proof is a function of the input
@@ -255,7 +256,7 @@ pub struct InteractArgs {
     /// How many threads a `close` may use; see `prove --jobs`
     #[arg(short, long, value_name = "N")]
     pub jobs: Option<usize>,
-    /// How long one thread searches before the other threads take over;
+    /// How long one thread searches before the other threads join it;
     /// see `prove --pool-after`
     #[arg(long, value_name = "DURATION", value_parser = parse_duration)]
     pub pool_after: Option<Duration>,
@@ -276,14 +277,14 @@ pub struct InteractArgs {
 /// decides each wait the whole limit.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// How long one thread searches before the others take over, when
+/// How long one thread searches before the others join it, when
 /// `--jobs` is not given: a small sequent is decided in microseconds, and
 /// a pool costs milliseconds to start and makes the proof depend on the
 /// threads' timing.
 pub const DEFAULT_POOL_AFTER: Duration = Duration::from_millis(100);
 
 /// The threads a search gets, and how long one thread searches before
-/// they take over.
+/// they join it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Threads {
     /// The threads, at most those the machine runs at once.

@@ -256,9 +256,10 @@ syntax, a file of 86 MB that takes twelve seconds to parse; both commands
 end with exit status 3 a second after they started.
 
 By default the search runs on one thread first, and if that has not
-decided within a tenth of a second (`--pool-after`), every core the machine
-runs at once takes over, starting the search afresh: a small sequent is
-decided at once and always the same way, and a hard one gets the machine.
+decided within a tenth of a second (`--pool-after`), a pool of the
+machine's other cores searches beside it, the first to decide answering: a
+small sequent is decided at once and always the same way, a hard one gets
+the machine, and what one thread decides within the limit stays decided.
 `--jobs N` (`-j`) runs N threads from the start (with `--pool-after`, after
 one thread), and `--deterministic` runs the sequential engines throughout,
 whose proof and statistics are a function of the input, where a parallel
@@ -677,7 +678,7 @@ $ linlog-bench summary --before bench/results/2026-09-30 bench/results/2026-10-0
 `run --forward-copies N` the default's forward search within that bound,
 and the rows say which. `run --copies none` deepens the copy bound until
 the time limit, and `run --pool-after SECONDS` searches on one thread for
-that long before the `--jobs` threads take over, as the command does by
+that long before a pool of the other `--jobs` threads joins it, as the command does by
 default; the rows have the copy bound reached (`copies_reached`). `bench/targets.sh LABEL` runs the target set of the
 focused engine's performance work, the instances the first baseline
 showed it losing on (the hard families at the sizes that took minutes or
@@ -795,7 +796,7 @@ Built:
   or a derivation recurses on the input's depth.
 - Defaults a newcomer can use, each of them an option: the copy bound
   deepens while a time limit of two seconds lasts, one thread searches
-  for a tenth of a second before every core takes over, an "unknown"
+  for a tenth of a second before the other cores join it, an "unknown"
   says which bound or limit ended the search, after how long and at which
   copy bound, with the flag that changes it, and an "unprovable" says why
   where the counts of the sequent tell (an atom whose literals cannot

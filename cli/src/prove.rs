@@ -2,7 +2,7 @@
 // Licensed under the EUPL
 
 use crate::argument_parsing::{
-    CheckArgs, Format, OutputArgs, ProveArgs, SequentFormat, Tree, threads,
+    CheckArgs, Format, OutputArgs, ProveArgs, SequentFormat, Threads, Tree, threads,
 };
 use crate::io;
 use crate::limit::{Deadline, Notice};
@@ -17,6 +17,7 @@ use linlog::{
 };
 use std::fmt::Write;
 use std::io::IsTerminal;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -41,46 +42,81 @@ pub(crate) fn on_large_stack<T: Send>(size: usize, f: impl FnOnce() -> T + Send)
     })
 }
 
-/// Runs a search with the options' threads, on one thread first when
-/// `alone` says for how long: if that has not decided when the time has
-/// passed, the search starts afresh on every thread, and the outcome has
-/// the counters of both runs. `halt` is the command's own stop condition.
-/// `search` runs the search with the options and stop condition given;
-/// an error it returns that `stopped` says only means the stop condition
-/// fired (a session's graft of a proof, which the condition also stops)
-/// is, on the single thread, a reason to go on with every thread.
-pub(crate) fn alone_first<E>(
+/// Runs a search with the threads `threads` gives: from the start, or on
+/// one thread first and, if that has not decided when `threads.alone` has
+/// passed, with a pool of the other threads beside it, the first of the
+/// two to decide answering. The single thread is not stopped when the
+/// pool starts: a pool may search worse than one thread, and what one
+/// thread decides within the limit stays decided. The two then have half
+/// of `memory` each. `halt` is the command's stop condition, and `search`
+/// runs a search with the options and stop condition given. The outcome
+/// of two searches has the counters of both.
+pub(crate) fn alone_first<E: Send>(
     options: &Options,
-    alone: Option<Duration>,
-    halt: &mut dyn FnMut() -> bool,
-    stopped: impl Fn(&E) -> bool,
-    mut search: impl FnMut(&Options, &mut dyn FnMut() -> bool) -> Result<Outcome, E>,
+    threads: Threads,
+    memory: Option<u64>,
+    halt: &(dyn Fn() -> bool + Sync),
+    search: impl Fn(&Options, &mut dyn FnMut() -> bool) -> Result<Outcome, E> + Sync,
 ) -> Result<Outcome, E> {
-    // Without the timer's thread the threads start at once.
-    let Some(alone) = alone.and_then(|t| Deadline::start(Some(t), Instant::now()).ok()) else {
-        return search(options, halt);
+    let Some(alone) = threads.alone else {
+        return search(options, &mut || halt());
     };
-    let first = match search(&options.clone().jobs(1), &mut || halt() || alone.passed()) {
-        Err(e) if stopped(&e) && !halt() => None,
-        Err(e) => return Err(e),
-        Ok(first) if matches!(first.verdict, Verdict::Unknown(Reason::Stopped)) && !halt() => {
-            Some(first)
+    // A pool of one thread would be the single thread's search again.
+    let pool = threads.jobs.saturating_sub(1).max(2);
+    let half = options.clone().memory_limit(memory.map(|m| m / 2));
+    let decided = AtomicBool::new(false);
+    let is_decided =
+        |o: &Result<Outcome, E>| matches!(o, Ok(o) if !matches!(o.verdict, Verdict::Unknown(_)));
+    thread::scope(|scope| {
+        let (done, finished) = std::sync::mpsc::channel::<()>();
+        let (search, half, decided, is_decided) = (&search, &half, &decided, &is_decided);
+        let single = thread::Builder::new()
+            .name("search alone".into())
+            .stack_size(options.stack_size())
+            .spawn_scoped(scope, move || {
+                let outcome = search(&half.clone().jobs(1), &mut || {
+                    halt() || decided.load(Ordering::Relaxed)
+                });
+                if is_decided(&outcome) {
+                    decided.store(true, Ordering::Relaxed);
+                }
+                let _ = done.send(());
+                outcome
+            });
+        // Without a second thread the search runs on this one alone.
+        let Ok(single) = single else {
+            return search(&options.clone().jobs(1), &mut || halt());
+        };
+        let join = |single: thread::ScopedJoinHandle<'_, Result<Outcome, E>>| {
+            single
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+        };
+        if finished.recv_timeout(alone).is_ok() || halt() {
+            return join(single);
         }
-        Ok(first) => return Ok(first),
-    };
-    let Some(first) = first else {
-        return search(options, halt);
-    };
-    let mut second = search(options, halt)?;
-    let (s, f) = (&mut second.statistics, &first.statistics);
-    s.nodes += f.nodes;
-    s.memo_hits += f.memo_hits;
-    s.memo_entries = s.memo_entries.max(f.memo_entries);
-    s.splits += f.splits;
-    s.links += f.links;
-    s.tests += f.tests;
-    s.copies = s.copies.max(f.copies);
-    Ok(second)
+        let pooled = search(&half.clone().jobs(pool), &mut || {
+            halt() || decided.load(Ordering::Relaxed)
+        });
+        if is_decided(&pooled) {
+            decided.store(true, Ordering::Relaxed);
+        }
+        let first = join(single);
+        let (mut outcome, other) = if is_decided(&first) {
+            (first?, pooled?)
+        } else {
+            (pooled?, first?)
+        };
+        let (s, f) = (&mut outcome.statistics, &other.statistics);
+        s.nodes += f.nodes;
+        s.memo_hits += f.memo_hits;
+        s.memo_entries = s.memo_entries.max(f.memo_entries);
+        s.splits += f.splits;
+        s.links += f.links;
+        s.tests += f.tests;
+        s.copies = s.copies.max(f.copies);
+        Ok(outcome)
+    })
 }
 
 /// How long a search runs before a line on standard error says that it
@@ -98,6 +134,18 @@ pub(crate) fn notice_line(limit: Option<Duration>, deepens: bool) -> String {
     match limit {
         Some(t) => format!("searching for at most {t:?}{deepening}; --timeout changes the limit"),
         None => format!("searching without a time limit{deepening}; Ctrl-C stops it"),
+    }
+}
+
+/// Returns why the command's stop condition fires, if it does: Ctrl-C
+/// or the deadline.
+pub(crate) fn stopped(deadline: &Deadline) -> Option<Stop> {
+    if interrupted() {
+        Some(Stop::Interrupt)
+    } else if deadline.passed() {
+        deadline.limit().map(Stop::Timeout)
+    } else {
+        None
     }
 }
 
@@ -583,25 +631,17 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
     let (outcome, stop, elapsed, derivation) = on_large_stack(options.stack_size(), || {
         let start = Instant::now();
         let notice = Notice::start(NOTICE_AFTER, notice_line(deadline.limit(), deepens));
-        let mut stop = None;
         // Both conditions are flags, so every poll asks both.
-        let mut halt = || {
-            if interrupted() {
-                stop = Some(Stop::Interrupt);
-            } else if deadline.passed() {
-                stop = deadline.limit().map(Stop::Timeout);
-            }
-            stop.is_some()
-        };
-        let never = |_: &Error| false;
+        let halt = || interrupted() || deadline.passed();
         let outcome = alone_first(
             &options,
-            threads.alone,
-            &mut halt,
-            never,
+            threads,
+            args.memory_limit.0,
+            &halt,
             |options, halt| prove_goal(&forest, forest.roots(), mode, options, halt),
         )
         .map_err(|e| describe(e, sequent))?;
+        let stop = stopped(&deadline);
         drop(notice);
         let elapsed = start.elapsed();
         // The time limit and Ctrl-C hold for the derivation as for the
