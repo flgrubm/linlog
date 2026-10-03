@@ -378,6 +378,14 @@ beyond clap and anyhow, which the CLI already has.
   default (`--copies none --jobs all --pool-after 0.1 --timeout 2`),
   about an hour and a quarter, since some two thousand problems wait the
   whole limit.
+- **`defaults/`** holds the rows that chose the command's defaults (the
+  report of that work has the tables): the default that restarted the
+  search on the pool (`restart-copies-10.csv`, the 1 003 problems of the
+  second baseline's `lltp-copies-10`; `restart-recorded.csv`, the
+  problems the Maude prover's result files cover), the rerun of the 681
+  problems not decided within 100 ms with the single thread kept beside
+  the pool at half the memory each (`race-half-memory.csv`), and eight
+  of them again with the whole bound each (`race-recheck.csv`).
 
 ## Heap profiles
 
