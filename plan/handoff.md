@@ -95,7 +95,11 @@ workspace, the web client in a repository of its own, everything under
 the GitHub organization `linlog-prover` (D22), where the repository
 has been since 2026-10-03 (`origin` is
 `git@github.com:linlog-prover/linlog.git`). Remind the author at step 31
-that the report of the wrong LLTP headers is ready to send.
+that the report of the wrong LLTP headers is ready to send, and that a
+rule on `main` against force pushes and deletion was to follow the
+release. The GitHub CLI is logged in with the author's rights over the
+organization: ask before every administrative task through it
+(CLAUDE.md), as the author asked on 2026-10-03.
 
 The lesson of steps 16 and 17, for every review: run the command on the
 largest problems yourself. Rows and reports hid a checker that takes

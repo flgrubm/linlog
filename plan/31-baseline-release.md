@@ -37,6 +37,10 @@ publication) are the last and smallest part.
 3. **The reminder** (the author, 2026-10-03): the final message of this
    step tells the author that `plan/notes/lltp-headers.md` is ready to
    send to the LLTP library's maintainers, and asks whether to send it.
+   It also reminds the author that a rule on `main` against force
+   pushes and deletion was to be added once a release is out (the
+   author, 2026-10-03); the planning session adds it through `gh` on
+   the author's word.
 4. **README** as the face of a released tool: installation, a first
    proof, where the documentation and the benchmarks are.
 

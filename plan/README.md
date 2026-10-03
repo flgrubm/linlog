@@ -1374,3 +1374,15 @@ publishing are the author's acts.
   changed, `notes/distribution.md`, prompt 31 and `handoff.md` brought
   in line. The rustdoc is served at `linlog-prover.github.io/linlog`;
   the old Pages address no longer answers.
+- 2026-10-03 (night), the organization's administration: the author
+  gave the `gh` login the scope for the organization and asked to be
+  asked before every administrative task through it; CLAUDE.md says so
+  and a permission rule asks before any `gh` command. Done on the
+  author's word: the organization's Actions policy now requires every
+  action pinned to a full commit (both workflows already were;
+  `.claude/rules/ci.md` says so). Read and left as they are: a base
+  permission of read, all actions allowed, workflow tokens read-only,
+  no rule on `main`. Deferred by the author: a rule on `main` against
+  force pushes and deletion, after the first release (prompt 31 reminds);
+  two-factor authentication as a requirement of the organization, not
+  wanted now. The first CI and Docs runs under the organization passed.
