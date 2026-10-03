@@ -835,7 +835,8 @@ impl<'a> Engine<'a> {
 
     /// The `&` rule on the pool: the left premise on a worker on this
     /// thread, the right one on a worker of the pool, the first to fail
-    /// cancelling the other. The flags of a premise count when it ran to
+    /// cancelling the other; an engine that is stopped already starts
+    /// neither. The flags of a premise count when it ran to
     /// its end and the other did not fail before it, as in the sequential
     /// rule, where the right premise runs only after the left one
     /// succeeded.
@@ -847,6 +848,13 @@ impl<'a> Engine<'a> {
         o: OccId,
         budget: u32,
     ) -> Search {
+        // The asynchronous phase polls nowhere else before its stable
+        // sequents: without this poll a premise that is stopped already
+        // would still start both premises of every `&` below it, two to
+        // the number of them before the first stable sequent ends one.
+        if self.stop.fired(0) {
+            return Err(Reason::Stopped);
+        }
         let cancel = AtomicBool::new(false);
         let stack = self.stack[..self.stack_len].to_vec();
         let spawn = self.spawn(&stack, self.or_depth);
@@ -1053,5 +1061,24 @@ mod tests {
             "{:?}",
             outcome.verdict
         );
+    }
+
+    /// Forty `&` in one asynchronous phase, whose first stable sequent
+    /// fails: the failed premise cancels the other one of every `&`, and
+    /// a cancelled premise starts none of the 2⁴⁰ below it.
+    #[test]
+    fn a_cancelled_premise_starts_no_other() {
+        let roots: Vec<String> = (0..40).map(|i| format!("a{i} & b{i}")).collect();
+        let sequent: Sequent = format!("|- {}", roots.join(", ")).parse().unwrap();
+        for jobs in [2, 4] {
+            let options = Options::default().jobs(jobs);
+            let outcome = prove(&sequent, Mode::CLASSICAL, &options).unwrap();
+            assert!(matches!(outcome.verdict, Verdict::Unprovable));
+            assert!(
+                outcome.statistics.nodes < 100_000,
+                "{} stable sequents on {jobs} threads",
+                outcome.statistics.nodes
+            );
+        }
     }
 }
