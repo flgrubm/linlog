@@ -63,7 +63,22 @@ case.
    thread answers "unprovable"; and the differential run of the pool
    against one thread is repeated with recursion limits of 4 to 16,
    since limits of 24 to 63 were reached by 10 of 369 057 random
-   sequents.
+   sequents. From step 21 and its review: a worker copies the branch's
+   stack of keys and hashes every key again (`Spawn::worker`), the
+   forest's width times the depth for every task of a choice. The
+   review made a task poll before it builds one (a stop on a Petri net
+   came 15 s late), but a task that runs still pays it. On
+   `SYJ204+1.014` in its `01` translation a pool of two visits 66
+   million stable sequents without a proof, where one thread proves it
+   in 16 million. `LCL181+1` in the ILLTP library is never decided by
+   one thread: it deepens past a million levels in two seconds, every
+   one of them cut. A pool refutes it at level 32 to 565, so it is the
+   order of the memo's cut entries against the loop check that one
+   thread loses on. Without a copy bound the backward search of the
+   default bias keeps its share of the work for good, where a bound
+   used to end it and hand the core to the forward one
+   (`SYJ212+1.014` in `cbn`). Each of these is a measurement to take,
+   with the profile of item 5, before anything changes.
 7. **Ready for quantifiers** (D17) as `plan/notes/api.md` says: where a
    trail of bindings would go, which prunes assume ground atoms.
 

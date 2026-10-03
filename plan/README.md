@@ -1590,3 +1590,37 @@ publishing are the author's acts.
   bound. The author allowed a probe, a rerun of 681 problems and a
   recheck of eight beyond the two named runs. A fresh-context reviewer
   found the refutations sound. Awaiting review.
+- 2026-10-03: review of step 21 (its own entry is above; run with Opus
+  5.5 at xhigh, the author's choice), accepted with one fix of the pool
+  in the review. Read: the report, the deepening and its bound, the
+  refutation against the engine's `Rules`, the race in the command, the
+  session and the harness, `close_with`; no comment names the plan, and
+  no new source file. Checked: clippy, the tests with and without
+  `parallel`, both `cargo hack` runs, `cargo deny`, `nix flake check`
+  before and after the fix, the target set against `after-bias` and
+  `after-memory` (the 99 decided rows identical). **Fixed**: the pool
+  honoured a stop up to 15 s late on large Petri nets, because every
+  task a choice had queued built its worker (a copy of the branch's
+  stack of forest-wide keys) before its first poll; the default, which
+  starts a pool after 100 ms, met it on every large net
+  (`GlobalResAllocation_galloc_res-5_100_1`: 16.4 s under a limit of
+  2 s where one thread proves it in 0.14 s). A task now polls first,
+  and one skipped for an ancestor's flag counts as a stop, never as a
+  failure; a fresh-context reviewer found it sound ("Skip the queued
+  alternatives of a choice once a flag above them is raised"). The
+  step's runs, on two cores, could not show it, and the earlier
+  reviews' sweeps of the pool had left the nets out. Run by hand: the
+  whole library under the default on four cores per run (2 252 proofs
+  `ok`, no verdict against another but the nine known headers, 191 rows
+  late and 43 killed with the step's binary; with the fix all of them
+  end by 2.11 s and five more are proved), the 19 largest problems
+  (2.05 GB at the most, two searches of 1 GiB each), the refutations in
+  every mode, Ctrl-C, a session's `close`, the README's examples that
+  depend on time. Also fixed: the harness's help for `--pool-after`.
+  Assigned: words for localisation and "copy bound reached" to 22;
+  `Refutation`'s duplicated name, `Statistics::copies` and `close_with`
+  on a foreign proof to 23; the race written twice, its twice the
+  memory bound and three threads under `--jobs 2` to 24; the worker's
+  copy per task, `SYJ204` on the pool, `LCL181+1` on one thread and the
+  unbounded backward share to 29; the race's rows on sixteen cores to
+  31. Next: step 22.

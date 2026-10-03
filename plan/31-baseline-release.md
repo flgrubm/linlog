@@ -25,7 +25,17 @@ publication) are the last and smallest part.
 1. **The baseline**, by `.claude/rules/bench.md` and the lessons of
    steps 14 and 16: the estimate by arithmetic, a word to the author
    before the night, no probes by day beyond those named.
-   `bench/COMPARISON.md` gains the third column.
+   `bench/COMPARISON.md` gains the third column. The pass under the
+   default (`lltp-default`: every core, `--pool-after 0.1 --timeout 2`)
+   answers what step 21 left open. On two cores the race of one thread
+   and the pool lost one row of the old default
+   (`AutoFlight_afcs_06_b_10_1`, three threads sharing the cores); the
+   question is whether it keeps them all when the pool has fifteen
+   threads beside the single one. Read its latest stops as well: at
+   step 21's review the pool's choices spent up to 15 s on queued tasks
+   after a stop on Petri nets, which the review fixed. The script now
+   estimates eleven and a half hours, more than one slot, and finishes
+   a stopped baseline on the next night.
 2. **The release, prepared**: version 0.1.0 in the manifests, a
    changelog, `CITATION.cff`, the crates' metadata and what docs.rs
    builds, a dry run of publishing, the release workflow, the Rocq

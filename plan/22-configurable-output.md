@@ -52,6 +52,20 @@ writes every member of a zone as its formula, 65 MB from a proof file
 of 47 KB that shares subformulas deeply. It belongs with the
 abbreviation of a sequent in a line.
 
+Step 21 added words a user reads, in three places: `Refutation`'s
+`Display` in the library (an atom's balance, the count equation spelt
+out), the command's sentence for an "unknown" (`unknown` in
+`cli/src/prove.rs`, which the session shares: the bound or limit, the
+time, the copy bound reached, the flag to try), and the line on standard
+error while a search runs long (`Notice` and `notice_line` in
+`cli/src/limit.rs` and `prove.rs`, after `NOTICE_AFTER`). If the
+messages are to be localised (item 2), these are among them; the JSON
+carries the values (`refutation`, `reason`, `statistics.copies`), so a
+front end that writes its own words needs nothing more. `--stats` prints
+"copy bound reached", the larger of the two searches' levels, which
+under `--copies 3` on a Horn program is 30, the forward search's bound:
+the line should say whose level it is.
+
 ## Goal
 
 Everything a user might want to vary in an output is a field of one

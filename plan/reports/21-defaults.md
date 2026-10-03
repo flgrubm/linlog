@@ -453,3 +453,87 @@ On "Plan: review step 20", in order:
 
 Commit 9 fixed a defect of commit 4 found while writing the session's
 part; commit 12 replaced it. Nothing was pushed.
+
+## From the review (2026-10-03)
+
+The planning session read the deepening and its bound, the refutation
+against the engine's `Rules`, the race in the command, the session and
+the harness, and `Interactive::close_with`. It ran the command and the
+harness itself, in capped scopes on pinned cores (4 to 7 for single
+calls, as a machine of four cores sees them).
+
+- **The pool honoured a stop up to 15 s late on large Petri nets, and
+  the default met it on every one** (fixed in the review: "Skip the
+  queued alternatives of a choice once a flag above them is raised").
+  `GlobalResAllocation_galloc_res-5_100_1` was proved by a call without
+  flags after 16.4 s under its limit of 2 s, where one thread proves it
+  in 0.14 s. A choice on the pool queues a task per alternative, and a
+  stable sequent of a net has hundreds. Each task built its worker
+  before its first poll, which copies the branch's stack of keys (two
+  bitsets of the forest's width each) and hashes every key again. So
+  once the single thread had decided, or the stop had come, the pool
+  went through its backlog for seconds and the race waited for it. The
+  defect is the pool's and older than this step. The default exposed
+  it: it starts a pool after 100 ms on every problem that one thread
+  has not decided by then. The step's runs could not show it, since on
+  two cores the pool runs the two searches side by side and no cubes.
+  Now a task polls its flags before it builds a worker. A task skipped
+  for an ancestor's flag records a stop, never a failure
+  (`Collected::skip`, `a_skipped_alternative_is_no_failure`); one
+  skipped for the choice's own flag records nothing, since that flag is
+  raised only once a proof or an error is recorded. A fresh-context
+  reviewer found it sound. Afterwards: the default proves the net in
+  0.33 s; `--jobs 4 --copies 3` in 0.31 s where it took 17.5 s; a stop
+  at 500 ms comes at 0.52 s where it came at 21.8 s. The rules file
+  states it beside the same rule for `&`.
+- **Items 1 and 5, read closely.** The deepening ends at `u32::MAX`
+  without a wrap and would answer "unknown" there; a copy is spent only
+  above budget 0. `LCL181+1` reaches 1.3 million levels in two seconds
+  on one thread, so "hours at the least" for four billion holds, if
+  only just. The refutation reads rows signed by the literal, not by
+  the bias, under the same `Rules` the engine prunes with. The
+  asynchronous phase keeps the goal's sums, so every refutation it
+  prints is a reason the engine itself used. Checked by hand: the
+  equation with and without Mix (Mix here has no empty sequent, so "at
+  least" is right), the hull across `⊕`, the balance in intuitionistic
+  mode, affine and `⊤` as `Exhausted`, and the JSON of each.
+- **The target set** (`after-defaults.csv`): all 99 decided rows have
+  the counters of `after-bias.csv` and of `after-memory.csv`, and the 66
+  others the same verdicts.
+- **By hand**: the growing sequent `!(A -o A * A), A |- ?B` under every
+  thread setting ends at the recursion limit at a copy bound of 512
+  within half a second, and `--copies 3` keeps its old answer; Ctrl-C
+  says "interrupted after 703 ms at a copy bound of 512"; a session's
+  `close` races and keeps its own limit. The README examples that
+  depend on time (the limit of 2 s at a copy bound of 512, the affine
+  one at 18, the limit of 1 s at 12) give those numbers here too. On
+  the 19 largest problems of earlier reviews, the default's peak memory
+  is 2.05 GB on `SYJ206+1.016` in its `01` translation: two searches,
+  each within the whole bound, as the help says.
+- **The whole library under the default on four cores**, as a machine
+  of four cores runs it: the 4 512 problems of `ILL` and `CLL` through
+  the harness at `--copies none --pool-after 0.1 --jobs 4 --timeout 2`,
+  in two detached halves (cores 4 to 7 in order, 8 to 11 reversed)
+  until they met, with the step's binary. 2 252 proved, all `checked`
+  `ok`; 153 refuted; 2 107 unknown (2 001 at the time limit, 54 at the
+  recursion limit, 9 at the memory limit, 43 killed). The nine
+  verdicts against a header are the known wrong headers (`SYJ212+1.001`,
+  `SYN001+1` and `KLE065+1`, each in three translations). 191 rows ran
+  past 2.1 s, 7.25 s at the most, and the 43 killed outran their grace,
+  all of them on the pool. Run again with the fix, every one of the
+  191 ends by 2.11 s; five of them are now proved in 0.2 to 0.46 s
+  (`GlobalResAllocation_galloc_res-5_100_1` and four
+  `BridgeAndVehicles` nets, `ok`), and none is killed.
+- **Harness help**: `--pool-after` said the pool "takes over afresh";
+  it now says that it searches beside the single thread ("Say that the
+  harness's single thread goes on beside the pool").
+- **Assigned**: to 22, the new words a user reads (the refutations, the
+  "unknown" sentence, the notice) for localisation, and "copy bound
+  reached" of two searches; to 23, `Refutation::Unbalanced` holding a
+  name the forest has, `Statistics::copies`, and `close_with` taking a
+  proof of any forest; to 24, the race written twice, its memory of
+  twice the bound, three threads under `--jobs 2`, and the harness's
+  panics on NaN; to 29, the worker's copy per task, `SYJ204` on the
+  pool, `LCL181+1` on one thread and the backward search's unbounded
+  share; to 31, whether the race keeps every row of the old default on
+  sixteen cores, and the latest stop of `lltp-default`.

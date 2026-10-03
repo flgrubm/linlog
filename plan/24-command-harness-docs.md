@@ -30,10 +30,18 @@ check edits one place and the compiler or a test names the others.
    with quoting, its ASCII rule names are in its help, and `--file -` is
    refused; a closed pipe keeps the verdict; `--output` into a missing
    directory fails before the search. Exit statuses beyond 0 to 3 that a
-   user can meet are documented or removed. A session's `close` says
-   which of the two ended it ("the time limit was reached or the search
-   was interrupted" today), and its sequent is read under the limit as
-   `prove`'s is, or the help says that it is not.
+   user can meet are documented or removed. A session's sequent is read
+   under the limit as `prove`'s is, or the help says that it is not.
+   Step 21 left: the race of one thread and the pool (`alone_first`) is
+   written twice, in `cli/src/prove.rs` and in `bench/src/run.rs`; the
+   two searches of the race each hold the whole `--memory-limit`, so a
+   call without flags may hold twice it (2.05 GB measured on
+   `SYJ206+1.016` in its `01` translation), which the help says in a
+   clause and README not at all (half the bound each was the first
+   version and starved a wide memo; one account that both draw from is
+   the question); `--jobs 2` with `--pool-after` runs three threads; and
+   the harness's `--pool-after` and `--timeout` panic on a negative or
+   NaN value.
 2. **Tests for the stated behaviours** that have none (`--timeout`,
    Ctrl-C, `--jobs`, `--bias`, `--memo-limit`, `--output`), sized like
    their neighbours, and **README's invocations pinned**: a test or a

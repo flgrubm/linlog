@@ -71,7 +71,7 @@ session's transcript is
 
 ## Where things stand
 
-As of 2026-10-03 (evening) steps 1 to 20 are finished, reviewed and
+As of 2026-10-03 (evening) steps 1 to 21 are finished, reviewed and
 pushed. Step 17 assessed the project (`plan/reports/17-assessment.md`)
 and, on the author's answers, planned steps 18 to 37: the step table,
 the decisions D16 to D22 and the commands are in `plan/README.md`, the
@@ -91,10 +91,19 @@ bytes (a memo of records in chunks, the arena collected, "unknown" by
 the bound as the last answer), the sequent a bound on its occurrences,
 the check and the derivation the same memory bound, and replaced the
 parser by a hand-written one without recursion (chumsky is gone); its
-review guarded one more counter. The next command is step 21:
+review guarded one more counter. Step 21 (run with Opus 5.5 at xhigh,
+the author's choice) set what a call without flags does: the copy bound
+deepens without end while a time limit of 2 s lasts, one thread searches
+for 100 ms before a pool of the other cores joins it, "unknown" names
+the limit, the time and the copy bound, and "unprovable" says why where
+the counts tell. Its review found the pool honouring a stop up to 15 s
+late on Petri nets (queued tasks of a choice built their workers before
+their first poll), which the default met on every large net, and fixed
+it. The next command is step 22, run twice (two sessions, the second
+from the first's report):
 
 ```nu
-claude --model claude-fable-5-1 --effort high --name step-21 ((open --raw plan/21-defaults.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort xhigh --name step-22 ((open --raw plan/22-configurable-output.md) + "\n" + (open --raw plan/conduct.md))
 ```
 
 Profiling (the author asked on 2026-10-03, the planning session
@@ -127,7 +136,13 @@ JSON boundary; each was found by a call, not by reading. The lesson of
 step 18: where a step replaces a structure by counters or indices, ask
 what each does at its limit and feed it a file that gets there. The
 step's own differential test and its reviewer's random terms could not
-reach 2³² copies; a proof file of 131 nodes did.
+reach 2³² copies; a proof file of 131 nodes did. The lesson of step 21:
+run a default with the thread count a user's machine has. The step
+measured on two cores, where the pool runs the two searches side by side
+and no cubes; on four, its default missed the time limit by 15 s on
+Petri nets, and the review's own earlier sweeps of the pool had left
+the nets out. Sweep the whole library under the default on four cores
+per run.
 
 ## What a review is
 

@@ -52,7 +52,14 @@ do terms and binders go". No behaviour of the command changes.
    four types called `Rule` or `Rules`); `#[non_exhaustive]` and builders
    applied evenly; `Mode` where a `bool` stands for it; constructors
    that take or clone a forest by one rule; one numbering of inferences
-   or a map between the two.
+   or a map between the two. What step 21 added is part of it:
+   `Verdict::Unprovable(Refutation)`, whose `Unbalanced` holds an atom
+   and its name both, which the forest has;
+   `Options::copies(Option<u32>)`; `Statistics::copies`, the larger of
+   two searches' levels, so 30 under a bound of 3 on a Horn program; and
+   `Interactive::close_with`, which grafts any `Proof` it is handed once
+   it passes the checker against the goal's ids, without asking whether
+   it is a proof over the session's forest.
 3. **Options with a wire form.** `search::Options` and every options
    value of the outputs serialize; the command, the batch mode and the
    web front end are then three callers of the same values (D15).
