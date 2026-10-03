@@ -393,7 +393,20 @@ under the bar; an open goal is its sequent alone, with no bar, which is
 how a leaf without a rule is told from a closed one. Widths are character
 counts (every symbol used is one column in a monospace font), lines are
 trimmed on the right, and there is no trailing newline. The renderings are
-pinned in tests, so a layout change is a test change.
+pinned in tests, so a layout change is a test change. The layout is two
+passes over the inferences in their own order, which needs no walk since
+premises precede conclusions (`layout`: box sizes and the premises'
+offsets ascending, then absolute columns and depths descending), and
+`Display` writes the pieces (a conclusion, a bar with its rule name) row
+by row in column order, each sequent written straight into the formatter
+and only counted in the first pass. So a tree costs time linear in its
+text and memory linear in its inferences; the first renderer built every
+subtree as a block of padded lines and copied it at every level (24 s and
+333 MiB for a tree of 76 MB). A bar that would start left of its box
+moves the premises right (`shift`), exactly as the block renderer padded
+them. `Derivation::text_size` is the width and height from the first pass
+alone, which is how a front end learns whether a tree fits before it
+draws it.
 
 ## Interactive proving
 
