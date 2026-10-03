@@ -8,10 +8,29 @@ use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Sub, SubAssign};
 /// A set of occurrence ids of one forest: a bitset whose width is fixed when
 /// it is made, one bit per occurrence. Sets of the same forest have the same
 /// width, so they compare, hash and combine word by word.
-#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct OccSet {
     /// Bit `i` of word `i / 64` is set when occurrence `i` is a member.
     words: Box<[u64]>,
+}
+
+impl Clone for OccSet {
+    fn clone(&self) -> Self {
+        Self {
+            words: self.words.clone(),
+        }
+    }
+
+    /// Copies `source` into this set's own words when the widths agree,
+    /// which between sets of one forest they always do: a search copies
+    /// sets at every step and must not allocate for it.
+    fn clone_from(&mut self, source: &Self) {
+        if self.words.len() == source.words.len() {
+            self.words.copy_from_slice(&source.words);
+        } else {
+            self.words = source.words.clone();
+        }
+    }
 }
 
 impl OccSet {
