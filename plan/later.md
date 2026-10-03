@@ -798,13 +798,31 @@ meets first on a large problem, and come before any new engine:
   needs it); and the command wants a bound on the derivation it builds
   whatever the checker does, since the tree itself is that large
   ("Follow-ups: the command's output" below).
-- **The search's own memory**, where it is the search: four
-  Philosophers-10000 nets under `--recursion-limit 16384` (the counts
-  of a split allocated per level of the recursion, `Counts::split`),
-  and `qbf/48#0`, whose memo grows by some 15 MB a second until a
-  doubling of its table fails (after 290 s under 12 GiB, after 155 s
-  under 6 GiB). The memo's cap counts entries, not bytes, and nothing
-  bounds the command's memory.
+- **The search's own memory** was step 20's
+  (`plan/reports/20-memory-and-boundaries.md`): a bound in bytes
+  (`Options::memory_limit`), a memo of records in chunks, the kept
+  arena collected when the memo is emptied, the counts' tallies as wide
+  as the atoms that have rows. What it left:
+  - *The zones of a memo key are bitsets of the forest's width*, nearly
+    all of an entry on a forest of thousands of occurrences (528 of 536
+    bytes on `SYJ202+1.008` in cbv); a sparse form would multiply what a
+    bound holds. Step 29, with the memo's other constant factors.
+  - *The pool's arena is not collected* (its workers hold ids nobody
+    can rename), so a pool reaches the bound sooner than one thread on
+    a search that proves much.
+  - *A memo starved by a small bound makes a search slow, not
+    "unknown"*: whether "unknown" should come earlier is step 21's
+    question of what an "unknown" tells the user.
+  - *The reason of the default bias's two searches is the backward
+    one's*, so a forward search that ended at its memory bound is not
+    what the user reads.
+  - `Forest::build` allocates a vector per occurrence (half a million
+    allocations on a net of that size), and `Forest::lca` is a parent
+    walk, so the net engine's "constant-time" rejection costs the depth
+    of the formula.
+  - A proof file and a session's state are read under the default
+    occurrence limit, whatever `--occurrence-limit` says: serde's
+    `Deserialize` takes no options.
 - **The forward search misses its stop on the GPPP-1000 nets, by
   minutes.** On one thread they are killed past 10.5 s under a 5 s
   limit, or proved 0.7 to 1.0 s late, in the default and the `--bias
