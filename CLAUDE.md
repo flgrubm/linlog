@@ -49,13 +49,19 @@ Workspace crates:
   (`bench/problems/*.txt`, lines `name; mode; expected; copies; sequent`)
   in every mode, engine and thread count asked for, one child process per
   run (the hidden `one` command) with a time limit and a kill after it,
-  one CSV row per run; `summary` prints Markdown tables of CSV files.
+  one CSV row per run; `summary` prints Markdown tables of CSV files, or
+  with `--before DIR` compares them problem by problem with the files of
+  the same names in an earlier baseline (`--against FILE`: with one file
+  of the same baseline).
   `bench/baseline.sh` takes a baseline into `bench/results/DAY/` (DAY
   the day it started: CSV files, `starts.txt` with the commit measured,
   `RESULTS.md`) and copies its tables to `bench/RESULTS.md`, the latest
   baseline's; it needs the machine to itself for a night, 20:00 to
   07:00. The first baseline is `bench/results/2026-09-30/`, taken before
-  the performance pass in two nights (the second added the reruns).
+  the performance pass in two nights (the second added the reruns); the
+  second, `bench/results/2026-10-02/`, after it in one night, with its
+  reruns on the first's problems and the library under each bias alone;
+  `bench/COMPARISON.md` compares the two.
   `bench/targets.sh LABEL` runs the target set of that pass (the
   instances the focused engine lost on, 165 runs on two pinned cores in
   a memory-capped user unit, about twenty minutes) into

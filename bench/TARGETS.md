@@ -23,6 +23,11 @@ own at the end:
 - `after-bias`: the default bias runs a backward and a forward search
   on a sequent with exponentials; without exponentials nothing changed.
 
+A fifth, `baseline-2026-10-02`, was taken on 2026-10-02 on the engine the
+second baseline measured, as its set-up check: every row that
+`after-bias` decides has the same verdict, stable sequents, splits, memo
+hits and memo entries.
+
 Stable sequents and splits are machine-independent on one thread and
 come first; a time is the median of up to three runs, the CPU time of
 the search where it is 100 ms or more and the wall time below that, since

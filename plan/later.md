@@ -136,6 +136,17 @@ verdicts; the second baseline's `engines` runs say whether `net` should
 stay a default route at all, and a loop for chains of free splits in the
 focused engine would take the last case.
 
+The second baseline's `engines` runs (`plan/reports/16-baseline.md`,
+`bench/COMPARISON.md`): the focused engine is within a factor of three of
+the net engine on the wide sequents from 8 to 1 024 literals, faster from
+256 on (`wide-m3` at 256: 3.7 ms against 9.7 ms), microseconds where the
+net engine takes seconds or times out on every Horn encoding, and loses
+only at 2 048 literals, where it meets the recursion limit (the net
+engine 0.64 s). So `net` as a default route earns its place only on that
+width; the routing question is whether a loop for chains of free splits
+takes it from the focused engine, after which the net engine is the net
+as a result, not a route to verdicts.
+
 ## MELL proof nets with exponential boxes
 
 Extend `nets` (step 5) with `!`-boxes and the `?` nodes (dereliction,
@@ -168,6 +179,14 @@ subformula closure with subsumption indexing (feature vectors as in Schulz
 heuristic (many hypotheses, small goal) or `--engine inverse`. Fable 5.1,
 xhigh.
 
+What is left for it after the second baseline: Mix (`mix` at ten pairs
+146 s, at eleven over 1 200 s, the same `3^n` memo lookups on every
+thread count), and the Petri nets beyond the forward search (1 594 of
+3 137 at the 5 s limit under the default, 14 out of 12 GiB within 5 s).
+The intuitionistic library outside the nets ends at the copy bound, not
+at the time limit (727 problems), which is a question of `--copies`, not
+of the direction of search.
+
 ## The !-Horn fragment through Petri-net reachability
 
 Detect the fragment, build the net, and either call an external reachability
@@ -185,6 +204,14 @@ default proves 11: the focused engine under that bias is most of what a
 reachability route would add for the provable nets, so what is left for
 this candidate is refutation (a net whose goal is unreachable ends at
 the copy bound, not at `Unprovable`) and the nets beyond the bound.
+The second baseline measured it on the whole library: the default decides
+1 520 of the 3 137 nets within 5 s (210 in the first baseline), the
+backward search alone 442, the forward search alone at 30 copies 1 576;
+1 594 end at the time limit, 2 at the copy bound, 7 are killed (the
+GPPP-1000 nets, whose forward search misses its stop) and 14 run out of
+12 GiB within 5 s. Every LLTP net is a theorem, so the library cannot
+show refutation; the nets beyond 5 s and the memory are what a
+reachability route would be measured on.
 
 ## Cyclic MLL and the Lambek calculus
 
@@ -533,6 +560,33 @@ from the frontier.
   research question to keep open; until then affine mode stays bounded.
 - The interval of `&` could be the intersection instead of the hull.
 
+From the second baseline (`plan/reports/16-baseline.md`), all of them
+engine work for a later step, none a wrong verdict:
+
+- **Memory on large nets.** 76 runs ran out of their 12 GiB of address
+  space: Petri nets with tens of thousands of transitions or tokens
+  (BART-040 to -060, TokenRing-40 and -50, Philosophers-10000,
+  AirplaneLD-pt-4000, GPPP-1000-1000 and others) fill it within 4 to 6 s,
+  14 per default pass and 3 under `--bias rarer` alone, so the forward
+  search's memo or branch stack grows fastest; `qbf/48#0` after 290 s.
+  The memo's cap counts entries, not bytes.
+- **The forward search misses its stop on the GPPP-1000 nets**: on one
+  thread they are killed past 10.5 s under a 5 s limit, or proved 0.7 to
+  1.0 s late, in the default and the `--bias factors` passes and never
+  under `--bias rarer`. Other stops come up to 3.1 s late on one thread
+  (`PaceMaker_20_1` under `--bias rarer`) and 1.6 s on a pool.
+- **The default's contract at the limit**: `ResAllocation_RAS-C-100_5_1`
+  is proved in 2.71 s by the backward search alone and not within 5 s by
+  the default, inside the two thirds of the limit that the default's
+  share of the work was argued to keep (and `Diffusion2D_2D8_gradient_40x40_100_5_1`
+  at 4.50 s); the slices are counted in work, and the work of the two
+  searches is not the same time.
+- **The copy bound**: of the 832 problems outside the nets that the first
+  baseline ended at the copy bound of 3, a bound of 10 decides 369; the
+  forward search alone at 30 copies decides 288 problems outside the nets
+  that the default leaves at 3, all in under 5 s. Whether `--copies`
+  should rise is step 17's question.
+
 ## Follow-ups: intuitionistic mode
 
 Left open by step 8, none of them a correctness issue. The written
@@ -628,6 +682,20 @@ presumably the workers' per-forest state (not looked into). A
 thread-sanitizer run needs
 nightly and a rebuilt standard library; the code has no `unsafe` and
 every shared value is behind a lock or an atomic, so it stays a wish.
+The second baseline: on the 1 102 LLTP problems sixteen threads decide
+623 within 5 s against 586 on one thread under the default (37 gained,
+none lost) and are 2.9× slower in the median on those both decide; the
+portfolio decides 627 (10 gained, 6 lost) at the same time (1.01×), so
+it gains nothing again and can go. On the families the speedups are
+mostly gone with the refutations in microseconds: Partition with 12
+items refuted 4.7× faster on sixteen threads, the counter (two searches
+side by side, a pool each) 3.5× on eight, QBF 1.2× from the second
+thread and nothing from more, Mix slower with every thread; and
+`partition-yes` at 24 items is proved in 106 s on one thread and times
+out at 120 s on every pool. Sixteen SYJ202 and SYJ208 problems in their
+cbv translation (2 000 to 12 000 occurrences) are killed past 10.5 s on
+sixteen threads in both baselines, where one thread stops at 5.1 to
+5.4 s: a stop a pool misses.
 The parallel tests take about a minute in debug builds; trim the samples
 if the suite's time matters more than the coverage.
 

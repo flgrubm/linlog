@@ -41,6 +41,15 @@ beyond clap and anyhow, which the CLI already has.
   of the baseline is one `run` with options of its own (a copy bound, a
   recursion limit, a longer time limit) that the columns alone do not
   tell apart.
+- `src/compare.rs`: `summary --before DIR` (every file against the file
+  of the same name in an earlier baseline) and `summary --against FILE`
+  (every other file against one of the same baseline, keyed without the
+  file's name): the verdicts that differ, what the first decides and the
+  second does not (with the outcomes of the files that have no
+  counterpart beside it), a row per group (file, family, configuration)
+  and the generated problems side by side. A verdict after the time
+  limit counts as decided and late. `bench/COMPARISON.md` is its output
+  for the two baselines, under a summary written by hand.
 - `problems/slow-tests.txt`: problems of the engine reports' timing tables
   that no family generates (the Partition instances of the net engine's
   first table, the chain with a token over, the parallel cancellation
@@ -111,7 +120,7 @@ beyond clap and anyhow, which the CLI already has.
   --user list-timers` before leaving the machine. System timers and
   services need root: the author stops them. The unit waits for an
   idle machine (on mains, a load average of at most 1) until the slot's
-  end minus `estimate` (10 h 30 min), then starts regardless and says so in
+  end minus `estimate` (10 h), then starts regardless and says so in
   `starts.txt`: a night not used is worse than rows marked as disturbed.
   `--detach` starts the unit at once and never stops it. The unit,
   `linlog-baseline`, runs the script with `--force` (40 GiB and no swap,
@@ -134,8 +143,31 @@ beyond clap and anyhow, which the CLI already has.
   has a cap), and three such processes at once stay within the unit's
   limit. Loading is cheap by comparison: the library's largest
   file (103 MB, 30 million occurrences) loads in 16 s with 2 GB. The
-  classical LLTP pass runs `--reverse` so that the two LLTP passes do not
-  load those files at the same time.
+  classical LLTP pass runs `--reverse` so that it does not load those
+  files at the same time as the passes in order. Stage 1 has the
+  intuitionistic library under each bias alone (`lltp-rarer`, `--bias
+  rarer`; `lltp-forward`, `--bias factors --copies 30`) in a stream each,
+  the families after the default intuitionistic pass and the engines
+  after the classical one. The later stages take their LLTP problems
+  (`ended`) from the first baseline's intuitionistic pass (`reference`,
+  `results/2026-09-30/`), not from the night's own, so that every row has
+  its counterpart; a later baseline keeps that reference.
+- **`wait_ms` says nothing on a default run with exponentials.** The
+  default runs its second search on a thread of its own, and while that
+  search runs alone the calling thread wakes every millisecond to poll
+  the caller's stop; pinned to one core, each wake-up queues behind the
+  running search, and `wait_ms` counts it. The default LLTP passes of the
+  second baseline show 11.5 % of their time as waits (5 191 problems
+  `†`), the passes under one bias 0.07 % and 0.14 %. Read a night's
+  disturbance off the rows with one search.
+- **The 12 GiB cap is reached by searches now, not checks.** In the
+  second baseline 76 runs crashed with `memory allocation … failed`:
+  Petri nets that the first baseline ended at the recursion or width
+  limit within milliseconds (BART, TokenRing-40 and -50,
+  Philosophers-10000, GPPP-1000-1000 and others), which the search now
+  takes on and which fill 12 GiB in 4 to 6 s (14 per default pass, 3
+  under `--bias rarer`); `qbf/48#0` after 290 s; the focused engine
+  forced onto `additive/16`; the largest SYJ files on a pool, as before.
 - **Stage 4 reruns what more room lets finish**, from `bench/reruns.txt`
   (lines `FILE FAMILY/NAME`: the CSV file of the run that was killed or
   crashed, and the problem), into `FILE-generous.csv`, with `--grace`
@@ -250,7 +282,9 @@ beyond clap and anyhow, which the CLI already has.
   searches); `bench/TARGETS.md` has the table. A later change that must
   not alter the search runs the script under a label of its own and
   compares with `after-bias.csv`, or with `after.csv` under an explicit
-  `--bias`; trial labels `scratch-*` are ignored by jj.
+  `--bias`; trial labels `scratch-*` are ignored by jj. `baseline-2026-10-02`
+  is the set-up check of the second baseline: the engine it measured
+  reproduces every decided row of `after-bias.csv`.
 
 ## Extension points
 
@@ -258,7 +292,12 @@ beyond clap and anyhow, which the CLI already has.
   default sizes, instances per size, generator) with its verdict proved
   by construction; `verdicts_as_constructed` then covers its smallest
   size. Pick the default sizes so that the largest one times out at the
-  baseline's limit and the others do not.
+  baseline's limit and the others do not. Three families have no such
+  size since the performance pass: `3-partition-no` is refuted in 971
+  stable sequents at every bin size, the wide sequents meet the recursion
+  limit at 2 048 literals first, and the counter is proved at 64 tokens
+  in 81 s (128 was not tried, as each doubling multiplies the time by
+  about forty).
 - **A problem source**: a function in `problems.rs` that lists
   `Reference`s and an arm of `load`.
 - **A configuration axis** (a new `Options` knob): a `RunArgs` flag, its

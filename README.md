@@ -512,6 +512,30 @@ $ linlog-bench summary runs.csv
 | partition-no/4 | 146 µs ✗ | 303 µs ✗ | > 10 s | > 10 s |
 ```
 
+`summary --before DIR` compares every file with the file of the same
+name in `DIR`, an earlier baseline, problem by problem instead: the
+verdicts that differ, the problems decided before and not after, one row
+per family or LLTP collection and configuration (problems decided before
+and after, late verdicts kept apart, where the undecided ended, the
+median ratio of the times), and every generated problem side by side.
+`summary --against FILE` compares every other file with `FILE` in the
+same way whatever the files' names, as the passes under one bias with the
+default:
+
+```console
+$ linlog-bench summary --before bench/results/2026-09-30 bench/results/2026-10-02/long-1.csv
+…
+| file | family | configuration | problem | before | after | after/before |
+|---|---|---|---|--:|--:|--:|
+| long-1 | 3-partition-no | classical auto j1 | 3-partition-no/5 | 302.42 s ✗ | 393 µs ✗ | 1.3e-6× |
+| long-1 | counter | classical auto j1 | counter/16 | > 1200 s | 280 µs ✓ |  |
+| long-1 | counter | classical auto j1 | counter/64 |  | 85.14 s ✓ |  |
+| long-1 | partition-no | classical auto j1 | partition-no/15 |  | > 1200 s |  |
+| long-1 | partition-no | classical auto j1 | partition-no/5 | 811.48 s ✗ | 477 µs ✗ | 5.9e-7× |
+| long-1 | partition-yes | classical auto j1 | partition-yes/28 |  | > 1200 s |  |
+| long-1 | partition-yes | classical auto j1 | partition-yes/7 | > 1200 s | 230 µs ✓ |  |
+```
+
 `run --bias rarer|factors` runs the focused engines under that bias and
 `run --forward-copies N` the default's forward search within that bound,
 and the rows say which. `bench/targets.sh LABEL` runs the target set of the
@@ -527,7 +551,7 @@ input, so two such files tell whether a change altered the search at all.
 family, engine and thread count and the whole LLTP library, unattended
 in the night: a user timer starts it as a systemd user unit at 20:00 (or
 at once if that has passed), where it waits for an otherwise idle
-machine, runs about ten and a half hours, and is stopped at 07:00
+machine, runs about ten hours at most, and is stopped at 07:00
 whatever its state (`--slot=HH:MM-HH:MM` for other times; the script run
 again without `--fresh` finishes a stopped baseline on another night).
 Every baseline keeps a directory of its own named by the day it started,
@@ -539,8 +563,13 @@ more memory, the runs that `bench/reruns.txt` lists: those of an earlier
 baseline that were killed or crashed and that measurement showed to
 finish with more room. The first baseline, of the night of 2026-09-30, took 9 h 21 min
 on a 16-core Intel Core Ultra X9 388H, and a supplement on the next
-night added that last stage to it in 1 h 28 min; `bench/RESULTS.md` has
-its tables.
+night added that last stage to it in 1 h 28 min. The second, of the
+night of 2026-10-02, after the performance work on the focused engine,
+took 8 h 4 min with every stage and with the intuitionistic library run
+again under each atom bias alone; `bench/RESULTS.md` has its tables and
+`bench/COMPARISON.md` compares the two: no verdict differs, nothing
+decided before is undecided after, and the intuitionistic LLTP pass
+decides 2 049 problems within 5 s where it decided 737.
 
 ## What exists and what is planned
 
@@ -615,11 +644,13 @@ Built:
   the cases where one engine is known to be slow), and `linlog-bench`,
   which runs them with a time limit per run, writes CSV and summarises it,
   with a script that takes a whole baseline on an idle machine and one
-  that runs the focused engine's target set by day.
+  that runs the focused engine's target set by day, and a comparison of
+  two baselines problem by problem.
+- Performance work on the focused engine, measured by two baselines, one
+  before it and one after.
 
 Planned, in roughly this order:
 
-- Performance work driven by the benchmark numbers.
 - Later: proof nets with exponential boxes, essential nets for
   intuitionistic MLL, the inverse method, the Lambek calculus, and a web
   front end.
