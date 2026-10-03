@@ -179,6 +179,22 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   stands, and nothing of it is written. The LaTeX, Typst, SVG and Rocq
   emitters return a `String` and cannot be stopped inside; they are
   linear in their output, which the limit bounds.
+- **The two limits on size** are the library's, with its defaults.
+  `--memory-limit SIZE|none` (`Limit`, default
+  `Options::DEFAULT_MEMORY_LIMIT`; on `prove` and `interact`) is
+  `Options::memory_limit`: a search that passes it answers `unknown …
+  the memory limit of 1 GiB was reached; raise it with --memory-limit`,
+  exit status 3. `--occurrence-limit N|none` (`Most`, default
+  `Forest::DEFAULT_LIMIT`) is on `SequentInput`, so on every command
+  that reads a sequent: `SequentInput::sequent` compares
+  `Sequent::occurrences()` with it and refuses with exit status 2
+  before anything unfolds, prints or lays out the sequent (a JSON
+  sequent of 427 bytes can stand for 67 million occurrences);
+  `SequentInput::forest` then builds the forest within the same limit,
+  and `sequent_in` and `describe`, which see a sequent that was
+  admitted, build theirs without one. A session's state and a proof
+  file are read by serde, which takes no options: their sequents are
+  under the default whatever the flag says.
 - **Ctrl-C** (`ctrlc`, whose handler runs on a thread of its own once per
   signal): the first sets a flag the search polls, so the outcome is
   unknown and `--stats` still prints; the second exits with 130. The
@@ -227,9 +243,11 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   format builds the net in `net_in`, and one
   whose output is a source file writes the verdict as its comment
   (`note`), so that the output still compiles.
-- **A new `Reason`**: its arm in `verdict_line`, which turns a generic
-  phrase into advice (`RecursionLimit` and `CopyBound` name the flag to
-  raise); the default arm prints `Reason`'s `Display`.
+- **A new `Reason`**: its arm in `verdict_line` and in the session's
+  `close`, which turn a generic phrase into advice (`RecursionLimit`,
+  `CopyBound` and `MemoryLimit` name the flag to raise); the default
+  arm prints `Reason`'s `Display`, as for `IndexLimit`, which no flag
+  raises.
 - Stay out of `core`'s way: no clap types or exit statuses in `core`, and
   the CLI never re-implements what `core` computes (fragment names, the
   mode's words, the JSON form).

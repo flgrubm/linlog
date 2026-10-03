@@ -46,7 +46,10 @@ Workspace crates:
   more is taken as that with a note) runs the search on a pool and
   `--deterministic` the sequential engines; `--timeout` counts from the
   command's start, reading and parsing included (`limit.rs`: a flag a
-  timer thread raises, read at every poll); exit status 0 proved/valid,
+  timer thread raises, read at every poll); `--memory-limit SIZE|none`
+  (default one gibibyte) bounds what a search holds, and
+  `--occurrence-limit N|none` (default fifty million, on every command
+  that reads a sequent) what a sequent may unfold to; exit status 0 proved/valid,
   1 unprovable/invalid, 2 error, 3 unknown. Its
   invariants and extension points live in `.claude/rules/cli.md`, which
   loads when a file under `cli/` is read.
@@ -103,7 +106,10 @@ polls wherever it can spend time: `.claude/rules/core.md` lists the
 places) for proof search, which
 dispatches on the fragment and the mode and returns an `Outcome` with a
 three-valued `Verdict`, its proof checked before it is returned
-(`Options::check`). The engines: `search::net` (axiom-linking search
+(`Options::check`), within `Options::memory_limit` bytes (the memo is
+emptied first; `Reason::MemoryLimit` when that is not enough:
+"The memory bound" in `.claude/rules/core.md` says what counts) on a
+sequent of at most `Options::occurrence_limit` occurrences. The engines: `search::net` (axiom-linking search
 over a proof structure, the default for unit-free MLL with or without Mix
 when no literal occurs more than twice, in intuitionistic mode by the
 embedding of IMLL into MLL, whose `Outcome` also carries the net found),

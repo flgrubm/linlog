@@ -325,6 +325,38 @@ provable (MLL, classical, net engine)
 they do during the search, and an `--output` file holds a whole output or
 is left as it was.
 
+A search also keeps within a bound on its memory, `--memory-limit` (one
+gibibyte by default; a size such as `512MiB` or `4GiB`, or `none`). What
+the search remembers is emptied first when it no longer fits, which costs
+time and never an answer; when that is not enough, the verdict is
+"unknown" with the limit as its reason, exit status 3:
+
+```console
+$ linlog prove --memory-limit 100 "|- (a & b) + (a & c), ~a par (~b & ~c)"
+unknown (MALL, classical, focus engine): the memory limit of 100 B was reached; raise it with --memory-limit
+$ linlog prove --memory-limit 100 --format json "|- (a & b) + (a & c), ~a par (~b & ~c)"
+{"verdict":"unknown","reason":{"memory_limit":100},"fragment":"MALL","mode":{"intuitionistic":false,"affine":false,"mix":false},"engine":"focus","statistics":{"nodes":0,"memo_hits":0,"memo_entries":0,"splits":0,"links":0,"tests":0}}
+```
+
+The bound counts what grows with the search (what it remembers, the
+proofs it keeps, what each level of its recursion takes), not the sequent
+itself. That has a limit of its own, `--occurrence-limit` (fifty million
+subformula occurrences by default, or `none`), on every command that
+reads a sequent: a sequent in JSON can share subformulas, so a file of
+427 bytes that doubles one atom 25 times stands for 67 million
+occurrences, and is refused before anything unfolds it:
+
+```console
+$ linlog seq fragment --json-input --file shared.json
+error: the sequent unfolds to 67108863 subformula occurrences, more than the limit of 50000000; raise it with --occurrence-limit
+```
+
+No input ends the command other than by a verdict or an error: a formula
+nested a hundred thousand deep is parsed, printed and searched without
+recursion on it (the search itself gives up at `--recursion-limit`), and
+a parse error far into a long line is shown with the part of the line
+around it.
+
 `--format json` writes the outcome as one JSON object, which is also a proof
 file that `linlog check` verifies independently of the search (pass the same
 logic flags):
@@ -702,6 +734,11 @@ Built:
   the set-up on a large sequent, every thread of a pool), and the
   command's `--timeout` counts from its start, reading and parsing
   included, and is kept to within a fraction of a second.
+- Limits on memory and on the input: a search holds at most
+  `--memory-limit` bytes (its memo is emptied first, then the answer is
+  "unknown" with the reason), a sequent unfolds to at most
+  `--occurrence-limit` occurrences, and no walk over a formula, a net
+  or a derivation recurses on the input's depth.
 - The `linlog` command: `prove`, `check`, `interact` and `seq`, with time
   limits, Ctrl-C, statistics, JSON output, proof nets, LaTeX, Typst,
   SVG and Rocq output, and `--jobs` and `--deterministic` for the search;
@@ -719,8 +756,6 @@ Built:
 
 Planned, in roughly this order:
 
-- Limits that hold: a memory bound for the search, and bounds on what
-  an input may be.
 - Sensible defaults, each of them an option: a copy bound that deepens
   within a default time limit, one thread before several, and reasons
   with every "unknown" and "unprovable".

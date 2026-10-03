@@ -349,5 +349,39 @@ beyond clap and anyhow, which the CLI already has.
 - **A configuration axis** (a new `Options` knob): a `RunArgs` flag, its
   argument in `child`, a `OneArgs` field applied in `tail`, a column at
   the end of the tail (also filled in by `died` and by the error rows),
-  the key of `finished`, and the label in `summary`'s `config`; `--bias`
-  and `--forward-copies` are the models.
+  the key of `finished`, and the label in `summary`'s `config`; `--bias`,
+  `--forward-copies` and `--memory-limit` are the models. The last is
+  the search's memory bound in bytes (`memory_limit`, the last column):
+  absent it is the library's default, 0 is no bound, and a file from
+  before the column ran without one, which is how `finished` and the
+  summary read an empty field. The reasons `memory_limit` and
+  `index_limit` are the two the bound added.
+
+## Heap profiles
+
+What a search allocates is read with heaptrack from the flake's
+nixpkgs, which is not in the devshell (its closure is a gigabyte of Qt
+for a viewer nobody here uses):
+
+```sh
+CARGO_PROFILE_RELEASE_DEBUG=true cargo build --release --locked -p linlog-bench --target-dir target/symbols
+H=$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#heaptrack)/bin
+systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 taskset -c 5 \
+  $H/heaptrack --record-only -o OUT target/symbols/release/linlog-bench one \
+  --problem family:qbf:48:0 --mode given --engine auto --jobs 1 --timeout 20
+$H/heaptrack_print -f OUT.zst -a 0 -T 0 -n 8 -s 1        # the summary and the peaks
+$H/heaptrack_print -f OUT.zst -t 0 -p 0 -a 0 -T 0 --flamegraph-cost-type peak -F stacks.txt
+```
+
+- **`--record-only`, always**: without it `heaptrack` opens its viewer
+  when the run ends, on the desktop of whoever sits there.
+- The merged backtraces of `heaptrack_print` end in the allocator's own
+  frames; what says which structure a byte belongs to is the collapsed
+  stack file (`-F`, one line per stack, root first, the cost last; cost
+  types `peak` and `allocations`), summed by its innermost `linlog`
+  frame with a few lines of awk. `-t 0` keeps the type names, without
+  which every method reads `<>::insert`. A file of a run that
+  allocates per node has millions of lines and takes minutes to sum.
+- A run under heaptrack is slower by the allocations it makes, so a
+  profile of five seconds is not five seconds of search: compare bytes
+  per entry and allocations per stable sequent, not totals.

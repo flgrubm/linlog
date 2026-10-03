@@ -643,11 +643,12 @@ the `Mode`, the `Engine` that ran, the `Statistics`, and `net`, the
 `ProofStructure` the net engine found (`None` from the focused engine).
 `Options` has private fields and setters (`memo_limit`, `recursion_limit`,
 `engine`, `fragment`, `test_period`, `copies`, `jobs`,
-`bias`, `forward_copies`, `check`), the
-constants `DEFAULT_MEMO_LIMIT`, `DEFAULT_RECURSION_LIMIT`,
-`DEFAULT_COPIES` and `DEFAULT_FORWARD_COPIES`, which the CLI shows as
-its defaults, `MAX_JOBS` (256: `jobs` takes more as that many, and zero
-as one), and `stack_size()`,
+`bias`, `forward_copies`, `check`, `memory_limit`, `occurrence_limit`),
+the constants `DEFAULT_MEMO_LIMIT`, `DEFAULT_RECURSION_LIMIT`,
+`DEFAULT_COPIES`, `DEFAULT_FORWARD_COPIES`, `DEFAULT_MEMORY_LIMIT` (one
+gibibyte) and `DEFAULT_OCCURRENCE_LIMIT` (`Forest::DEFAULT_LIMIT`),
+which the CLI shows as its defaults, `MAX_JOBS` (256: `jobs` takes more
+as that many, and zero as one), and `stack_size()`,
 the stack a thread needs at the recursion limit, which sizes the CLI's
 search thread and the parallel pool's workers alike;
 `Reason`, `Statistics`, `Engine` and `Outcome` are `#[non_exhaustive]` so
@@ -749,17 +750,16 @@ the net engine's, and the others stay zero.
     a deadline builds the forest itself, as the CLI does, and calls
     `prove_goal`), a single pass over the forest, the check of the
     proof at the end of `prove_goal` and the size pass of a derivation
-    (below), `sequentialize`, and **the freeing of a full memo**, which
-    is what a stop is late by in practice. A memo at its default cap of
-    2²⁰ entries is two allocations per entry, and freeing them takes
-    0.15 to 0.35 s on the machine's middle cores and 0.55 s on its
-    slowest: once when the search returns, and once in the middle of a
-    search every time `Memo::insert` empties a full table (`qbf/40#1`:
-    a gap of 0.51 s between two polls, every two seconds). A stop that
-    falls into the second and then pays the first is about a second
-    late on the slowest cores. Keys that live in one allocation, or in
-    an arena that is dropped whole, would remove both; that is the
-    memo's own design and was left to the step that bounds its bytes.
+    (below), `sequentialize`, and the collection of the kept arena
+    when a memo is emptied (one pass over the kept nodes, milliseconds
+    at a million of them). Freeing a full memo is no longer among
+    them: its entries are records in chunks ("The memory bound",
+    below), so emptying one resets a count and dropping one frees a few
+    hundred blocks. When every key was two allocations, a memo at its
+    cap of 2²⁰ entries took 0.15 to 0.55 s to free, which was what a
+    stop was late by and a fifth of the time of a memo-bound search;
+    now a stop on `qbf/40#1` with its memo full comes 14 to 21 ms
+    after the limit on the machine's three kinds of core.
   - *The check and the size pass are not polled because they are
     short*: on the largest proof the engines find in the LLTP library
     (`SYJ202+1.005` in its cbv translation, 566 490 inferences) the
@@ -779,6 +779,81 @@ the net engine's, and the others stay zero.
   `Options::recursion_limit`; a caller that raises the limit runs the
   search on a thread with a larger stack (`Options::stack_size`). The net
   engine and its sequentialization keep stacks of their own.
+
+## The memory bound
+
+`Options::memory_limit` (`DEFAULT_MEMORY_LIMIT`, one gibibyte; `None`
+lifts it) bounds what a search holds, and `search/memory.rs` is how:
+an `Account` (the bound and an atomic count of bytes) that everything
+which grows charges where it allocates, by the capacity allocated and
+not by what is in use. `prove_goal` makes one per search.
+
+- **What counts**: the focused memo (its chunks, its index, the extra
+  copies), the kept arena and every engine's pending stack, the branch
+  stack of keys, every pool buffer (sets, contexts, keys, tallies,
+  split counts, cursors when made; lists, trails and links by what they
+  had grown to when last given back), the `Counts` (rows and
+  per-occurrence arrays) and the `Classes` of the set-up, and the
+  additive path's memo and arena. **What does not**: the forest and the
+  sequent (the caller's; `Options::occurrence_limit` bounds them,
+  below), the proof returned, a `Tally`'s and a `Split`'s `touched`
+  lists (bounded by the rows of a sequent's members), a context's
+  extra list, the table a collection uses while it runs (four bytes a
+  kept node), the stacks of the threads, the net engine (a structure
+  and a scratch linear in the forest, per thread), and the allocator's
+  own overhead. Measured, the process's peak is the count plus what it
+  takes to hold the input: R8 (`SYJ202+1.008` in cbv) under 256 MiB
+  ends by the bound at a peak of 253 MiB, under 16 MiB at 20 MiB.
+- **The order of answers** when memory runs short: a memo that has no
+  room for a new key is emptied and the kept arena collected
+  (`Engine::remember`; the same as at `memo_limit`, which stays as the
+  finer knob: it is what the pinned counters depend on, and a table
+  that fits the cache can beat one that fits the memory); a search
+  that finds itself over the bound at a stable sequent empties the
+  memo, collects, and if that is not enough gives the memo's memory
+  back (`Engine::relieve`); `Unknown(Reason::MemoryLimit(bytes))` when
+  what is left, the branch's own buffers and proofs as allocated, is
+  still over, or when an empty memo cannot have its first chunk. The
+  value in the reason is the option's, whatever share a search had
+  (`focus::reason`). `relieve` does not squeeze the arena to fit: the
+  next `keep` would double it again, and a search at its bound would
+  copy its arena at every node (seen: 170 stable sequents a second
+  where there were 400 000).
+- **The memo leaves an eighth of the bound free** (`Account::spares`):
+  it would otherwise take every byte, and the first growth of anything
+  that cannot be emptied would cost the whole memo, at every node.
+- **The memo's layout** (`focus/memo.rs`): an entry is a record of
+  words in a chunk (the key's hash, the entry packed into a word, the
+  place of the linear zone's extra copies, both zones' words), found
+  through an index of record numbers with linear probing, at most half
+  full. Chunks have a fixed number of records, a power of two, about a
+  mebibyte, or a sixteenth of the room there is under a small bound.
+  So an entry costs no allocation and is counted with its chunk,
+  `clear` resets a count and zeroes the index, keeping the memory for
+  the entries to come, and `release` or a drop frees some hundreds of
+  blocks. The table is never iterated and never deletes, which is what
+  makes the index this simple. Per entry: 24 bytes of header, eight for
+  the index, and the two zones as bitsets of the forest's width, which
+  dominate on a forest of thousands of occurrences (a sparse form of
+  the zones is the next thing to gain, and a follow-up).
+- **`Reason::IndexLimit`** is what a structure answers when it outgrows
+  its `u32` indices, which only a search without a memory bound can:
+  the arena at 2³¹ nodes, the counts' rows at 2³² entries, a forest of
+  2³¹ occurrences or more for the counts (their balances are `i32`
+  sums over a subtree), the additive path's arena at 2³² nodes.
+- **`Options::occurrence_limit`** (`Forest::DEFAULT_LIMIT`, fifty
+  million) is the bound on the input: `prove` and `prove_until` build
+  their forest with `Forest::within`, the command checks
+  `Sequent::occurrences()` when it reads a sequent, before any command
+  unfolds or prints it. `Forest::new`, and with it `Interactive::new`
+  and every deserializer (a proof file, a session's state, a net), has
+  the default and no way to pass another, since `Deserialize` takes no
+  options: a proof file whose sequent has more occurrences is refused
+  whatever a flag says.
+- **On a pool** the workers share the account, each engine's own
+  buffers are released when it goes (`Charged`), and the shared arena
+  only grows. A pool therefore reaches the bound sooner than one
+  thread on a search that proves much and keeps it.
 
 ## The focused engine
 
@@ -953,7 +1028,11 @@ relies on:
     other search. The same reason keeps a search's own memo out of its
     next turn where turns restart it. The price is memory: two memos of
     at most `Options::memo_limit` entries each where the searches run
-    at once.
+    at once, and for the same reason each search has half of
+    `Options::memory_limit` (`Account::share`): one search's memory
+    must not decide what the other may keep. So under a memory bound
+    the contract reads "wherever `Bias::Rarer` does under the same
+    options with half the memory".
   - **`Unprovable` keeps its meaning**: a level of either search that
     ended without a cut, which refutes the sequent because focusing is
     complete for every bias. `Unknown` needs both searches to have ended
@@ -1121,8 +1200,9 @@ relies on:
 - **Memo validity without exponentials** is unconditional, as before: cut-
   free provability of a set of occurrences depends on the set alone, and
   every entry is `Proved` or `Complete`. When the table is full it is
-  cleared (`Options::memo_limit`; zero switches it off; the kept arena is
-  append-only, so a `Proved` id never dangles).
+  cleared (`Options::memo_limit`; zero switches it off) and the kept
+  arena collected; a `Proved` id never dangles, because the entries
+  that named the dropped nodes are gone with the table.
 - **The proof arena has two parts** (`Arena`): a node is *pending* in the
   engine's own stack (`push`, an id with the `PENDING` bit) until the
   stable sequent it helps to prove is proved and memoized, when
@@ -1142,13 +1222,46 @@ relies on:
   memoized stable sequents and the final proof, and nothing of a failed
   branch: before this, one stable sequent of a Petri net pushed 110 MB of
   nodes a second for left premises whose splits then failed, and nine
-  LLTP runs aborted at 16 GiB. What is not reclaimed: the proofs of
-  entries the memo dropped when it was cleared, and, with the memo off
-  (`memoizes` false), nothing is kept before the root, so the pending
-  stack is the partial proof alone. The kept arena holds at most 2³¹
-  nodes (`keep` panics beyond, 32 GiB of nodes). A proof's node order is
+  LLTP runs aborted at 16 GiB. With the memo off (`memoizes` false),
+  nothing is kept before the root, so the pending stack is the partial
+  proof alone. Either part holds at most 2³¹ nodes (`Arena::most`):
+  `keep` answers `Reason::IndexLimit` beyond, and a `push` beyond drops
+  the node and marks the arena (`overflowed`), after which every `keep`
+  fails, so no proof resting on the missing node gets out (every proof
+  that leaves an engine passes a `keep`: the memo's, the root's in
+  `Rule::search`, a worker's in `exported`). A proof's node order is
   the order of keeping, which `core/tests/serialize.rs` pins on one
   small proof.
+- **The kept arena is collected when an engine's own memo is emptied**
+  (`Arena::collect`, from `Engine::remember` and `relieve`): the proofs
+  of entries the memo dropped were never reclaimed, and on `qbf/48#0`
+  they grew by 15 MB a second until the machine's memory was gone. A
+  collection keeps what the pending nodes, the ids *held* and the root
+  it is given rest on (one pass down marks, since a premise has a
+  smaller id; one pass up moves the nodes that stay and renames their
+  premises), and renames those three in place. What it relies on: **a
+  kept id lives in exactly four kinds of place**, a memo entry (gone
+  when the collection runs), a premise of a pending node, the result a
+  call is about to return (the root given), and a local of a rule that
+  holds the proof of its first premise while it searches the second.
+  The last are `with`, `premises` and `parts`, which put the id on the
+  arena's `held` stack around the second search (`hold`, `unhold`) and
+  read it back, since it may have moved; the forced split's `links`
+  hold pending ids only (a forcing factor's proof ends in a node pushed
+  by the chain or by `focus_on`), and `decompose`, `focus_on` and
+  `split` wrap a result into a pending node before any other call. **A
+  new rule that keeps an id across a call that can reach
+  `prove_stable` must hold it**, or a collection in between leaves it
+  pointing at another node: the proof is then wrong, which the checker
+  catches (`Error::Rejected`), never a verdict. `proofs_survive_collections`
+  runs generated sequents under memos of one, two and five entries, so
+  that nearly every insertion collects, and checks every proof. A
+  collection gives memory back when three quarters of the allocation
+  are free, down to twice what stays (shrinking to fit made the next
+  `keep` double the vector again, a copy of the arena per node). The
+  shared arena of a pool is not collected: its workers hold ids nobody
+  could rename, so there the kept proofs count toward the bound until
+  the search ends.
 - **A `0` is fatal only without a `⊤`.** The spec calls a `0` in a stable
   sequent fatal, but `⊢ 0, ⊤ ⊕ b` is provable through the `⊕`; the
   immediate failure applies only when no member has a `⊤` below it
@@ -1174,7 +1287,27 @@ relies on:
   for exactly those cases; `⊢ a ⊕ b, ~a` is the counterexample the spec
   names. A `Tally` keeps a set's sums incrementally; a `Split` keeps those
   of the two sides of a split in the making and what the members not yet
-  assigned can still add (below).
+  assigned can still add (below). **How the rows are laid out and what
+  they cost** (`Counts::new_until`): one pass from the last occurrence
+  down writes each row straight after the others into three flat
+  arrays, a binary node's by merging its children's, which are written
+  already (`Rows::merge`; `bound[n − 1 − o]` is where the row of `o`
+  starts), so there is no vector per occurrence. An entry's atom is its
+  *rank among the atoms that have rows*, the non-exponential ones in
+  their own order, so a `Tally` and a `Split` are as wide as those are
+  many: a Petri net has tens of thousands of atoms and none with a
+  row, and a `Split` of six arrays over all of them per level of
+  recursion was what four Philosophers nets ran out of memory on. The
+  ranks are monotone, so `first_atom` orders members as before. The
+  rows together can still be quadratic in the forest (a nest of `⊗`
+  and `⅋` over distinct atoms has a row as long as its subtree at
+  every level): that is what a row is, so the set-up charges them to
+  the account as they grow and answers `MemoryLimit`, polls by the
+  entries merged and not only by the occurrences, and answers
+  `IndexLimit` past 2³² entries. The atoms below a `!` or `?` are
+  found in one pass that remembers where the outermost one ends; a
+  walk of every exponential's subtree was quadratic in a tower of
+  them (2.2 s for `!` nested 80 000 deep, before the first poll).
 - **Interchangeable occurrences** (`focus/classes.rs`, `Classes`): two
   occurrences of the same term, and under a reading in the same
   position, share a class, named by its first occurrence. The lemma
@@ -1370,9 +1503,19 @@ relies on:
 - **No allocation per node once warm**: sets, contexts, keys, member lists,
   tallies, split counts, trails and the links of forced chains come from
   pools on the engine (`take_*`/`give_*`); a leaked buffer on an error
-  path only costs an allocation later. The memo insert clones its key,
-  and a repeated occurrence grows a context's extra list; those are the
-  allocations per stable sequent. The copies are ordered by an unstable
+  path only costs an allocation later. A memo insertion copies the key
+  into the memo's own chunk, and a repeated occurrence grows a
+  context's extra list, which is the one allocation left per stable
+  sequent. Two derived `clone_from`s used to allocate behind this
+  sentence's back, which a heap profile showed (three million
+  allocations in five seconds of an ILLTP problem): `OccSet`'s, which
+  every copy of a zone goes through, and `Key`'s, on the branch stack;
+  `OccSet` has its own now, and the stack copies with `Key::assign`.
+  A derived `Clone` on a type that owns a buffer never reuses it.
+  Every pool buffer is charged to the search's account when it is
+  made, the lists when they are given back (`Pooled`), through the
+  engine's `scratch`, which releases the charge when the engine goes:
+  a pool's workers come and go by the thousand. The copies are ordered by an unstable
   sort on the id and one pass that asks `meets` once per formula: a
   stable `sort_by_key` allocated its buffer for every stable sequent
   with more than twenty copies and called `meets` at every comparison
@@ -1754,7 +1897,13 @@ has no or-choices worth sharing out). What the code relies on:
   never across a recursive call. `dashmap` was not taken: the notes
   record its maintenance as thin, the shards are twenty lines, and the
   speedup table shows no contention worth a dependency. `hits` and `peak`
-  are summed over the shards (`peak` is an upper bound).
+  are summed over the shards (`peak` is an upper bound). A shard that is
+  full, by its entries or by the memory left, is emptied by itself
+  under its lock; one that is empty and has no memory for its first
+  chunk drops the entry (the other shards hold the memory), and a
+  worker that finds the search over its bound releases every shard
+  (`Shared::release`). The chunks of a shard are 64 KiB, not a
+  mebibyte, so that 64 shards with one entry each are not 64 MiB.
 - **The kept arena is shared behind one `Mutex<Vec<Node>>`**
   (`Kept::Shared`), and every engine of a parallel search has a pending
   stack of its own. Truncating a shared arena would be unsafe (another
@@ -1873,7 +2022,11 @@ procedure is the same in every mode: additive rules keep one output by
 themselves, and neither weakening nor Mix can help a two-formula sequent
 (a proof of one formula alone ends in `⊤` leaves, which absorb the other).
 `Statistics::nodes` is pairs visited, `memo_hits` and `memo_entries` the
-memo's. The memo holds at most `Options::memo_limit` pairs and is emptied
+memo's. Its memo and its arena are charged to the search's account at
+every pair (`settle`): over the bound the memo goes, and the arena
+alone over the bound is `MemoryLimit` (the arena is append-only here:
+nothing collects it, since a pair's proof is one node and the memo is
+what bounds the pairs). The memo holds at most `Options::memo_limit` pairs and is emptied
 when full, like the focused memo (zero switches it off); the product
 bound on the time then no longer holds in theory, but the identity of
 depth 16 (7.9 million pairs without a cap) is decided with the default
@@ -2131,7 +2284,8 @@ same test file:
 - `Mode` is `{"intuitionistic": …, "affine": …, "mix": …}`.
 - `Outcome` serializes only (it is output): `verdict` (`proved`,
   `unprovable`, `unknown`), `reason` for `unknown` (a snake_case tag,
-  `{"copy_bound": n}`), `fragment`, `mode`, `engine`, `statistics`,
+  `{"copy_bound": n}`, `{"memory_limit": bytes}`, `"index_limit"`),
+  `fragment`, `mode`, `engine`, `statistics`,
   and for `proved` the proof's own `sequent` and `proof` keys, flattened, so
   that the whole outcome deserializes as a `Proof` (serde ignores the other
   keys) and `linlog check` reads the output of `linlog prove --format json`.
