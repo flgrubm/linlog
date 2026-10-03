@@ -72,6 +72,10 @@ const NO_DEPENDENCY: u32 = u32::MAX;
 /// engine takes between two polls of the stop condition.
 const SPLITS_PER_POLL: u64 = 4096;
 
+/// How many forced splits, and literals of the tensors they close in
+/// place, a chain of them takes between two polls of the stop condition.
+const FORCED_PER_POLL: u64 = 4096;
+
 /// The work of a stable sequent in steps of a split search, the unit a
 /// turn is counted in, before what depends on its size: the bookkeeping
 /// of a visit costs some ten times a step, which moves one member and
@@ -600,6 +604,9 @@ struct Engine<'a> {
     /// The steps of split searches since the stop condition was last
     /// polled there.
     steps: u64,
+    /// The forced splits, and the literals of the tensors they closed in
+    /// place, since the stop condition was last polled in a chain of them.
+    forced: u64,
     /// The work done since the stop condition was last polled, as far as
     /// it grows with the size of the sequents and is no step of a split
     /// search: the unit of a turn.
@@ -660,6 +667,8 @@ struct Engine<'a> {
     trails: Vec<Vec<Side>>,
     /// Spare lists of the links of a chain of forced splits.
     links: Vec<Vec<(OccId, NodeId, bool)>>,
+    /// Spare cursors of a chain of forced splits.
+    cursors: Vec<Cursors>,
 }
 
 impl<'a> Engine<'a> {
@@ -687,6 +696,7 @@ impl<'a> Engine<'a> {
             memoizes: options.memo_limit != 0,
             statistics: Statistics::default(),
             steps: 0,
+            forced: 0,
             work: 0,
             depth: 0,
             recursion_limit: options.recursion_limit,
@@ -710,6 +720,7 @@ impl<'a> Engine<'a> {
             splits: Vec::new(),
             trails: Vec::new(),
             links: Vec::new(),
+            cursors: Vec::new(),
         }
     }
 
@@ -1264,6 +1275,33 @@ impl<'a> Engine<'a> {
         f.literals(atom, !sign).iter().copied().find(|&d| within(d))
     }
 
+    /// The first occurrence of the literal dual to `literal` in `rest`, the
+    /// context of a chain of forced splits, which is what [`Self::dual_in`]
+    /// finds there, read from where the chain's last lookup of that
+    /// literal ended: the context of a chain only loses members, so the
+    /// occurrences passed over once are in it no more. A chain's lookups
+    /// of one literal together cost its list once and not once each,
+    /// which on a marking of thousands of equal tokens was most of a
+    /// search's time.
+    fn dual_from(&self, literal: OccId, rest: &Context, cursors: &mut Cursors) -> Option<OccId> {
+        let f = self.forest;
+        let (atom, sign) = (f.atom(literal)?, f.sign(literal)?);
+        let duals = f.literals(atom, !sign);
+        let list = 2 * atom.index() + (!sign) as usize;
+        let start = cursors.passed[list] as usize;
+        let found = duals[start..].iter().position(|&d| rest.contains(d));
+        let passed = found.map_or(duals.len(), |at| start + at);
+        if passed != start {
+            if start == 0 {
+                cursors.moved.push(list as u32);
+            }
+            // A list is a part of the forest's occurrences, which a `u32`
+            // indexes.
+            cursors.passed[list] = passed as u32;
+        }
+        found.map(|at| duals[start + at])
+    }
+
     /// Whether a formula of `Θ` has a literal below it whose dual is a
     /// member: the copy heuristic's notion of a copy that can meet
     /// something.
@@ -1442,7 +1480,9 @@ impl<'a> Engine<'a> {
         let mut rest = self.take_context();
         rest.clone_from(gamma);
         let mut links = self.take_links();
-        let result = self.forced_splits(theta, &mut rest, f, &mut links, budget);
+        let mut cursors = self.take_cursors();
+        let result = self.forced_splits(theta, &mut rest, f, (&mut links, &mut cursors), budget);
+        self.give_cursors(cursors);
         self.give_context(rest);
         let result = match result {
             Ok(Some(mut node)) => {
@@ -1471,15 +1511,18 @@ impl<'a> Engine<'a> {
     /// of a thousand literals costs one level of recursion and one copy of
     /// the context, not a thousand. `rest` is the context, from which
     /// every forcing factor takes its own; `links` gets every `⊗` with the
-    /// proof of its forcing factor and whether that is the left one.
+    /// proof of its forcing factor and whether that is the left one, and
+    /// `cursors` remembers where the chain's lookups of duals ended.
     /// Returns the proof of the factor left at the end with what remains
-    /// of the context.
+    /// of the context. The chain visits no stable sequent, so it polls
+    /// the stop condition itself, once every [`FORCED_PER_POLL`] splits
+    /// and literals closed.
     fn forced_splits(
         &mut self,
         theta: &OccSet,
         rest: &mut Context,
         mut f: OccId,
-        links: &mut Vec<(OccId, NodeId, bool)>,
+        (links, cursors): (&mut Vec<(OccId, NodeId, bool)>, &mut Cursors),
         budget: u32,
     ) -> Search {
         loop {
@@ -1487,6 +1530,7 @@ impl<'a> Engine<'a> {
                 return self.focus(theta, rest, f, budget);
             };
             self.statistics.splits += 1;
+            self.poll_forced()?;
             let x_node = match forced {
                 Forced::Nothing => return Ok(None),
                 Forced::Empty => {
@@ -1503,7 +1547,7 @@ impl<'a> Engine<'a> {
                 // and copies from `Θ` here is a proof with the roles
                 // swapped.
                 Forced::Dual => {
-                    if let Some(dual) = self.dual_in(x, |m| rest.contains(m)) {
+                    if let Some(dual) = self.dual_from(x, rest, cursors) {
                         rest.remove(dual);
                         Some(self.push(Node::Ax(x, dual)))
                     } else if let Some(d) = self.dual_in(x, |d| theta.contains(d)) {
@@ -1521,7 +1565,7 @@ impl<'a> Engine<'a> {
                 // One dual per literal, each the first left in `Γ`: every
                 // literal is proved by exactly its dual, and no dual lies in
                 // `Θ`, so no other context proves the factor.
-                Forced::Duals => self.literal_tensor(x, rest),
+                Forced::Duals => self.literal_tensor(x, rest, cursors)?,
             };
             let Some(x_node) = x_node else {
                 return Ok(None);
@@ -1538,16 +1582,18 @@ impl<'a> Engine<'a> {
     /// literal, each the first left in `rest`, which loses them; `None`
     /// when a dual is missing. Built in place, the axioms and the `⊗`
     /// nodes from the last occurrence back, so a tensor of any depth costs
-    /// no recursion.
-    fn literal_tensor(&mut self, x: OccId, rest: &mut Context) -> Option<NodeId> {
+    /// no recursion; the stop condition is polled as in the chain around
+    /// it.
+    fn literal_tensor(&mut self, x: OccId, rest: &mut Context, cursors: &mut Cursors) -> Search {
         let mut duals = self.take_list();
         for leaf in self.forest.subtree(x) {
             if !self.forest.is_literal(leaf) {
                 continue;
             }
-            let Some(dual) = self.dual_in(leaf, |m| rest.contains(m)) else {
+            self.poll_forced()?;
+            let Some(dual) = self.dual_from(leaf, rest, cursors) else {
                 self.give_list(duals);
-                return None;
+                return Ok(None);
             };
             rest.remove(dual);
             duals.push(dual);
@@ -1570,7 +1616,25 @@ impl<'a> Engine<'a> {
         let (_, node, _) = built.pop().expect("the tensor's proof");
         self.give_list(duals);
         self.give_links(built);
-        Some(node)
+        Ok(Some(node))
+    }
+
+    /// Counts a forced split, or a literal of a tensor closed in place,
+    /// and polls the stop condition once every [`FORCED_PER_POLL`] of
+    /// them. No work is passed: the units two alternating searches count
+    /// their slices in are what they are without this poll, and so is
+    /// where each gives way.
+    fn poll_forced(&mut self) -> Result<(), Reason> {
+        self.forced += 1;
+        if self.forced < FORCED_PER_POLL {
+            return Ok(());
+        }
+        self.forced = 0;
+        if self.stop.fired(0) {
+            Err(Reason::Stopped)
+        } else {
+            Ok(())
+        }
     }
 
     /// The `⊗` rule on a formula no factor of which forces its split: a
@@ -1997,6 +2061,33 @@ impl<'a> Engine<'a> {
     fn give_links(&mut self, links: Vec<(OccId, NodeId, bool)>) {
         self.links.push(links);
     }
+
+    /// Takes cursors at the head of every list from the pool.
+    fn take_cursors(&mut self) -> Cursors {
+        self.cursors.pop().unwrap_or_else(|| Cursors {
+            passed: vec![0; 2 * self.forest.sequent().atom_names().len()],
+            moved: Vec::new(),
+        })
+    }
+
+    /// Returns cursors to the pool, back at the head of every list.
+    fn give_cursors(&mut self, mut cursors: Cursors) {
+        for list in cursors.moved.drain(..) {
+            cursors.passed[list as usize] = 0;
+        }
+        self.cursors.push(cursors);
+    }
+}
+
+/// How far a chain of forced splits has read the forest's lists of the
+/// occurrences of each literal in its search for duals.
+struct Cursors {
+    /// Per list, twice the atom plus the sign as the forest numbers them:
+    /// how many occurrences at its head are no longer in the chain's
+    /// context.
+    passed: Vec<u32>,
+    /// The lists whose entry is not zero.
+    moved: Vec<u32>,
 }
 
 /// What joins the two sides of a split of a context.
@@ -2529,6 +2620,53 @@ mod tests {
         assert!(matches!(verdict, Verdict::Unknown(Reason::Stopped)));
         assert_eq!(statistics.nodes, 1);
         assert!(statistics.splits <= 4 * SPLITS_PER_POLL, "{statistics:?}");
+    }
+
+    /// A chain of forced splits visits no stable sequent and still stops
+    /// when asked, whether its factors are literals, one split each, or
+    /// tensors of literals closed in place: each tensor of 5 000 factors
+    /// is one chain from the first stable sequent, whose poll is the
+    /// first, and the second comes inside the chain.
+    #[test]
+    fn stops_inside_a_forced_chain() {
+        let chains = [
+            format!(
+                "|- {}, {}",
+                vec!["a"; 5000].join(" * "),
+                vec!["~a"; 5000].join(", ")
+            ),
+            format!(
+                "|- {}, {}",
+                vec!["(a * b)"; 5000].join(" * "),
+                vec!["~a, ~b"; 5000].join(", ")
+            ),
+        ];
+        for input in chains {
+            let (verdict, statistics) = std::thread::Builder::new()
+                .stack_size(Options::default().stack_size())
+                .spawn(move || {
+                    let s: Sequent = input.parse().unwrap();
+                    let forest = Forest::new(&s).unwrap();
+                    let mut polls = 0;
+                    search(
+                        &forest,
+                        s.fragment(),
+                        Mode::CLASSICAL,
+                        None,
+                        &Options::default(),
+                        &mut || {
+                            polls += 1;
+                            polls > 1
+                        },
+                    )
+                })
+                .unwrap()
+                .join()
+                .unwrap();
+            assert!(matches!(verdict, Verdict::Unknown(Reason::Stopped)));
+            assert_eq!(statistics.nodes, 1);
+            assert!(statistics.splits <= FORCED_PER_POLL, "{statistics:?}");
+        }
     }
 
     /// Intuitionistic mode: the textbook sequents of ILL, the pitfalls of

@@ -449,6 +449,7 @@ impl<'s> Spawn<'s> {
             memoizes: self.memoizes,
             statistics: Statistics::default(),
             steps: 0,
+            forced: 0,
             work: 0,
             depth: self.depth,
             recursion_limit: self.recursion_limit,
@@ -475,6 +476,7 @@ impl<'s> Spawn<'s> {
             splits: Vec::new(),
             trails: Vec::new(),
             links: Vec::new(),
+            cursors: Vec::new(),
         };
         if self.portfolio && index != 0 {
             // A seed per worker, never zero.
