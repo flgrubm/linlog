@@ -1,14 +1,17 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use crate::argument_parsing::{InteractArgs, jobs};
-use crate::limit::Deadline;
-use crate::prove::{Show, Shown, bytes_text, count_text, derivation, describe, on_large_stack};
+use crate::argument_parsing::{InteractArgs, threads};
+use crate::limit::{Deadline, Notice};
+use crate::prove::{
+    Ended, Show, Shown, Stop, alone_first, bytes_text, count_text, derivation, describe,
+    notice_line, on_large_stack, unknown,
+};
 use crate::{Status, catch_interrupt, clear_interrupt, interrupted, io};
 use anyhow::{Context, Result, bail};
 use linlog::export::svg::{self, Style};
 use linlog::export::{Form, latex, typst};
-use linlog::search::{Options, Outcome, Reason, Verdict};
+use linlog::search::{Options, Outcome, Verdict};
 use linlog::{Error, InfId, Interactive, Position, Reading, Rule, ViewError, ViewOptions};
 use std::fmt::Write as _;
 use std::io::{BufRead, IsTerminal, Write};
@@ -49,11 +52,12 @@ pub fn interact(args: &InteractArgs) -> Result<Status> {
     let options = Options::default()
         .memo_limit(args.memo_limit)
         .recursion_limit(args.recursion_limit)
-        .copies(Some(args.copies))
+        .copies(args.copies.0)
         .bias(args.bias.into())
         .forward_copies(args.forward_copies)
-        .memory_limit(args.memory_limit.0)
-        .jobs(jobs(args.jobs, args.deterministic));
+        .memory_limit(args.memory_limit.0);
+    let threads = threads(args.jobs, args.pool_after, args.deterministic);
+    let options = options.jobs(threads.jobs);
     catch_interrupt();
     let stack_size = options.stack_size();
     let mut session = Session {
@@ -63,7 +67,10 @@ pub fn interact(args: &InteractArgs) -> Result<Status> {
             memory: args.memory_limit.0,
             ..args.derivation_limit.into()
         },
-        timeout: args.timeout,
+        timeout: args.timeout.0,
+        alone: threads.alone,
+        deepens: args.copies.0.is_none(),
+        recursion_limit: args.recursion_limit,
     };
     on_large_stack(stack_size, move || session.run())?
 }
@@ -85,6 +92,12 @@ struct Session {
     view: ViewOptions,
     /// How long a `close` may take.
     timeout: Option<Duration>,
+    /// How long one thread searches before the others take over.
+    alone: Option<Duration>,
+    /// Whether a `close` deepens the copy bound without a bound.
+    deepens: bool,
+    /// The recursion limit of a `close`.
+    recursion_limit: u32,
 }
 
 impl Session {
@@ -185,8 +198,8 @@ impl Session {
                 };
                 let mut text = String::new();
                 for goal in goals {
-                    let outcome = self.close(goal)?;
-                    let _ = writeln!(text, "goal {}: {}", goal.get(), verdict(&outcome));
+                    let (outcome, ended) = self.close(goal)?;
+                    let _ = writeln!(text, "goal {}: {}", goal.get(), verdict(&outcome, &ended));
                 }
                 text.pop();
                 if self.state.is_complete() {
@@ -234,13 +247,38 @@ impl Session {
         })
     }
 
-    /// Runs the search on a goal, stopped by the time limit or Ctrl-C.
-    fn close(&mut self, goal: InfId) -> Result<Outcome> {
+    /// Runs the search on a goal, on one thread first as `prove` does,
+    /// stopped by the time limit or Ctrl-C, and returns its outcome with
+    /// how it ended.
+    fn close(&mut self, goal: InfId) -> Result<(Outcome, Ended)> {
         clear_interrupt();
-        let deadline = Deadline::start(self.timeout, Instant::now())?;
-        let stop = || interrupted() || deadline.passed();
-        match self.state.close(goal, &self.options, &self.view, stop) {
-            Ok(outcome) => Ok(outcome),
+        let start = Instant::now();
+        let deadline = Deadline::start(self.timeout, start)?;
+        let notice = Notice::start(
+            crate::prove::NOTICE_AFTER,
+            notice_line(self.timeout, self.deepens),
+        );
+        let mut stop = None;
+        let mut halt = || {
+            if interrupted() {
+                stop = Some(Stop::Interrupt);
+            } else if deadline.passed() {
+                stop = deadline.limit().map(Stop::Timeout);
+            }
+            stop.is_some()
+        };
+        let (state, view) = (&mut self.state, &self.view);
+        let closed = alone_first(&self.options, self.alone, &mut halt, |options, halt| {
+            state.close(goal, options, view, halt)
+        });
+        drop(notice);
+        let ended = Ended {
+            stop,
+            elapsed: start.elapsed(),
+            recursion_limit: self.recursion_limit,
+        };
+        match closed {
+            Ok(outcome) => Ok((outcome, ended)),
             Err(Error::View(ViewError::TooLarge { size, limit })) => bail!(
                 "the search proved the goal, but the derivation to graft is too large: its {} \
                  inferences with {} characters of sequents are estimated at {}, over the \
@@ -331,7 +369,7 @@ impl Session {
 }
 
 /// Returns the verdict of a `close` as one line.
-fn verdict(outcome: &Outcome) -> String {
+fn verdict(outcome: &Outcome, ended: &Ended) -> String {
     let context = format!(
         "{}, {}, {} engine",
         outcome.fragment.name_in(outcome.mode),
@@ -342,16 +380,7 @@ fn verdict(outcome: &Outcome) -> String {
         Verdict::Proved(_) => format!("proved ({context})"),
         Verdict::Unprovable(refutation) => format!("unprovable ({context}): {refutation}"),
         Verdict::Unknown(reason) => {
-            let why = match reason {
-                Reason::Stopped => {
-                    "the time limit was reached or the search was interrupted".to_owned()
-                }
-                Reason::RecursionLimit => format!("{reason}; raise it with --recursion-limit"),
-                Reason::CopyBound(_) => format!("{reason}; raise it with --copies"),
-                Reason::MemoryLimit(_) => format!("{reason}; raise it with --memory-limit"),
-                _ => reason.to_string(),
-            };
-            format!("unknown ({context}): {why}")
+            format!("unknown ({context}): {}", unknown(*reason, outcome, ended))
         }
     }
 }

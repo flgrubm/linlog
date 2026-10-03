@@ -2,10 +2,10 @@
 // Licensed under the EUPL
 
 use crate::argument_parsing::{
-    CheckArgs, Format, OutputArgs, ProveArgs, SequentFormat, Tree, jobs,
+    CheckArgs, Format, OutputArgs, ProveArgs, SequentFormat, Tree, threads,
 };
 use crate::io;
-use crate::limit::Deadline;
+use crate::limit::{Deadline, Notice};
 use crate::{Status, catch_interrupt, interrupted};
 use anyhow::{Context, Result, anyhow, bail};
 use linlog::export::svg::{self, Style};
@@ -41,9 +41,59 @@ pub(crate) fn on_large_stack<T: Send>(size: usize, f: impl FnOnce() -> T + Send)
     })
 }
 
+/// Runs a search with the options' threads, on one thread first when
+/// `alone` says for how long: if that has not decided when the time has
+/// passed, the search starts afresh on every thread, and the outcome has
+/// the counters of both runs. `halt` is the command's own stop condition.
+/// `search` runs the search with the options and stop condition given.
+pub(crate) fn alone_first<E>(
+    options: &Options,
+    alone: Option<Duration>,
+    halt: &mut dyn FnMut() -> bool,
+    mut search: impl FnMut(&Options, &mut dyn FnMut() -> bool) -> Result<Outcome, E>,
+) -> Result<Outcome, E> {
+    // Without the timer's thread the threads start at once.
+    let Some(alone) = alone.and_then(|t| Deadline::start(Some(t), Instant::now()).ok()) else {
+        return search(options, halt);
+    };
+    let first = search(&options.clone().jobs(1), &mut || halt() || alone.passed())?;
+    let widen = matches!(first.verdict, Verdict::Unknown(Reason::Stopped)) && !halt();
+    if !widen {
+        return Ok(first);
+    }
+    let mut second = search(options, halt)?;
+    let (s, f) = (&mut second.statistics, &first.statistics);
+    s.nodes += f.nodes;
+    s.memo_hits += f.memo_hits;
+    s.memo_entries = s.memo_entries.max(f.memo_entries);
+    s.splits += f.splits;
+    s.links += f.links;
+    s.tests += f.tests;
+    s.copies = s.copies.max(f.copies);
+    Ok(second)
+}
+
+/// How long a search runs before a line on standard error says that it
+/// does, when standard error is a terminal.
+pub(crate) const NOTICE_AFTER: Duration = Duration::from_millis(500);
+
+/// Returns the line on standard error while a search runs long: how long
+/// it may run, whether it deepens its copy bound, and how to change that.
+pub(crate) fn notice_line(limit: Option<Duration>, deepens: bool) -> String {
+    let deepening = if deepens {
+        ", deepening the copy bound"
+    } else {
+        ""
+    };
+    match limit {
+        Some(t) => format!("searching for at most {t:?}{deepening}; --timeout changes the limit"),
+        None => format!("searching without a time limit{deepening}; Ctrl-C stops it"),
+    }
+}
+
 /// Why the stop condition fired.
 #[derive(Clone, Copy)]
-enum Stop {
+pub(crate) enum Stop {
     /// The time limit passed.
     Timeout(Duration),
     /// The user pressed Ctrl-C.
@@ -488,7 +538,7 @@ fn unread(args: &ProveArgs, limit: Duration) -> Result<Status> {
 /// read, parsed and laid out as a forest under it, on a thread the
 /// command stops waiting for when the limit passes.
 pub fn prove(args: &ProveArgs) -> Result<Status> {
-    let deadline = Deadline::start(args.timeout, Instant::now())?;
+    let deadline = Deadline::start(args.timeout.0, Instant::now())?;
     let input = args.input.clone();
     let loaded = deadline.within(move || input.forest())?;
     let Some(forest) = loaded else {
@@ -506,13 +556,15 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         .recursion_limit(args.recursion_limit)
         .engine(args.engine.into())
         .fragment(args.fragment.map(Into::into))
-        .copies(Some(args.copies))
+        .copies(args.copies.0)
         .bias(args.bias.into())
         .forward_copies(args.forward_copies)
         .check(!args.no_check)
         .memory_limit(args.memory_limit.0)
-        .occurrence_limit(args.input.most())
-        .jobs(jobs(args.jobs, args.deterministic));
+        .occurrence_limit(args.input.most());
+    let threads = threads(args.jobs, args.pool_after, args.deterministic);
+    let options = options.jobs(threads.jobs);
+    let deepens = args.copies.0.is_none() && sequent.fragment().has_exponentials();
     let format = args.output.format;
     let quiet = args.output.quiet;
     let show = Show::new(&args.output)?.within(args.memory_limit.0);
@@ -520,17 +572,22 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
 
     let (outcome, stop, elapsed, derivation) = on_large_stack(options.stack_size(), || {
         let start = Instant::now();
+        let notice = Notice::start(NOTICE_AFTER, notice_line(deadline.limit(), deepens));
         let mut stop = None;
         // Both conditions are flags, so every poll asks both.
-        let outcome = prove_goal(&forest, forest.roots(), mode, &options, || {
+        let mut halt = || {
             if interrupted() {
                 stop = Some(Stop::Interrupt);
             } else if deadline.passed() {
                 stop = deadline.limit().map(Stop::Timeout);
             }
             stop.is_some()
+        };
+        let outcome = alone_first(&options, threads.alone, &mut halt, |options, halt| {
+            prove_goal(&forest, forest.roots(), mode, options, halt)
         })
         .map_err(|e| describe(e, sequent))?;
+        drop(notice);
         let elapsed = start.elapsed();
         // The time limit and Ctrl-C hold for the derivation as for the
         // search.
@@ -576,9 +633,14 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         | Format::Svg
         | Format::NetSvg
         | Format::Rocq => {
+            let ended = Ended {
+                stop,
+                elapsed,
+                recursion_limit: args.recursion_limit,
+            };
             let mut text = note(
                 format,
-                &verdict_line(&outcome, args.fragment.is_some(), stop),
+                &verdict_line(&outcome, args.fragment.is_some(), &ended),
             );
             match derivation {
                 Shown::Written(derivation) => write!(text, "\n{derivation}")?,
@@ -600,9 +662,19 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
     })
 }
 
+/// How a search ended, as far as the command knows it beyond the outcome.
+pub(crate) struct Ended {
+    /// Why the command's stop condition fired, if it did.
+    pub(crate) stop: Option<Stop>,
+    /// How long the search took.
+    pub(crate) elapsed: Duration,
+    /// The recursion limit it ran under.
+    pub(crate) recursion_limit: u32,
+}
+
 /// Returns the first line of the text output: the verdict, where the
 /// search ran, and for an undecided sequent why.
-fn verdict_line(outcome: &Outcome, asserted: bool, stop: Option<Stop>) -> String {
+fn verdict_line(outcome: &Outcome, asserted: bool, ended: &Ended) -> String {
     let context = format!(
         "{}{}, {}, {} engine",
         outcome.fragment.name_in(outcome.mode),
@@ -614,22 +686,43 @@ fn verdict_line(outcome: &Outcome, asserted: bool, stop: Option<Stop>) -> String
         Verdict::Proved(_) => format!("provable ({context})"),
         Verdict::Unprovable(refutation) => format!("unprovable ({context}): {refutation}"),
         Verdict::Unknown(reason) => {
-            let why = match (reason, stop) {
-                (Reason::Stopped, Some(Stop::Timeout(t))) => {
-                    format!("the time limit of {t:?} was reached")
-                }
-                (Reason::Stopped, Some(Stop::Interrupt)) => "interrupted".into(),
-                (Reason::RecursionLimit, _) => {
-                    format!("{reason}; raise it with --recursion-limit")
-                }
-                (Reason::CopyBound(_), _) => format!("{reason}; raise it with --copies"),
-                (Reason::MemoryLimit(_), _) => {
-                    format!("{reason}; raise it with --memory-limit")
-                }
-                _ => reason.to_string(),
-            };
-            format!("unknown ({context}): {why}")
+            format!("unknown ({context}): {}", unknown(*reason, outcome, ended))
         }
+    }
+}
+
+/// Returns why a search did not decide, for each way it can end: the
+/// bound or limit it reached, after how long, at which copy bound when it
+/// deepened one, and the flag that changes it.
+pub(crate) fn unknown(reason: Reason, outcome: &Outcome, ended: &Ended) -> String {
+    let deepened = outcome.fragment.has_exponentials()
+        && matches!(outcome.engine, Engine::Focus | Engine::TwoSided);
+    let at = if deepened {
+        format!(" at a copy bound of {}", outcome.statistics.copies)
+    } else {
+        String::new()
+    };
+    let after = format!("after {:.2?}", ended.elapsed);
+    match (reason, ended.stop) {
+        (Reason::Stopped, Some(Stop::Timeout(t))) => {
+            format!(
+                "the time limit of {t:?} was reached{at}; --timeout DURATION gives the search longer"
+            )
+        }
+        (Reason::Stopped, Some(Stop::Interrupt)) => format!("interrupted {after}{at}"),
+        (Reason::CopyBound(_), _) => format!(
+            "{reason} {after}; raise it with --copies N, or lift it with --copies none to deepen \
+             it while the time limit lasts"
+        ),
+        (Reason::RecursionLimit, _) => format!(
+            "the recursion limit of {} was reached {after}{at}; raise it with --recursion-limit N",
+            ended.recursion_limit
+        ),
+        (Reason::MemoryLimit(_), _) => {
+            format!("{reason} {after}{at}; raise it with --memory-limit SIZE")
+        }
+        // Any other reason, which no flag changes.
+        _ => format!("{reason} {after}{at}"),
     }
 }
 
@@ -654,8 +747,9 @@ fn statistics(engine: Engine, s: &Statistics, elapsed: Duration) -> String {
             "stable sequents visited: {} ({} from the memo)\n\
              memo entries at most: {}\n\
              splits examined: {}\n\
+             copy bound reached: {}\n\
              time: {elapsed:.2?}",
-            s.nodes, s.memo_hits, s.memo_entries, s.splits
+            s.nodes, s.memo_hits, s.memo_entries, s.splits, s.copies
         ),
     }
 }

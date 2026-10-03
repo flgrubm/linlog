@@ -103,3 +103,63 @@ impl Deadline {
         }
     }
 }
+
+/// A line on standard error while a search runs long, taken back when it
+/// ends, so that a wait at a terminal is never silent and the output is
+/// what it would be without it. Nothing is written when standard error is
+/// not a terminal, nor for a search that ends in time.
+pub(crate) struct Notice {
+    /// Dropped when the search ends, which wakes the thread.
+    running: Option<Sender<()>>,
+    /// The thread that writes the line and takes it back.
+    thread: Option<thread::JoinHandle<()>>,
+}
+
+impl Notice {
+    /// Writes `line` on standard error once `after` has passed, until the
+    /// notice is dropped.
+    pub(crate) fn start(after: Duration, line: String) -> Self {
+        use std::io::{IsTerminal, Write};
+        if !std::io::stderr().is_terminal() {
+            return Self {
+                running: None,
+                thread: None,
+            };
+        }
+        let (running, ended) = channel::<()>();
+        let thread = thread::Builder::new()
+            .name("notice".into())
+            .spawn(move || {
+                // Nothing is ever sent: the waits end when the notice is
+                // dropped.
+                if ended.recv_timeout(after) != Err(RecvTimeoutError::Timeout) {
+                    return;
+                }
+                let mut err = std::io::stderr().lock();
+                let _ = write!(err, "{line}");
+                let _ = err.flush();
+                drop(err);
+                let _ = ended.recv();
+                // Back to the start of the line, which is then cleared.
+                let mut err = std::io::stderr().lock();
+                let _ = write!(err, "\r\x1b[2K");
+                let _ = err.flush();
+            })
+            .ok();
+        Self {
+            running: Some(running),
+            thread,
+        }
+    }
+}
+
+impl Drop for Notice {
+    /// Ends the thread, which takes the line back if it wrote it, and
+    /// waits for it, so that nothing is written after.
+    fn drop(&mut self) {
+        self.running.take();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}

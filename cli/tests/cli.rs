@@ -32,6 +32,28 @@ fn linlog(args: &[&str], stdin: &str) -> (i32, String, String) {
     )
 }
 
+/// Returns the text with every time that follows "after " as `…`: how
+/// long a search took is the machine's.
+fn timeless(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(at) = rest.find("after ") {
+        let (head, tail) = rest.split_at(at + "after ".len());
+        out.push_str(head);
+        let time = tail
+            .find(|c: char| !(c.is_ascii_digit() || "._µnms".contains(c)))
+            .unwrap_or(tail.len());
+        if time > 0 && tail.starts_with(|c: char| c.is_ascii_digit()) {
+            out.push('…');
+            rest = &tail[time..];
+        } else {
+            rest = tail;
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// A parse error shows the line it is in with a caret under the character
 /// that cannot go on a sequent. Of a long line it shows the part around
 /// that character, cut between characters, and says which character it
@@ -91,7 +113,7 @@ fn timeout() {
             (
                 3,
                 "unknown (MALL, classical affine, focus engine): the time limit of 200ms was \
-                 reached\n",
+                 reached; --timeout DURATION gives the search longer\n",
                 ""
             )
         );
@@ -140,12 +162,13 @@ fn limits_on_memory_and_occurrences() {
             &[&sequent],
         ]
         .concat();
+        let (status, out, err) = linlog(&args, "");
         assert_eq!(
-            linlog(&args, ""),
+            (status, timeless(&out), err),
             (
                 3,
                 "unknown (MALL, classical affine, focus engine): the memory limit of 1 KiB was \
-                 reached; raise it with --memory-limit\n"
+                 reached after …; raise it with --memory-limit SIZE\n"
                     .to_owned(),
                 String::new()
             )
@@ -312,8 +335,8 @@ fn prove_verdicts_and_exit_statuses() {
                 "A * B |- A * B",
             ],
             3,
-            "unknown (MLL, classical, focus engine): the recursion limit was reached; \
-             raise it with --recursion-limit",
+            "unknown (MLL, classical, focus engine): the recursion limit of 1 was reached \
+             after …; raise it with --recursion-limit N",
         ),
         (
             &["prove", "-q", "--fragment", "mall", "A |- A"],
@@ -331,8 +354,9 @@ fn prove_verdicts_and_exit_statuses() {
                 "!A |- A",
             ],
             3,
-            "unknown (MELL, classical, focus engine): the copy bound of 0 was reached; \
-             raise it with --copies",
+            "unknown (MELL, classical, focus engine): the copy bound of 0 was reached after \
+             …; raise it with --copies N, or lift it with --copies none to deepen it while the \
+             time limit lasts",
         ),
         (
             &["prove", "-q", "-a", "A, B |- A"],
@@ -340,8 +364,9 @@ fn prove_verdicts_and_exit_statuses() {
             "provable (MLL, classical affine, focus engine)",
         ),
     ] {
+        let (code, out, err) = linlog(args, "");
         assert_eq!(
-            linlog(args, ""),
+            (code, timeless(&out), err),
             (status, format!("{line}\n"), String::new())
         );
     }
@@ -756,10 +781,7 @@ fn svg_formats() {
     let args = [&["prove", "--format", "svg"], &bounds[..], &["|- ?A"]].concat();
     let (status, out, _) = linlog(&args, "");
     assert_eq!(status, 3);
-    assert!(
-        out.contains("raise it with \u{2010}\u{2010}copies -->"),
-        "{out}"
-    );
+    assert!(out.contains("while the time limit lasts -->"), "{out}");
     let (status, out, _) = linlog(&["seq", "print", "--format", "svg", "A |- A"], "");
     assert_eq!(status, 0);
     assert!(out.contains("<title>⊢ A⊥, A</title>"), "{out}");

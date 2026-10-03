@@ -100,15 +100,18 @@ pub struct ProveArgs {
     /// that decides: alternating on one core, side by side on several.
     #[arg(long, value_enum, value_name = "BIAS", default_value_t = BiasArg::Auto)]
     pub bias: BiasArg,
-    /// How often `?` formulas may be copied on one branch of the proof
+    /// How often `?` formulas may be copied on one branch of the proof, or
+    /// `none` for no bound
     ///
-    /// The search tries the bounds 0, 1, … up to this one. A sequent with
-    /// exponentials that has no proof within the bound is unknown (exit
-    /// status 3) unless a smaller bound already exhausted the search space,
-    /// in which case it is unprovable. Sequents without exponentials are
-    /// not affected.
-    #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_COPIES)]
-    pub copies: u32,
+    /// The search tries the bounds 0, 1, … in turn. By default it goes on
+    /// to the next bound until it decides or the time limit passes, and an
+    /// unknown verdict says which bound it reached. With a bound, a sequent
+    /// with exponentials that has no proof within it is unknown (exit
+    /// status 3) unless a smaller bound already exhausted the search
+    /// space, in which case it is unprovable. Sequents without exponentials
+    /// are not affected.
+    #[arg(long, value_name = "N", value_parser = parse_bound, default_value_t = Bound(None))]
+    pub copies: Bound,
     /// How often `?` formulas may be copied on one branch of the forward
     /// search that `--bias auto` runs
     ///
@@ -116,18 +119,22 @@ pub struct ProveArgs {
     /// a marking and a goal of atoms, as a Petri net is. There a copy is
     /// one step of a chain, and a chain of n steps needs n of them. The
     /// forward search never runs within less than `--copies`; on any other
-    /// sequent, and under Mix, it runs within `--copies`.
+    /// sequent, and under Mix, it runs within `--copies`. Without a bound
+    /// from `--copies` it has no effect: both searches deepen while the
+    /// time limit lasts.
     #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_FORWARD_COPIES)]
     pub forward_copies: u32,
-    /// Give up after this long, such as 500ms, 10s, 2m or 1h
+    /// Give up after this long, such as 500ms, 10s, 2m or 1h, or `none`
+    /// for no limit
     ///
     /// The verdict is then unknown (exit status 3). The time counts from
     /// the start of the command, so it covers reading and parsing the
     /// sequent as well as the search: a sequent that is not read in time
     /// is given up on like one that is not decided. Without the limit, the
-    /// search runs until it decides or is interrupted with Ctrl-C.
-    #[arg(long, value_name = "DURATION", value_parser = parse_duration)]
-    pub timeout: Option<Duration>,
+    /// search runs until it decides or is interrupted with Ctrl-C, which
+    /// with exponentials and no `--copies` bound can be forever.
+    #[arg(long, value_name = "DURATION", value_parser = parse_time, default_value_t = Time(Some(DEFAULT_TIMEOUT)))]
+    pub timeout: Time,
     /// The most decided sequents the search remembers at once
     ///
     /// When the memo is full it is emptied, which costs time but not
@@ -155,13 +162,25 @@ pub struct ProveArgs {
     pub recursion_limit: u32,
     /// How many threads the search may use
     ///
-    /// The default is the machine's parallelism, which is also the most
-    /// a search uses: a larger number is taken as that, with a note on
-    /// standard error. More than one runs the
-    /// focused engine and the net engine on that many threads; the proof
-    /// found may then differ from run to run, the verdict never does.
-    #[arg(short, long, value_name = "N", default_value_t = default_jobs())]
-    pub jobs: usize,
+    /// By default one thread searches first, for the time `--pool-after`
+    /// gives, and then as many threads as the machine runs at once take
+    /// over: a small sequent is decided at once and always the same way,
+    /// a hard one gets every core. A number given here is used from the
+    /// start, unless `--pool-after` is given too; a number above the
+    /// machine's parallelism is taken as that, with a note on standard
+    /// error. More than one runs the focused engine and the net engine on
+    /// that many threads; the proof found may then differ from run to run,
+    /// the verdict never does.
+    #[arg(short, long, value_name = "N")]
+    pub jobs: Option<usize>,
+    /// How long one thread searches before the other threads take over,
+    /// such as 100ms; 0 starts them at once
+    ///
+    /// The default is 100ms when `--jobs` is not given, and 0 when it is.
+    /// The threads start the search afresh: what the single thread found
+    /// is not handed on.
+    #[arg(long, value_name = "DURATION", value_parser = parse_duration)]
+    pub pool_after: Option<Duration>,
     /// Run the sequential engines, whose proof is a function of the input
     ///
     /// The same as `--jobs 1`, and takes precedence over `--jobs`.
@@ -206,9 +225,9 @@ pub struct InteractArgs {
     #[command(flatten)]
     pub mode: ModeArgs,
     /// How often `?` formulas may be copied on one branch when the search
-    /// closes a goal; see `prove --copies`
-    #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_COPIES)]
-    pub copies: u32,
+    /// closes a goal, or `none` for no bound; see `prove --copies`
+    #[arg(long, value_name = "N", value_parser = parse_bound, default_value_t = Bound(None))]
+    pub copies: Bound,
     /// How a `close` picks the positive literal of every atom; see
     /// `prove --bias`
     #[arg(long, value_enum, value_name = "BIAS", default_value_t = BiasArg::Auto)]
@@ -218,9 +237,10 @@ pub struct InteractArgs {
     /// --forward-copies`
     #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_FORWARD_COPIES)]
     pub forward_copies: u32,
-    /// Give up on a `close` after this long, such as 500ms, 10s, 2m or 1h
-    #[arg(long, value_name = "DURATION", value_parser = parse_duration)]
-    pub timeout: Option<Duration>,
+    /// Give up on a `close` after this long, such as 500ms, 10s, 2m or 1h,
+    /// or `none` for no limit; see `prove --timeout`
+    #[arg(long, value_name = "DURATION", value_parser = parse_time, default_value_t = Time(Some(DEFAULT_TIMEOUT)))]
+    pub timeout: Time,
     /// The most decided sequents a `close` remembers at once; see
     /// `prove --memo-limit`
     #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_MEMO_LIMIT)]
@@ -233,8 +253,12 @@ pub struct InteractArgs {
     #[arg(long, value_name = "N", default_value_t = Options::DEFAULT_RECURSION_LIMIT)]
     pub recursion_limit: u32,
     /// How many threads a `close` may use; see `prove --jobs`
-    #[arg(short, long, value_name = "N", default_value_t = default_jobs())]
-    pub jobs: usize,
+    #[arg(short, long, value_name = "N")]
+    pub jobs: Option<usize>,
+    /// How long one thread searches before the other threads take over;
+    /// see `prove --pool-after`
+    #[arg(long, value_name = "DURATION", value_parser = parse_duration)]
+    pub pool_after: Option<Duration>,
     /// Run the sequential engines; see `prove --deterministic`
     #[arg(long)]
     pub deterministic: bool,
@@ -244,32 +268,72 @@ pub struct InteractArgs {
     pub derivation_limit: Limit,
 }
 
-/// The default of `--jobs`: the threads the machine runs at once, or one
-/// when that is unknown.
-fn default_jobs() -> usize {
-    std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
+/// The time limit of `prove` and of a session's `close` when none is
+/// given: what a larger copy bound still decides against what every
+/// undecided sequent then waits. Of the problems of the LLTP library that
+/// a copy bound of 3 leaves undecided and a larger bound decides, nine in
+/// ten are decided within a second or two, while the many that nothing
+/// decides each wait the whole limit.
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// How long one thread searches before the others take over, when
+/// `--jobs` is not given: a small sequent is decided in microseconds, and
+/// a pool costs milliseconds to start and makes the proof depend on the
+/// threads' timing.
+pub const DEFAULT_POOL_AFTER: Duration = Duration::from_millis(100);
+
+/// The threads a search gets, and how long one thread searches before
+/// they take over.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Threads {
+    /// The threads, at most those the machine runs at once.
+    pub(crate) jobs: usize,
+    /// How long one thread searches first, when the threads are more than
+    /// one and do not start at once.
+    pub(crate) alone: Option<Duration>,
 }
 
-/// The threads a search gets for `--jobs` and `--deterministic`: one for
-/// the latter, else what was asked, which the library bounds by the
-/// threads the machine runs at once. A number above that bound is taken
-/// as the bound, and a note on standard error says so; where the machine
-/// does not tell, the library's own bound stands in.
-pub(crate) fn jobs(asked: usize, deterministic: bool) -> usize {
+/// The threads a search gets for `--jobs`, `--pool-after` and
+/// `--deterministic`: one for the last; else the threads asked for, from
+/// the start unless `--pool-after` says otherwise; and without `--jobs`
+/// every thread the machine runs at once after [`DEFAULT_POOL_AFTER`]. The
+/// library bounds the threads by those the machine runs at once; a number
+/// above that bound is taken as the bound, and a note on standard error
+/// says so. Where the machine does not tell, the library's own bound
+/// stands in for a number asked, and one thread is the default.
+pub(crate) fn threads(
+    asked: Option<usize>,
+    pool_after: Option<Duration>,
+    deterministic: bool,
+) -> Threads {
     if deterministic {
-        return 1;
+        return Threads {
+            jobs: 1,
+            alone: None,
+        };
     }
-    let most = std::thread::available_parallelism().map_or(Options::MAX_JOBS, |machine| {
-        machine.get().min(Options::MAX_JOBS)
-    });
-    if asked > most {
-        let threads = if most == 1 { "thread" } else { "threads" };
-        eprintln!(
-            "note: --jobs {asked} is more than the {most} {threads} a search uses at most on \
-             this machine; it uses {most}"
-        );
+    let machine = std::thread::available_parallelism().map(std::num::NonZero::get);
+    let (jobs, alone) = match asked {
+        Some(asked) => {
+            let most = machine.map_or(Options::MAX_JOBS, |m| m.min(Options::MAX_JOBS));
+            if asked > most {
+                let threads = if most == 1 { "thread" } else { "threads" };
+                eprintln!(
+                    "note: --jobs {asked} is more than the {most} {threads} a search uses at most \
+                     on this machine; it uses {most}"
+                );
+            }
+            (asked.clamp(1, most), pool_after)
+        }
+        None => (
+            machine.map_or(1, |m| m.min(Options::MAX_JOBS)),
+            Some(pool_after.unwrap_or(DEFAULT_POOL_AFTER)),
+        ),
+    };
+    Threads {
+        jobs,
+        alone: alone.filter(|t| jobs > 1 && !t.is_zero()),
     }
-    asked.min(most)
 }
 
 /// The arguments of `check`.
@@ -514,6 +578,52 @@ impl From<Limit> for ViewOptions {
     fn from(limit: Limit) -> Self {
         Self::default().limit(limit.0)
     }
+}
+
+/// A copy bound, or none for a search that deepens until it decides.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Bound(pub Option<u32>);
+
+impl std::fmt::Display for Bound {
+    /// Writes the bound as `--copies` reads it.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            None => f.write_str("none"),
+            Some(n) => write!(f, "{n}"),
+        }
+    }
+}
+
+/// Parses a copy bound: a number, or `none`.
+fn parse_bound(text: &str) -> Result<Bound, String> {
+    if text == "none" {
+        return Ok(Bound(None));
+    }
+    text.parse()
+        .map(|n| Bound(Some(n)))
+        .map_err(|_| format!("{text:?} is not a number of copies, or `none`"))
+}
+
+/// A time limit, or none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Time(pub Option<Duration>);
+
+impl std::fmt::Display for Time {
+    /// Writes the limit as `--timeout` reads it.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            None => f.write_str("none"),
+            Some(t) => write!(f, "{t:?}"),
+        }
+    }
+}
+
+/// Parses a time limit: a duration, or `none`.
+fn parse_time(text: &str) -> Result<Time, String> {
+    if text == "none" {
+        return Ok(Time(None));
+    }
+    parse_duration(text).map(|t| Time(Some(t)))
 }
 
 /// The units of a size, each 1024 of the one before.
