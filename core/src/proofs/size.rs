@@ -6,7 +6,15 @@
 //! per node. A term stores a subproof that several nodes share once and
 //! the derivation unfolds it at every use, so a derivation can be
 //! exponentially larger than its term; the numbers here are what says so
-//! before anything is built. All of them saturate.
+//! before anything is built.
+//!
+//! All of them are `u64` and saturate: every sum and product here is a
+//! saturating one, and every difference too, so nothing wraps in any
+//! build. A number that reached `u64::MAX` stays there through every
+//! later sum, since nothing is ever taken away from a count of
+//! inferences, of characters or of a height on its way to the root; so a
+//! saturated count shows in the size returned, whose estimate in bytes is
+//! then over every bound.
 
 use super::check::{self, CheckError, Facts, Observer, State};
 use super::{Derivation, Node, NodeId, Proof, Side};
@@ -89,7 +97,7 @@ impl Proof {
 
 /// What the pass keeps for a node: the size of the subtree it unfolds
 /// into, under the sequent it derives itself, and how that grows with
-/// what a `⊤` in it absorbs.
+/// what a `⊤` in it absorbs. Every number saturates.
 #[derive(Clone, Copy, Debug, Default)]
 struct Sub {
     /// The inferences.
@@ -105,9 +113,12 @@ struct Sub {
     height: u64,
     /// The characters of its widest sequent, with nothing absorbed.
     width: u64,
-    /// The characters of the sequent it derives.
+    /// The characters of the sequent it derives, or `u64::MAX` when they
+    /// are more ([`State::weight`]); the node's own characters are then
+    /// no fewer.
     weight: u64,
-    /// Those of the formula in output position among them.
+    /// Those of the formula in output position among them. Exact: one
+    /// zone's sum.
     goal: u64,
     /// Whether a `⊤` in it absorbs any context.
     absorbs: bool,
@@ -120,7 +131,7 @@ struct Measure<'a> {
     /// The reading, for a two-sided derivation.
     reading: Option<&'a Reading<'a>>,
     /// The characters of every occurrence's formula, and two for its
-    /// separator.
+    /// separator, or `u32::MAX` when they are more.
     weights: Vec<u32>,
     /// What the pass found for each node so far.
     subs: Vec<Sub>,
@@ -129,13 +140,14 @@ struct Measure<'a> {
 }
 
 /// Returns, for every occurrence of a forest, the characters of its
-/// formula in one-sided notation plus two for the separator after it.
+/// formula in one-sided notation plus two for the separator after it,
+/// saturating.
 fn weights(forest: &Forest) -> Vec<u32> {
     let sequent = forest.sequent();
     let names: Vec<u32> = sequent
         .atom_names()
         .iter()
-        .map(|name| name.chars().count() as u32)
+        .map(|name| u32::try_from(name.chars().count()).unwrap_or(u32::MAX))
         .collect();
     // Per term, the characters at the top of a formula and inside one,
     // where a binary formula is bracketed; a subterm precedes its parents.
@@ -250,8 +262,8 @@ impl Measure<'_> {
 }
 
 impl Observer for Measure<'_> {
-    fn weight(&self, o: OccId) -> u64 {
-        self.characters(o)
+    fn weight(&self, o: OccId) -> u32 {
+        self.weights[o.index()]
     }
 
     fn derived(&mut self, id: NodeId, state: &State, facts: &Facts<'_>) {
@@ -323,6 +335,7 @@ impl Observer for Measure<'_> {
                 // second away, in ascending order.
                 let mut shared: Vec<OccId> = facts.shared.to_vec();
                 shared.sort_unstable();
+                // Distinct occurrences, fewer than 2³².
                 let own = shared.len() as u64 + 1;
                 let mut doubled: u64 = 0;
                 for (j, &a) in shared.iter().enumerate() {
@@ -441,13 +454,13 @@ pub(crate) fn measure(
     check::examine(proof, goal, mode, reading, &mut measure)?;
     let root = measure.subs[proof.root().index()];
     // What the conclusion holds beyond what the root derives, a `⊤`
-    // absorbs.
-    let all: u64 = goal.iter().map(|&o| measure.characters(o)).sum();
-    let goal: u64 = goal
-        .iter()
-        .filter(|&&o| reading.is_some_and(|r| r.position(o) == Position::Output))
-        .map(|&o| measure.characters(o))
-        .sum();
+    // absorbs. A goal is a list of any length, so its sums saturate.
+    let characters = |output: bool| {
+        goal.iter()
+            .filter(|&&o| !output || reading.is_some_and(|r| r.position(o) == Position::Output))
+            .fold(0u64, |sum, &o| sum.saturating_add(measure.characters(o)))
+    };
+    let (all, goal) = (characters(false), characters(true));
     let beyond = all.saturating_sub(root.weight);
     let beyond_goal = goal.saturating_sub(root.goal).min(beyond);
     Ok(Size {

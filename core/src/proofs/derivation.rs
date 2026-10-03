@@ -335,6 +335,7 @@ impl Default for ViewOptions {
 }
 
 /// Why a proof has no derivation to show.
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ViewError {
     /// The proof does not pass the checker.
@@ -347,6 +348,13 @@ pub enum ViewError {
         size: Size,
         /// The bound in force, in bytes.
         limit: u64,
+    },
+    /// The derivation has more inferences than a derivation holds
+    /// ([`Derivation::MOST`]), whatever the options allow; nothing was
+    /// built.
+    TooMany {
+        /// The derivation's size.
+        size: Size,
     },
     /// The caller's stop condition fired while the derivation was built.
     Stopped,
@@ -371,6 +379,13 @@ impl Display for ViewError {
                 size.inferences,
                 size.characters,
                 size.bytes()
+            ),
+            Self::TooMany { size } => write!(
+                f,
+                "the derivation is not built: it has {} inferences, and a derivation holds {} \
+                 at most",
+                size.inferences,
+                Derivation::MOST
             ),
             Self::Stopped => f.write_str("the derivation is not built: stopped"),
         }
@@ -426,6 +441,10 @@ impl<'a> Derivation<'a> {
     ) -> Result<Self, ViewError> {
         Self::build(proof, Self::ONE_SIDED, None, view, stop)
     }
+
+    /// The most inferences a derivation holds: as many as an [`InfId`]
+    /// counts.
+    pub const MOST: u64 = u32::MAX as u64;
 
     /// The rules of a one-sided derivation: every rule a proof can use.
     pub(crate) const ONE_SIDED: Mode = Mode::CLASSICAL.affine().with_mix();
@@ -542,14 +561,17 @@ impl<'a> Derivation<'a> {
 
     /// Returns the root: the inference that concludes the sequent.
     pub fn root(&self) -> InfId {
+        // A derivation has at least one inference and [`MOST`](Self::MOST)
+        // at most.
         InfId::new(self.inferences.len() as u32 - 1)
     }
 }
 
 /// Unfolds a proof that concludes `goal` into the inferences of its
 /// derivation, premises before conclusions and the root last: one pass of
-/// the checker for the size, which must be within the bound, a second for
-/// what the translation reads, then the translation.
+/// the checker for the size, which must be within the bound and of no
+/// more inferences than an id counts, a second for what the translation
+/// reads, then the translation.
 fn unfold(
     proof: &Proof,
     goal: &[OccId],
@@ -558,11 +580,14 @@ fn unfold(
     view: &ViewOptions,
     mut stop: impl FnMut() -> bool,
 ) -> Result<Vec<Inference>, ViewError> {
-    if let Some(limit) = view.limit {
-        let size = size::measure(proof, goal, mode, reading)?;
-        if size.bytes() > limit {
-            return Err(ViewError::TooLarge { size, limit });
-        }
+    let size = size::measure(proof, goal, mode, reading)?;
+    if let Some(limit) = view.limit
+        && size.bytes() > limit
+    {
+        return Err(ViewError::TooLarge { size, limit });
+    }
+    if size.inferences > Derivation::MOST {
+        return Err(ViewError::TooMany { size });
     }
     let mut record = Record::new(proof);
     check::examine(proof, goal, mode, reading, &mut record)?;
@@ -570,7 +595,9 @@ fn unfold(
         proof,
         record: &record,
         reading,
-        inferences: Vec::with_capacity(proof.nodes().len()),
+        // As many as the size says, which fit a `usize` since they fit a
+        // `u32`.
+        inferences: Vec::with_capacity(size.inferences as usize),
         tasks: Vec::new(),
         done: Vec::new(),
         stop: &mut stop,
@@ -792,13 +819,19 @@ impl<'a> Build<'a> {
             _ => rule,
         };
         let principal = principal.map(|o| sequent.position(o).unwrap());
+        // The size of the derivation was counted before it was begun, and
+        // one of more inferences than an id counts was refused.
+        let id = u32::try_from(self.inferences.len())
+            .ok()
+            .filter(|&id| u64::from(id) < Derivation::MOST)
+            .expect("a derivation has no more inferences than its size says");
         self.inferences.push(Inference {
             sequent: sequent.into_vec(),
             rule,
             principal,
             premises,
         });
-        InfId::new(self.inferences.len() as u32 - 1)
+        InfId::new(id)
     }
 
     /// Adds an inference without premises: a subtree of its own.
@@ -1418,6 +1451,54 @@ mod tests {
             .unwrap()
             .join()
             .unwrap();
+    }
+
+    /// A proof of `⊢ 1, ⊥ & ⊥, …` with `levels` formulas `⊥ & ⊥`, whose
+    /// two premises at every level are one subproof: 3 · `levels` + 1
+    /// nodes that unfold into more than 2^`levels` inferences.
+    fn tower(levels: u32) -> Proof {
+        use crate::sequents::{Term, TermId};
+        use Node::*;
+        // Occurrences: 0 is 1, then &, ⊥, ⊥ for every level.
+        let both = Term::With(TermId::new(1), TermId::new(1));
+        let mut roots = vec![TermId::new(0)];
+        roots.extend((0..levels).map(|_| TermId::new(2)));
+        let sequent = Sequent {
+            terms: vec![Term::One, Term::Bot, both],
+            roots,
+            atoms: vec![],
+        };
+        let mut nodes = vec![One(o(0))];
+        for level in 0..levels {
+            let (with, below) = (1 + 3 * level, n(nodes.len() as u32 - 1));
+            nodes.push(Bot(o(with + 1), below));
+            nodes.push(Bot(o(with + 2), below));
+            let last = nodes.len() as u32;
+            nodes.push(With(o(with), n(last - 2), n(last - 1)));
+        }
+        let root = n(nodes.len() as u32 - 1);
+        Proof::new(Forest::new(&sequent).unwrap(), nodes, root).unwrap()
+    }
+
+    /// A derivation of more inferences than an id counts is not built
+    /// even with no bound on its size, and a size that no `u64` holds
+    /// saturates.
+    #[test]
+    fn refuses_more_inferences_than_it_can_index() {
+        // More than 2⁷⁰ inferences.
+        let p = tower(70);
+        let size = p.derivation_size(false).unwrap();
+        assert_eq!((size.inferences, size.characters), (u64::MAX, u64::MAX));
+        assert_eq!((size.bytes(), size.height), (u64::MAX, 141));
+        let too_many = p
+            .derivation_with(&ViewOptions::UNBOUNDED, || false)
+            .unwrap_err();
+        assert_eq!(too_many, ViewError::TooMany { size });
+        assert_eq!(
+            too_many.to_string(),
+            "the derivation is not built: it has 18446744073709551615 inferences, and a \
+             derivation holds 4294967295 at most"
+        );
     }
 
     /// The inferences carry the sequents as ids with repeats, the rule, the

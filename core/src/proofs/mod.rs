@@ -268,13 +268,16 @@ impl Proof {
     /// Builds a proof from the nodes of an arena and its root, keeping the
     /// nodes the root reaches in their order. Fails if a node the root
     /// reaches names an occurrence outside the forest or a premise that does
-    /// not precede it, or if the root lies outside the arena.
+    /// not precede it, if the root lies outside the arena, or if it reaches
+    /// more nodes than a [`NodeId`] counts (2³² − 1).
     pub fn new(forest: Forest, nodes: Vec<Node>, root: NodeId) -> Result<Self, Error> {
         if root.index() >= nodes.len() {
             return Err(Error::NodeIndexOutOfBounds(root.index(), nodes.len()));
         }
         // A premise precedes its conclusion, so one pass from the root down
-        // visits every reachable node after the node that reaches it.
+        // visits every reachable node after the node that reaches it. The
+        // root's index is below the length of a vector, so one more is a
+        // `usize`.
         let mut reachable = vec![false; root.index() + 1];
         reachable[root.index()] = true;
         for i in (0..=root.index()).rev() {
@@ -293,12 +296,20 @@ impl Proof {
                 reachable[p.index()] = true;
             }
         }
+        // The number of nodes is a `u32` too, which the checker's counts
+        // of a node's readers rely on; the root's index alone allows one
+        // node more.
+        let reached = reachable.iter().filter(|&&r| r).count();
+        if u32::try_from(reached).is_err() {
+            return Err(Error::TooManyNodes(reached));
+        }
         let mut new_index = vec![NodeId::new(u32::MAX); root.index() + 1];
-        let mut kept = Vec::with_capacity(reachable.iter().filter(|&&r| r).count());
+        let mut kept = Vec::with_capacity(reached);
         for (i, node) in nodes.into_iter().enumerate().take(root.index() + 1) {
             if !reachable[i] {
                 continue;
             }
+            // Fewer than `reached` nodes are kept so far.
             new_index[i] = NodeId::new(kept.len() as u32);
             kept.push(node.map_premises(|p| new_index[p.index()]));
         }
@@ -331,11 +342,13 @@ impl Proof {
 
     /// Returns every node id in arena order.
     pub fn ids(&self) -> impl DoubleEndedIterator<Item = NodeId> + ExactSizeIterator {
+        // A proof has at least one node and fewer than 2³².
         (0..self.nodes.len() as u32).map(NodeId::new)
     }
 
     /// Returns the root: the node that concludes the sequent, the last one.
     pub fn root(&self) -> NodeId {
+        // A proof has at least one node and fewer than 2³².
         NodeId::new(self.nodes.len() as u32 - 1)
     }
 

@@ -134,8 +134,11 @@ impl TryFrom<Proof> for Prf {
     fn try_from(p: Proof) -> Result<Prf, Self::Error> {
         let forest = Forest::try_from(p.sequent)?;
         let nodes: Vec<Node> = p.proof.into_iter().map(Node::from).collect();
-        let root = NodeId::new(nodes.len().saturating_sub(1) as u32);
-        Prf::new(forest, nodes, root)
+        // The root is the last node, whose index must be a node id.
+        let Ok(root) = u32::try_from(nodes.len().saturating_sub(1)) else {
+            return Err(crate::Error::TooManyNodes(nodes.len()));
+        };
+        Prf::new(forest, nodes, NodeId::new(root))
     }
 }
 

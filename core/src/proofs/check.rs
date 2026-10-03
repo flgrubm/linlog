@@ -17,6 +17,11 @@
 //! changes it in place, an earlier reader a copy, so what the pass holds at
 //! any moment is the sequents some later node still reads.
 //!
+//! No arithmetic here may wrap, in any build: a term from a file is
+//! hostile input, and a counter that wrapped once made a term a proof
+//! that was none. So every integer says at its declaration why it stays
+//! in range, or saturates into a refusal.
+//!
 //! In intuitionistic mode the same pass also checks the one-succedent
 //! condition against the sequent's intuitionistic reading: every derived
 //! linear zone holds at most one formula in output position, exactly one
@@ -40,15 +45,21 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 /// reads it, so every count a rule sees is the true one.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Bag {
-    /// The copies of every member, never zero.
+    /// The copies of every member, never zero. A count saturates at
+    /// `u32::MAX`, and then the zone has that many members at least, more
+    /// than [`MOST`](Self::MOST): a count that a rule reads is exact.
     counts: HashMap<OccId, u32>,
-    /// The number of members, with repeats.
+    /// The number of members, with repeats. The sum of two zones within
+    /// [`MOST`](Self::MOST) is below 2³³, so on a 64-bit target it is
+    /// exact until the pass refuses it; where a `usize` has 32 bits it
+    /// saturates at `u32::MAX`, which is over the bound as well.
     len: usize,
 }
 
 impl Bag {
     /// The most members a zone may hold: fewer than a counter saturates
-    /// at, so that a saturated counter is always over it.
+    /// at, so that a saturated counter is always over it. It fits a
+    /// `usize` of 32 bits.
     const MOST: usize = (u32::MAX - 1) as usize;
 
     /// Returns the multiset of the given ids.
@@ -93,6 +104,8 @@ impl Bag {
         let Some(n) = self.counts.get_mut(&o) else {
             return false;
         };
+        // A count in the table is one at least, and the length is no less
+        // than any count.
         *n -= 1;
         if *n == 0 {
             self.counts.remove(&o);
@@ -150,20 +163,31 @@ impl Bag {
 ///
 /// Both zones are tables of their members, so a sequent takes memory for
 /// what it holds and none for the width of the forest.
+///
+/// A sequent that a rule or an observer reads has passed
+/// [`Pass::within`], so its linear zone has [`Bag::MOST`] members at
+/// most, fewer than 2³² − 1. The sums below are exact for such a sequent;
+/// while a rule builds one they saturate, which only a longer zone can
+/// make them do, and that zone is refused before anything reads them.
 #[derive(Clone, Debug)]
 pub(crate) struct State {
     /// The unrestricted zone the subproof needs.
     theta: HashSet<OccId>,
     /// The linear zone.
     gamma: Bag,
-    /// The members of the linear zone in output position, under a reading.
+    /// The members of the linear zone in output position, under a reading:
+    /// no more than the zone has members, and saturating with its length.
     outputs: usize,
-    /// The weights of the linear zone's members, added up.
+    /// The weights of the linear zone's members, added up: fewer than
+    /// 2³² − 1 members of a weight below 2³² each, so below 2⁶⁴.
     linear: u64,
     /// The weights of the `?` formulas of the unrestricted zone's members,
-    /// added up.
+    /// added up. It is the sum over the set as it stands at every moment,
+    /// and a set of occurrences has fewer than 2³² − 1 members (a forest
+    /// has no more occurrences), each of a weight below 2³²: below 2⁶⁴.
     unrestricted: u64,
-    /// The weights of the linear zone's members in output position.
+    /// The weights of the linear zone's members in output position: no
+    /// more than `linear`.
     goal: u64,
     /// Whether a `⊤` above absorbs any further linear context.
     any: bool,
@@ -204,9 +228,10 @@ impl State {
     }
 
     /// Returns the weight of the standard sequent `⊢ ?Θ, Γ`: its formulas'
-    /// weights added up.
+    /// weights added up, or `u64::MAX` when that is less. Each zone's sum
+    /// is below 2⁶⁴ and the two together need not be.
     pub(crate) fn weight(&self) -> u64 {
-        self.linear + self.unrestricted
+        self.linear.saturating_add(self.unrestricted)
     }
 
     /// Returns the weight of the linear zone's members in output position.
@@ -499,13 +524,12 @@ pub(crate) fn examine<O: Observer>(
     };
     drop(pass);
     // The premises' sequents are gone, moved into the node that failed, so
-    // the pass runs once more up to it and keeps them.
+    // the pass runs once more up to it. They are kept then, since the node
+    // itself has yet to read them, and the pass does what the first did
+    // up to there: it cannot fail.
     let rule = proof.node(node);
     let mut nobody = ();
     let mut pass = Pass::new(proof, goal.len(), mode, reading, &mut nobody);
-    for p in rule.premises() {
-        pass.readers[p.index()] += 1;
-    }
     let again = pass.run(node.index());
     debug_assert!(again.is_ok());
     let premises = rule
@@ -524,8 +548,8 @@ pub(crate) fn examine<O: Observer>(
 /// proof, in arena order.
 pub(crate) trait Observer {
     /// Returns the weight of an occurrence, which a [`State`] adds up over
-    /// its sequent.
-    fn weight(&self, o: OccId) -> u64 {
+    /// its sequent. A `u32`, so that the sum over a zone fits a `u64`.
+    fn weight(&self, o: OccId) -> u32 {
         let _ = o;
         0
     }
@@ -552,7 +576,7 @@ pub(crate) struct Facts<'a> {
     /// and `&`, and the first for a rule that consumes one.
     pub(crate) absent: [bool; 2],
     /// For `⊗`, `&` and Mix, how many unrestricted occurrences each
-    /// premise needs.
+    /// premise needs: the sizes of two sets of occurrences.
     pub(crate) needs: [usize; 2],
     /// For `⊗` and Mix under a reading, whether the left premise's sequent
     /// holds a formula in output position, its subformula included.
@@ -565,13 +589,18 @@ struct Pass<'a, O> {
     proof: &'a Proof,
     /// Its forest.
     forest: &'a Forest,
-    /// How many formulas the proof is to conclude.
+    /// How many formulas the proof is to conclude: the length of a slice,
+    /// only ever added to with saturation.
     goal: usize,
     /// The rules in force.
     mode: Mode,
     /// The intuitionistic reading, in intuitionistic mode.
     reading: Option<&'a Reading<'a>>,
-    /// How many later nodes still read each node's sequent.
+    /// How many later nodes still read each node's sequent. A proof of `n`
+    /// nodes has `n` references to one node at most: every node after it
+    /// has two premises at most, and every one of them but the root is
+    /// itself the premise of a later node, or the proof would not hold
+    /// it. And `n` fits a `u32`, as [`Proof::new`] sees to.
     readers: Vec<u32>,
     /// The sequents of the nodes that a later node still reads.
     live: Vec<Option<Box<State>>>,
@@ -656,6 +685,7 @@ impl<'a, O: Observer> Pass<'a, O> {
     /// copy for the others.
     fn premise(&mut self, p: NodeId) -> Box<State> {
         let slot = &mut self.live[p.index()];
+        // The count includes this reader, so it is one at least.
         self.readers[p.index()] -= 1;
         if self.readers[p.index()] == 0 {
             slot.take()
@@ -683,11 +713,11 @@ impl<'a, O: Observer> Pass<'a, O> {
     /// Adds one copy of `o` to the linear zone of `d`.
     fn put(&self, d: &mut State, o: OccId) {
         d.gamma.insert(o);
-        let weight = self.observer.weight(o);
-        d.linear += weight;
+        let weight = u64::from(self.observer.weight(o));
+        d.linear = d.linear.saturating_add(weight);
         if self.is_output(o) {
-            d.outputs += 1;
-            d.goal += weight;
+            d.outputs = d.outputs.saturating_add(1);
+            d.goal = d.goal.saturating_add(weight);
         }
     }
 
@@ -696,7 +726,9 @@ impl<'a, O: Observer> Pass<'a, O> {
     /// `⊤` above stands in for a missing one, but never for a second goal.
     fn take(&self, d: &mut State, o: OccId, premise: usize) -> Result<bool, Problem> {
         if d.gamma.remove(o) {
-            let weight = self.observer.weight(o);
+            // The premise's sums are exact and count `o`, which was a
+            // member: nothing goes below zero.
+            let weight = u64::from(self.observer.weight(o));
             d.linear -= weight;
             if self.is_output(o) {
                 d.outputs -= 1;
@@ -734,6 +766,7 @@ impl<'a, O: Observer> Pass<'a, O> {
     /// every node (a Mix of a subproof with itself), which no counter of a
     /// fixed width follows for long.
     fn within(&self, id: NodeId, d: Box<State>) -> Result<Box<State>, Problem> {
+        // A node's index is below the number of nodes.
         let later = self.proof.nodes().len() - 1 - id.index();
         let room = self
             .goal
@@ -790,7 +823,7 @@ impl<'a, O: Observer> Pass<'a, O> {
         }
         for a in r.theta.drain() {
             if l.theta.insert(a) {
-                l.unrestricted += self.observer.weight(self.quest(a));
+                l.unrestricted += u64::from(self.observer.weight(self.quest(a)));
             } else {
                 self.shared.push(a);
             }
@@ -803,9 +836,9 @@ impl<'a, O: Observer> Pass<'a, O> {
     fn join(&mut self, mut l: Box<State>, mut r: Box<State>) -> Box<State> {
         self.unite(&mut l, &mut r);
         l.gamma.add(std::mem::take(&mut r.gamma));
-        l.outputs += r.outputs;
-        l.linear += r.linear;
-        l.goal += r.goal;
+        l.outputs = l.outputs.saturating_add(r.outputs);
+        l.linear = l.linear.saturating_add(r.linear);
+        l.goal = l.goal.saturating_add(r.goal);
         l.any |= r.any;
         l
     }
@@ -915,8 +948,9 @@ impl<'a, O: Observer> Pass<'a, O> {
                 self.expect(o, Kind::Quest)?;
                 let mut d = self.premise(p);
                 if d.theta.remove(&self.left(o)) {
+                    // What the member added when it came in.
                     facts.used = true;
-                    d.unrestricted -= self.observer.weight(o);
+                    d.unrestricted -= u64::from(self.observer.weight(o));
                 }
                 self.put(&mut d, o);
                 Ok(d)
@@ -928,7 +962,7 @@ impl<'a, O: Observer> Pass<'a, O> {
                 let mut d = self.premise(p);
                 facts.absent[0] = self.take(&mut d, a, 0)?;
                 if d.theta.insert(a) {
-                    d.unrestricted += self.observer.weight(self.quest(a));
+                    d.unrestricted += u64::from(self.observer.weight(self.quest(a)));
                 } else {
                     facts.used = true;
                 }
@@ -971,15 +1005,17 @@ impl<'a, O: Observer> Pass<'a, O> {
     /// Counts the outputs and the weights of the linear zone of `d` anew,
     /// after it was replaced.
     fn recount(&self, d: &mut State) {
-        (d.outputs, d.linear, d.goal) = (0, 0, 0);
+        let (mut outputs, mut linear, mut goal) = (0usize, 0u64, 0u64);
         for (o, n) in d.gamma.counts() {
-            let weight = self.observer.weight(o) * u64::from(n);
-            d.linear += weight;
+            // Two factors below 2³².
+            let weight = u64::from(self.observer.weight(o)) * u64::from(n);
+            linear = linear.saturating_add(weight);
             if self.is_output(o) {
-                d.outputs += n as usize;
-                d.goal += weight;
+                outputs = outputs.saturating_add(n as usize);
+                goal = goal.saturating_add(weight);
             }
         }
+        (d.outputs, d.linear, d.goal) = (outputs, linear, goal);
     }
 }
 
@@ -1516,7 +1552,9 @@ mod tests {
         let e = p.check(mode).unwrap_err();
         // Node 8 holds 256 copies with 122 nodes to come.
         assert_eq!((e.node, &e.problem), (n(8), &Problem::Surplus));
-        assert_eq!(Err(e), oracle::check(&p, mode));
+        assert_eq!(Err(e.clone()), oracle::check(&p, mode));
+        // The pass that adds up weights for the size refuses it there too.
+        assert_eq!(p.derivation_size(false), Err(e));
     }
 
     /// Intuitionistic mode accepts the classical terms of intuitionistic

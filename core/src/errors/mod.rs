@@ -55,6 +55,9 @@ pub enum Error {
     /// A proof node index (first) lies outside the arena (its length second).
     #[error("a proof refers to node {0}, but it has {1} nodes")]
     NodeIndexOutOfBounds(usize, usize),
+    /// A proof has this many nodes, more than a node index counts.
+    #[error("the proof has {0} nodes, more than a proof can index (2³² − 1)")]
+    TooManyNodes(usize),
     /// A premise's node index (first) is not below the index of the node it
     /// proves (second).
     #[error("proof node {1} has premise {0}, but a premise must come before the nodes that use it")]

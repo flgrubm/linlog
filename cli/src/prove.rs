@@ -270,6 +270,8 @@ pub(crate) fn derivation(
             return Ok(Shown::LeftOut(too_large(&size, limit)));
         }
         Err(ViewError::Stopped) => return Ok(stopped()),
+        // Any other bound of the view's: the error says which.
+        Err(error) => return Ok(Shown::LeftOut(error.to_string())),
     };
     if let Some((columns, most)) = fit {
         let (width, lines) = d.text_size();
