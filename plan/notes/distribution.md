@@ -35,6 +35,29 @@ and `linlog-prover` were free. The owner is decided before the first
 publication, because the repository's URL goes into crate metadata that
 cannot be changed, into the Pages address and into Zenodo's records.
 
+**Decided (the author, 2026-10-03): the organization `linlog-prover`.**
+The name was free on that day (`api.github.com/users/linlog-prover`
+answered 404). An organization on github.com is created in the browser
+by the account that will own it (github.com/account/organizations/new,
+the Free plan); no session can do it. Creating it at once holds the
+name; the repository can follow at any quiet moment before step 31
+(Settings, Danger Zone, Transfer). What a transfer touches, for the
+session that prepares the release to bring in line:
+
+- the remote: `jj git remote set-url origin
+  https://github.com/linlog-prover/linlog` (the old address redirects,
+  so nothing breaks before that);
+- CLAUDE.md, which names `github.com/flgrubm/linlog` as `origin`, and
+  README, which links the documentation site: Pages moves to
+  `linlog-prover.github.io/linlog` and is not redirected, and the
+  repository's description and homepage on GitHub point at the old one;
+- the manifests' `repository` and `homepage`, the `CITATION.cff`, the
+  opam file's `homepage`, `dev-repo` and `bug-reports`, which are all
+  written for the first time by step 31 and step 28 and take the new
+  address from the start;
+- Trusted Publishing and Zenodo, which are configured per owner and are
+  set up after the transfer, not before.
+
 ## crates.io
 
 - `linlog`, `linlog-cli`, `linlog-bench` and `linlog-web` are free (raw).

@@ -554,10 +554,11 @@ it works, never as a placeholder; nixpkgs when the tool has users beyond
 its author. No registry's policy stands against code written with AI
 assistance; the README and the archive's description say how the code
 was written, and a contribution to nixpkgs carries the trailer its
-policy asks for. An organization on GitHub is free, and the owner is
-settled before the first publication, since the repository's address
-goes into metadata that cannot be changed (the name `linlog` is taken
-there). A session prepares; pushing, tagging, transferring and
+policy asks for. The owner is the organization `linlog-prover` on
+GitHub (the author, 2026-10-03; an organization is free, and the name
+`linlog` is taken there): the author creates it and transfers the
+repository to it before the first publication, since the repository's
+address goes into metadata that cannot be changed. A session prepares; pushing, tagging, transferring and
 publishing are the author's acts.
 
 ## Status
@@ -1311,7 +1312,8 @@ publishing are the author's acts.
   until a release; the Rocq library named `linlog` under `rocq/`; every
   teaching object and every engine the dispatch can use wanted; a
   release, with the header report drafted and the author reminded;
-  later, repositories and registries. They are D16 to D22. Four points
+  later, repositories and registries, with the release going out under
+  the organization `linlog-prover`. They are D16 to D22. Four points
   of the supervisor, passed on by the author, are in: the JSON defect is
   step 18's first commit; the search's limits are two steps (19 the
   time, 20 the memory and the inputs); step 18 owns the test run with

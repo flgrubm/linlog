@@ -1389,6 +1389,11 @@ proposed was too much for one session; the debug-assertion gap needs a
 step that owns it; and sub-agents' briefs must carry the shared-machine
 rules, in `plan/conduct.md`.
 
+Asked, after part two, under which owner the first release goes out,
+the author answered: "create an organization, linlog-prover". It is in
+D22; creating it and transferring the repository are the author's acts,
+and `plan/notes/distribution.md` lists what a transfer touches.
+
 **What the answers changed.**
 
 - *Decisions.* D16 (sensible defaults, every default an option), D17

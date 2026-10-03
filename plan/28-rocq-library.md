@@ -31,7 +31,9 @@ proof term. The NanoYalla export stays exactly as it is.
    prints the assumptions of the main theorem (none).
 2. **The standard library only**, by the conventions of the day read
    from the reference manual (`From Stdlib`, a `_RocqProject`, an opam
-   file named for the archive's convention), on the Rocq nixpkgs ships.
+   file named for the archive's convention, `rocq-linlog`, with the
+   addresses of `github.com/linlog-prover/linlog`), on the Rocq nixpkgs
+   ships.
 3. **Certificates as data**: the proof term as a Rocq datatype, a checker
    as a function, one soundness theorem per calculus.
 4. **Stages**: the definitions and the checker with its soundness for
