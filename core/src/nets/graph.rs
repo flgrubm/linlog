@@ -603,7 +603,7 @@ mod tests {
                 let mut net = ProofStructure::new(forest, mix).unwrap();
                 let mut scratch = net.scratch();
                 for &(x, y) in &pairs {
-                    net.link(x, y);
+                    net.link(x, y).unwrap();
                     let (acyclic, _) = enumerate(&net);
                     assert_eq!(
                         net.is_acyclic(&mut scratch),

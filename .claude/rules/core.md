@@ -1422,9 +1422,14 @@ What the code relies on:
   link: the skeleton's union-find has an undo log (union by rank, no path
   compression, one entry per union, so undo is O(1) and find is
   logarithmic), and a backtracking search takes links back in reverse
-  order anyway. `link` debug-asserts that the literals are dual and
-  unlinked; `from_links` and deserialization validate the same at the
-  boundary and return `NetError`.
+  order anyway. `link` validates in every build that its arguments are
+  two unlinked dual literals of the forest (`check_link`, safe for any
+  id) and returns a `NetError`, leaving the structure as it is; `from_links`,
+  deserialization and `from_proof` go through it. The net engine links
+  through the crate-private `link_unchecked`, which only debug-asserts:
+  its candidates are unlinked dual literals by construction, and its loop
+  pays for no check. A link that names no occurrence of the forest is
+  `NetError::NoOccurrence`, which `describe` prints without a formula.
 - **The coloured graph** (`graph.rs`): vertices are the occurrences, edges
   the premise edges of every `⊗` and `⅋` plus the links, in CSR layout
   with the parent edge in a vertex's first slot, then its children, and
@@ -1507,9 +1512,9 @@ What the code relies on:
   the term's forest, like the term itself.
 - What the net engine keeps outside the structure: the per-atom counts,
   the copies of literal conclusions, the explicit stack, statistics, and
-  one `Scratch`. The structure offers `partner`, `unlinked`, `link`,
-  `unlink`, `same_component` (the skeleton's rejection), `is_acyclic`, and
-  `Forest::lca` is the other O(1) rejection.
+  one `Scratch`. The structure offers `partner`, `unlinked`,
+  `link_unchecked`, `unlink`, `same_component` (the skeleton's rejection)
+  and `is_acyclic`, and `Forest::lca` is the other O(1) rejection.
 - The text form (`Display`: the sequent, `~A[0] — A[2]` per link sorted
   by first id, then `proof net`, `proof net with Mix` or `not a proof net:
   ` with the reason in formulas) and the JSON form are pinned in tests.

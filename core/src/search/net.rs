@@ -425,9 +425,10 @@ impl<'a> Engine<'a> {
         true
     }
 
-    /// Makes a link and keeps the counts current.
+    /// Makes a link between two unlinked dual literals and keeps the counts
+    /// current.
     fn link(&mut self, x: OccId, y: OccId) {
-        self.net.link(x, y);
+        self.net.link_unchecked(x, y);
         let atom = self.net.forest().atom(x).unwrap();
         self.remaining[atom.index()] -= 1;
         self.statistics.links += 1;

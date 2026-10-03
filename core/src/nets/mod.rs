@@ -44,6 +44,10 @@ const NONE: u32 = u32::MAX;
 /// prints them as formulas.
 #[derive(ThisError, Clone, Debug, PartialEq, Eq)]
 pub enum NetError {
+    /// A link names an occurrence (first) outside the forest (its length
+    /// second).
+    #[error("a link names occurrence {}, but the sequent has {} occurrences", .0.get(), .1)]
+    NoOccurrence(OccId, usize),
     /// A link names an occurrence that is not a literal.
     #[error("occurrence {} is not a literal", .0.get())]
     NotLiteral(OccId),
@@ -120,7 +124,8 @@ impl Display for Described<'_> {
             NotDual(x, y) => write!(f, "the literals {} and {} are not dual", occ(x), occ(y)),
             LinkedTwice(o) => write!(f, "literal {} is linked twice", occ(o)),
             Unlinked(o) => write!(f, "literal {} has no axiom link", occ(o)),
-            Empty => write!(f, "{}", self.error),
+            // An occurrence outside the forest has no formula.
+            NoOccurrence(..) | Empty => write!(f, "{}", self.error),
             SwitchingCycle(cycle) => write!(f, "a switching cycle runs through {}", list(cycle)),
             Disconnected(parts) => {
                 let parts: Vec<String> = parts.iter().map(|p| format!("{{{}}}", list(p))).collect();
@@ -140,13 +145,13 @@ impl Display for Described<'_> {
 /// between dual literal occurrences, and whether the Mix rule is allowed,
 /// which decides what [`is_correct`](Self::is_correct) requires.
 ///
-/// Links are added with [`link`](Self::link) and taken back in the reverse
-/// order with [`unlink`](Self::unlink), both in constant time, so that a
-/// search can try linkings by backtracking. The structure keeps the
-/// `⅋`-free skeleton (the premise edges of `⊗` nodes and the links) as a
-/// union-find, so that [`same_component`](Self::same_component) answers in
-/// logarithmic time whether a candidate link would close a cycle that no
-/// switching breaks.
+/// Links are added with [`link`](Self::link), which refuses what is not a
+/// link, and taken back in the reverse order with [`unlink`](Self::unlink),
+/// both in constant time, so that a search can try linkings by
+/// backtracking. The structure keeps the `⅋`-free skeleton (the premise
+/// edges of `⊗` nodes and the links) as a union-find, so that
+/// [`same_component`](Self::same_component) answers in logarithmic time
+/// whether a candidate link would close a cycle that no switching breaks.
 ///
 /// # Examples
 ///
@@ -211,14 +216,13 @@ impl ProofStructure {
     }
 
     /// Returns the structure with the given links. Fails as
-    /// [`new`](Self::new) does, if a link names an occurrence outside the
-    /// forest, and with a [`NetError`] if a link does not join two dual
-    /// literals or a literal is linked twice.
+    /// [`new`](Self::new) does, and with the [`NetError`] of
+    /// [`link`](Self::link) if a link names an occurrence outside the
+    /// forest, does not join two dual literals or links a literal twice.
     pub fn from_links(forest: Forest, mix: bool, links: &[(OccId, OccId)]) -> Result<Self, Error> {
         let mut net = Self::new(forest, mix)?;
         for &(x, y) in links {
-            net.check_link(x, y)?;
-            net.link(x, y);
+            net.link(x, y)?;
         }
         Ok(net)
     }
@@ -247,23 +251,23 @@ impl ProofStructure {
     }
 
     /// Fails if `x` and `y` are not two unlinked dual literals of the
-    /// forest.
-    fn check_link(&self, x: OccId, y: OccId) -> Result<(), Error> {
+    /// forest; the ids may be any, also none of the forest's.
+    fn check_link(&self, x: OccId, y: OccId) -> Result<(), NetError> {
         let f = &self.forest;
         for o in [x, y] {
             if o.index() >= f.len() {
-                return Err(Error::OccurrenceIndexOutOfBounds(o.index(), f.len()));
+                return Err(NetError::NoOccurrence(o, f.len()));
             }
             if !f.is_literal(o) {
-                return Err(NetError::NotLiteral(o).into());
+                return Err(NetError::NotLiteral(o));
             }
         }
         if !self.dual(x, y) {
-            return Err(NetError::NotDual(x, y).into());
+            return Err(NetError::NotDual(x, y));
         }
         for o in [x, y] {
             if self.partner(o).is_some() {
-                return Err(NetError::LinkedTwice(o).into());
+                return Err(NetError::LinkedTwice(o));
             }
         }
         Ok(())
@@ -319,9 +323,21 @@ impl ProofStructure {
             .filter(|&l| self.partner[l.index()] == NONE)
     }
 
-    /// Links two unlinked dual literals, in constant time. The caller
-    /// guarantees the literals are dual and unlinked; a debug build checks.
-    pub fn link(&mut self, x: OccId, y: OccId) {
+    /// Links two unlinked dual literals, in constant time. Fails, and
+    /// leaves the structure as it is, if one of the two is no occurrence of
+    /// the forest or no literal, if they are not dual, or if one has a link
+    /// already.
+    pub fn link(&mut self, x: OccId, y: OccId) -> Result<(), NetError> {
+        self.check_link(x, y)?;
+        self.link_unchecked(x, y);
+        Ok(())
+    }
+
+    /// Links two literals that the caller knows to be unlinked dual
+    /// literals of the forest, as a search does of the candidates it
+    /// enumerates; a debug build checks. Anything else corrupts the
+    /// structure.
+    pub(crate) fn link_unchecked(&mut self, x: OccId, y: OccId) {
         debug_assert!(
             self.check_link(x, y).is_ok(),
             "{x:?} and {y:?} cannot be linked"
@@ -457,11 +473,11 @@ mod tests {
         assert!(net.same_component(o(2), o(3)), "the ⊗ joins its premises");
         assert!(!net.same_component(o(0), o(2)));
 
-        net.link(o(0), o(2));
+        net.link(o(0), o(2)).unwrap();
         assert_eq!(net.partner(o(2)), Some(o(0)));
         assert_eq!(net.partner(o(1)), None);
         assert!(net.same_component(o(0), o(3)), "through the link and the ⊗");
-        net.link(o(4), o(3));
+        net.link(o(4), o(3)).unwrap();
         assert!(net.is_complete());
         assert_eq!(net.links(), [(o(0), o(2)), (o(4), o(3))]);
 
@@ -603,12 +619,12 @@ mod tests {
             "⊢ ~A, A ⊗ ~B, B\n~A[0] — A[2]\n~B[3] — B[4]\nproof net"
         );
         let mut net = ProofStructure::new(forest("|- A par B, ~A, ~B"), true).unwrap();
-        net.link(o(1), o(3));
+        net.link(o(1), o(3)).unwrap();
         assert_eq!(
             net.to_string(),
             "⊢ A ⅋ B, ~A, ~B\nA[1] — ~A[3]\nnot a proof net: literal B[2] has no axiom link"
         );
-        net.link(o(2), o(4));
+        net.link(o(2), o(4)).unwrap();
         assert!(net.to_string().ends_with("\nproof net with Mix"));
         let net = ProofStructure::from_links(forest("|- A * ~A"), false, &[(o(1), o(2))]).unwrap();
         assert!(
@@ -640,7 +656,8 @@ mod tests {
     }
 
     /// A list of links is validated: literals only, dual, each at most
-    /// once, inside the forest; and only unit-free MLL has structures.
+    /// once, inside the forest; and only unit-free MLL has structures. A
+    /// single link is validated alike, and one refused changes nothing.
     #[cfg(feature = "parse")]
     #[test]
     fn validation() {
@@ -649,6 +666,7 @@ mod tests {
         let net = ProofStructure::from_links(f(), false, &[(o(0), o(1))]).unwrap();
         assert!(!net.is_complete());
         for (links, error) in [
+            (vec![(o(0), o(9))], NetError::NoOccurrence(o(9), 6)),
             (vec![(o(2), o(0))], NetError::NotLiteral(o(2))),
             (vec![(o(0), o(4))], NetError::NotDual(o(0), o(4))),
             (vec![(o(1), o(3))], NetError::NotDual(o(1), o(3))),
@@ -661,11 +679,20 @@ mod tests {
                 Err(Error::InvalidNet(e)) => assert_eq!(e, error, "{links:?}"),
                 other => panic!("{links:?}: {other:?}"),
             }
+            let mut net = ProofStructure::new(f(), false).unwrap();
+            let (&(x, y), made) = links.split_last().unwrap();
+            for &(x, y) in made {
+                net.link(x, y).unwrap();
+            }
+            assert_eq!(net.link(x, y), Err(error), "{links:?}");
+            assert_eq!(net.links(), made, "{links:?}");
+            assert_eq!(net.partner(o(3)), None, "{links:?}");
         }
-        assert!(matches!(
-            ProofStructure::from_links(f(), false, &[(o(0), o(9))]),
-            Err(Error::OccurrenceIndexOutOfBounds(9, 6))
-        ));
+        let outside = NetError::NoOccurrence(o(u32::MAX), 6);
+        assert_eq!(
+            outside.describe(net.forest()).to_string(),
+            "a link names occurrence 4294967295, but the sequent has 6 occurrences"
+        );
         for input in ["|- 1", "|- A & B", "|- !A"] {
             assert!(
                 matches!(
