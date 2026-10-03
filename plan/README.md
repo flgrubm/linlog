@@ -1503,3 +1503,30 @@ publishing are the author's acts.
   instruction counts where a change is below the day's noise (±5 % on
   unchanged code); memcheck is not asked for, the workspace having no
   `unsafe`. Next: step 20.
+- 2026-10-03: step 20, by its own session (this entry is the step's; its
+  report is `reports/20-memory-and-boundaries.md`): a search holds at
+  most `Options::memory_limit` bytes, one gibibyte by default
+  (`--memory-limit`), counted by an account that the memo, the proof
+  arena, the counts and the buffers of the recursion charge; the memo's
+  entries are records in chunks with an index of its own, so that
+  emptying or dropping a full one is milliseconds (a stop on `qbf/40#1`
+  with its memo full 14 to 21 ms late where it was 76 to 203 ms); the
+  kept arena is collected when the memo is emptied (`qbf/48#0` flat at
+  360 to 402 MB over 120 s); `Reason::MemoryLimit` and `IndexLimit`,
+  with their lines in the command, the JSON and the harness, which has
+  the bound as an axis. On the input side: a hand-written parser
+  without recursion (chumsky removed), formula printers,
+  sequentialization, the derivation builder and the session's
+  translation on stacks of their own, a limit on the occurrences a
+  sequent unfolds to (`--occurrence-limit`, fifty million), the caret,
+  the set operations and `ProofStructure::link` as errors. The checker
+  counts the states it holds against the same bound
+  (`Proof::check_within`), its integers are argued or refuse, and a
+  derivation over the memory bound is left out with its verdict
+  standing. Three sub-agents in jj workspaces of their own did the
+  parser, the walks and the checker. The search did not change: the
+  decided rows of the target set have the counters of `after-limits`,
+  and the rows over a second are faster. What it found beside its
+  brief: two derived `clone_from` that allocated at every copy of a
+  zone, and the quadratic pass of the assessment's R11 in the counts,
+  not in the parser. Awaiting review.

@@ -13,11 +13,10 @@ the counters of the rows compared so far are identical, and it is
 faster, not slower (`mix` at 9 pairs 14.4 s before and 13.0 s after on
 one pinned core; `qbf/48#0` a third more stable sequents a second).
 
-This report was written before the step was finished, at the author's
-request; "Where this session stopped" at its end says what is committed,
-what was running and what was not started. Item 7 (the checker and the
-derivation within the bound) is a sub-agent's work that was not yet
-merged when this was written.
+A first version of this report was committed before the step was
+finished, at the author's request, because the session's usage limit was
+close; "Where this session stopped" at its end says what was verified at
+the time of this version and what was not.
 
 ## Outcome, item by item
 
@@ -61,8 +60,38 @@ merged when this was written.
 6. **The small aborts**: the caret past column 65 535 (a window of the
    line with the character's number), the set operations on different
    widths, `ProofStructure::link` validated at the public boundary.
-7. **The checker and the derivation within the bound**: in progress, see
-   the end of this report.
+7. **The checker and the derivation within the bound** (a sub-agent's
+   work; `Proof::check_within(mode, memory)`, `check` being that within
+   `DEFAULT_MEMORY_LIMIT`). The pass counts the states it holds, each
+   table by the most members it ever held, and refuses with
+   `Problem::Memory`, which `CheckError::is_refusal()` tells from every
+   fault of a proof: a refusal is no verdict (`Error::Unchecked` from a
+   search, exit status 2 from `linlog check`). Its measurement: a proof
+   file of 1.1 MB (46 768 nodes: 14 000 `⊥` formulas read by the 16 384
+   leaves of a `&` tree) makes the unbounded pass hold 2.31 GiB, by its
+   count and by the process's peak alike; within 64 MiB it is refused
+   after 28 ms, within the default after 0.40 s. Every integer of the
+   pass and of the size estimate has its argument at its declaration or
+   saturates into a refusal (`.claude/rules/core.md`, "No integer of the
+   pass wraps"; a proof of 2³² nodes or more is `Error::TooManyNodes`).
+   Its fresh-context reviewer ran about 67 000 hostile and mutant terms
+   in six modes against the old pass and the first implementation, and
+   a model of the pass with eight-bit counters for the saturation
+   boundaries: no soundness difference, no wrapping integer, and two
+   defects of the accounting, both fixed with a test ("Grow no table
+   for a member twice, and count no formula short": inserting a member
+   that was there doubled a full table while the count stayed; a
+   formula of 2³² characters was counted short). Real memory is at most
+   four times the count once members have come and gone (twice was the
+   most observed), and equal to it on a zone that only grew.
+   The derivation builder has a stack of its own (a test builds 120 000
+   inferences one above the other on a stack of 256 KiB). `ViewOptions::memory`
+   bounds the passes behind a derivation and the derivation itself, and
+   `ViewError::Memory` says it was that bound: with
+   `--derivation-limit none`, `TokenRing-50-unfolded_1_1` (3.7 TiB of
+   derivation) now ends in 0.23 s within 98 MB with "provable" and a
+   line that names `--memory-limit`, where the kernel killed it without
+   a verdict.
 8. **Documentation**: `.claude/rules/core.md` ("The memory bound": what
    counts and what does not; the arena's collection and what it relies
    on; the memo's layout; the counts), `cli.md`, `bench.md` (the
@@ -104,6 +133,8 @@ merged when this was written.
 |---|---|---|---|
 | the memory a search may hold | `search::Options::memory_limit(Option<u64>)`, `DEFAULT_MEMORY_LIMIT` = 1 GiB, `None` for no bound | `--memory-limit SIZE\|none` on `prove` and `interact` | a field of the search options once they have serde (step 23); a browser tab has about 2 GiB, so the default suits it |
 | the occurrences a sequent may unfold to | `search::Options::occurrence_limit(u64)`, `DEFAULT_OCCURRENCE_LIMIT` = `Forest::DEFAULT_LIMIT` = 50 000 000; `Forest::within(&sequent, limit)` | `--occurrence-limit N\|none` on every command that reads a sequent | `Sequent::occurrences()` before it builds anything, then `Forest::within` |
+| the memory a check may hold | `Proof::check_within(mode, Option<u64>)`; `Proof::check` is the default bound | `--memory-limit SIZE\|none` on `check` | the same call |
+| the memory a derivation and its passes may hold | `ViewOptions { memory: Option<u64> }`, default `DEFAULT_MEMORY_LIMIT`, serde | the same flag on `prove`, `check` and `interact` | a field of the view options it holds as JSON |
 | the entries of the memo | `Options::memo_limit(usize)`, unchanged | `--memo-limit N` | as before |
 | the harness's bound | `linlog-bench run --memory-limit BYTES` (0: none), column `memory_limit` | – | – |
 
@@ -178,6 +209,13 @@ the parser's sub-agent measured the old binary at 0.05 s for depth
 quadratic pass in the counts instead (`!` nested 80 000 deep: 2.2 s of
 `prove_goal` before the first poll).
 
+R9 (`TokenRing-40-unfolded_100_1`, no time limit in the assessment;
+here with a guard of 150 s, core 5) does not end by the bound: under
+256 MiB it reaches the guard at a peak of 144 MiB (8 201 stable sequents),
+under 64 MiB at a peak of 59 MiB (6 485); its memo cycles within the bound and what
+cannot be emptied stays small. Before, it stood at 851 MB after 124 s
+and growing. A default time limit is what will end it (step 21).
+
 The parser against chumsky, by its sub-agent: 1.1 million generated
 inputs, valid and invalid, and the 4 556 LLTP files of at most 1 MB:
 the same sequent or the same error position on every one.
@@ -251,65 +289,85 @@ the same sequent or the same error position on every one.
 
 ## The commits
 
-"Copy an occurrence set into its own words"; "Bound a search's memory
-in bytes"; "Refuse a forest beyond a limit on occurrences"; "Parse
-sequents without recursion"; "Remove chumsky"; "Point at a parse error
-in an input of any length"; "Print formulas without recursion";
-"Sequentialize a net without recursion"; "Define the set operations on
-sets of different widths"; "Validate a link at the public boundary";
-"Give the command its limits on memory and occurrences"; "Make the
-memory bound an axis of the harness"; "Document the memory bound and
-the limits on the input"; "Translate a session's derivation into its
-term without recursion".
+On `main`'s last commit, in order: "Copy an occurrence set into its own
+words"; "Bound a search's memory in bytes"; "Refuse a forest beyond a
+limit on occurrences"; "Parse sequents without recursion"; "Remove
+chumsky"; "Point at a parse error in an input of any length"; "Print
+formulas without recursion"; "Sequentialize a net without recursion";
+"Define the set operations on sets of different widths"; "Validate a
+link at the public boundary"; "Give the command its limits on memory and
+occurrences"; "Make the memory bound an axis of the harness"; "Document
+the memory bound and the limits on the input"; "Translate a session's
+derivation into its term without recursion"; "Report on step 20 as it
+stands"; "Plan: what the memory bound left for later"; "Build a
+derivation on a stack of its own"; "Keep every integer of the checker
+and of the size in range"; "Bound the memory a check of a proof holds";
+"Document the checker's bound, its integers and the derivation builder";
+"Count what the derivation's record keeps against its pass"; "Check a
+proof and build its derivation within the memory limit"; "Grow no table
+for a member twice, and count no formula short"; "Read a refused check
+as no verdict in the size pass and the harness"; "Take the target set
+after the memory bound"; "Say that an error report with formulas is not
+bounded"; "Report on step 20, and its entry in the plan". Nothing was
+pushed.
 
 ## Where this session stopped
 
-**Done and committed** (the fourteen changes above): items 1 to 6 and
-the documentation of item 8 for them; the harness's axis. Checked on
-the merged tree: `cargo clippy --workspace --all-targets -- --deny
-warnings` clean; `cargo test --workspace` green; `cargo hack check
---each-feature` (11 of 11) and `--feature-powerset --depth 2` without
-an error, both before the last commit ("Translate a session's
-derivation…"), which touched no feature gate.
+**Done, committed and checked on the merged tree**: all eight items.
+The three sub-agents' changes are on the chain (the checker's five as
+copies of the changes in its workspace `step20-checker`, which was left
+as it was). `cargo clippy --workspace --all-targets -- --deny warnings`
+is clean; `cargo test --workspace` passes (148 unit tests of the core
+crate, two ignored, and the integration, command, harness and doc
+tests); `cargo hack check --each-feature -p linlog` (11 runs) and
+`--feature-powerset --depth 2` (39 runs) pass without a warning;
+`cargo deny check licenses bans sources` is ok.
 
-**In progress when this was written:**
+**The step's verification list**, each in a capped scope on pinned
+cores:
 
-- **Item 7**, by a sub-agent in the jj workspace `step20-checker`
-  (`target/ws/checker`), not merged: five changes there, "Build a
-  derivation on a stack of its own", "Keep every integer of the checker
-  and of the size in range", "Bound the memory a check of a proof
-  holds", "Document the checker's bound, its integers and the
-  derivation builder", "Count what the derivation's record keeps
-  against its pass". Its fresh-context reviewer had not reported. Its
-  interface, as briefed: `linlog::DEFAULT_MEMORY_LIMIT`,
-  `Proof::check_within(mode, Option<u64>)`, a refusal distinguishable
-  from an invalid proof, `ViewOptions::memory`, a `ViewError` that says
-  which bound it was.
-- **R9** (`TokenRing-40-unfolded_100_1` under 256 MiB and 64 MiB, in
-  scopes of twice that, guard 150 s) was running; no result yet.
-- A last heap profile of R8 on the final layout failed to start (a
-  mistake in the command line); the allocation count after the branch
-  stack's fix is therefore not measured.
+| what | result |
+|---|---|
+| `bench/targets.sh after-memory` against `after-limits.csv` | 99 decided rows, every one with the same verdict, stable sequents, splits, memo hits and memo entries; 66 undecided in either, with unchanged reasons. The rows over a second: `mix` at 8, 9 and 10 by −7.8, −8.8 and −17.6 % of CPU time (151.3 s to 124.6 s), two Petri nets by −16.4 and −14.3 % |
+| `linlog-bench run --all-families --timeout 5` | 123 runs, 59 proved, 36 refuted, 28 unknown (21 at the time limit, 4 at the copy bound, 3 at the recursion limit), none against its known verdict |
+| R8 by the bound, memory under it | under 256 MiB after 2.49 s at 253 MiB; the table above |
+| R9 by the bound | not by the bound: it stays within 256 MiB and within 64 MiB (peaks 144 and 59 MiB) for the 150 s of the guard; see Measurements |
+| the megabyte proof file | refused within 64 MiB after 28 ms, within the default after 0.40 s (the library's test and the sub-agent's measurement; not run through the command) |
+| `TokenRing-50-unfolded_1_1`, `--derivation-limit none` | "provable", exit 0, 0.23 s, 98 MB, with the line that names the memory limit |
+| a stop on `qbf/40#1`, memo full, a core of each speed | 14, 16 and 21 ms late |
+| `qbf/48#0`, 120 s, one core | 360 to 402 MB throughout |
+| the Philosophers-10000 nets, `--recursion-limit 16384` | one proved, four at the time limit within the bound, none crashed |
+| D5's file | refused in 0.01 s |
+| R11 | parsed, printed and decided in 0.03 s |
+| `nix flake check` | all checks passed, on the tree of the last code change (x86_64-linux) |
 
-**Not started:**
+**Not done:**
 
-- Rebasing the checker's changes onto this chain; calling
-  `check_within` with `Options::memory_limit` at the end of
-  `prove_goal`; `--memory-limit` on `check`; the derivation under the
-  memory bound in the command (not built when its estimate passes the
-  bound even with `--derivation-limit none`, with a line that names the
-  bound); the megabyte proof file through the command;
-  `TokenRing-50-unfolded_1_1` with `--derivation-limit none`.
-- `bench/targets.sh` (the full comparison of counters, and the two
-  percent on the rows over a second: so far four rows by hand).
-- `cargo deny check` (a dependency changed: chumsky out, unicode-ident
-  direct; the sub-agent ran `licenses bans sources`), both `cargo hack`
-  runs and `nix flake check` on the final tree.
-- The plan's Status entry, `plan/later.md` (the follow-up "The search's
-  own memory" is done; the new ones above), and "what step 21 must
-  know", which in short is: the default bound is `DEFAULT_MEMORY_LIMIT`
-  and `args.memory_limit`; a default time limit is what ends a search
-  whose memo cycles within the bound; `Reason::MemoryLimit` and
-  `IndexLimit` need their words in whatever "unknown" will tell a user;
-  and the harness's rows now run under one gibibyte unless
-  `--memory-limit 0` is passed.
+- **An error report with formulas is not bounded**: `describe` writes
+  every member of a zone as its formula, so a proof file that shares
+  subformulas deeply can make the message of an invalid proof large
+  (the checker's sub-agent measured 65 MB from a file of 47 KB). It
+  predates this step and is the one way left that a small file takes
+  much memory; bounding the report is a follow-up.
+- The checker's pass polls no stop, and a hostile file can make it
+  quadratic in time within flat memory; the crate's hasher has a fixed
+  seed, which the checker's tables now face untrusted input with.
+- The 32-bit case of the checker's integers rests on reasoning; nothing
+  was compiled for a 32-bit target.
+- A last heap profile on the final layout: the allocation count of R8
+  after the branch stack's fix is not measured.
+- The megabyte proof file was run in the library's test
+  (`holds_no_more_than_its_bound`), not through `linlog check`.
+- `cargo deny check advisories` (online; CI runs it).
+
+## What step 21 must know
+
+- The default bound is `Options::DEFAULT_MEMORY_LIMIT` (`args.memory_limit`
+  in the command); a search whose memo cycles within it goes on until a
+  time limit ends it, so the default time limit is what makes R9 answer.
+- `Reason::MemoryLimit` and `Reason::IndexLimit` need their words in
+  whatever an "unknown" will tell a user; `Error::Unchecked` is the
+  third way a search can end for memory.
+- The harness's rows run under one gibibyte unless `--memory-limit 0`
+  is passed, and its files have the column `memory_limit`.
+- "One thread first": on a pool the kept arena is not collected.
