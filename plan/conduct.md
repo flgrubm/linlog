@@ -32,6 +32,14 @@ flags onto, the web front end holds as JSON and any other wrapper reuses;
 no choice a user might want to vary hidden in a constant. Say in the
 report which options exist and how each front end would set them.
 
+Whatever you build gets a sensible default and a way to change it (D16):
+a call without flags does what a newcomer expects and what is safe,
+within a bounded time and memory, and every default is a named constant
+of an options value with a flag and a line of documentation. Where you
+settle a type or an interface, keep the place for quantifiers and say
+in the report where they go (D17); until the first release the API is
+free to change for the better (D18).
+
 Test as necessary, not as much as possible. Commit tests only where the step
 names a behaviour to pin or the repository already keeps tests for this kind
 of change, sized like the neighbouring test files, roughly one focused test
@@ -61,7 +69,13 @@ Delegate independent work to sub-agents and keep working while they run:
 the `crate-source-explorer` agent for any question about a dependency's API
 at the pinned version, and a fresh-context reviewer for a soundness-critical
 piece (a checker, a criterion, a prune) before you call it done. Intervene
-if a sub-agent goes off track.
+if a sub-agent goes off track. A sub-agent's brief carries every rule of
+the paragraph above, not the memory cap alone: which cores it may use and
+for how long, that no thread or job count it hands to any program
+exceeds them, that nothing it runs is unbounded, and that a run its
+brief does not name is asked for through you. One sub-agent, told only
+about memory, probed the command with `--jobs 100000` and loaded every
+core for five minutes.
 
 Record what a future session must know and cannot see in the code in
 `.claude/rules/core.md` (invariants, why a choice was made, what a check

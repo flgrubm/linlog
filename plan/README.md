@@ -5,7 +5,10 @@ suite: the algorithms of `proof-search-specifications.md` (the spec) for every
 propositional fragment, automatic fragment detection with manual override,
 intuitionistic and affine modes, proofs kept in a checkable format, exported
 as LaTeX and Typst trees and as Rocq certificates, and a CLI that a human
-understands. `linlog-web` is out of scope for now.
+understands. From step 18 on the plan also covers what a tool used in
+practice needs (limits that hold, sensible defaults, a batch mode), a
+web front end, a Rocq library of its own, further engines and logics,
+and a release.
 
 Each step is one Claude Code session started from one prompt file in this
 directory. After each step the plan is reviewed and the later prompts are
@@ -33,14 +36,36 @@ amended (see "Review protocol"). `notes/` holds research the prompts rely on.
 | 15 | Performance pass on the focused engine, driven by 14's baseline, measured by day through the engines' counters, with a bounded profile-driven pass on constant factors at its end, and in a second session the default atom bias with exponentials | `15-performance.md` | Fable 5.1 | xhigh | 14 |
 | 16 | The baseline again, after the pass (taken on the night of 2026-10-02), and the comparison of the two | `16-baseline.md` | Opus 5.5 | xhigh | 15 |
 | 17 | Assessment and planning: the state of the repository, the two baselines, every candidate in `later.md`; the author's decisions; then the prompts for the steps from 18 | `17-assessment.md` | Fable 5.1 | xhigh | 16 |
-| 18– | Planned by step 17 from the candidates in `later.md` (configurable output, a code audit and refactoring, net-engine pruning and routing, MELL nets with boxes, essential nets, the inverse method, Petri nets, Lambek, first-order linear logic, second certificate kernels, MALL nets, a batch mode for the CLI, ordinary logic through its embeddings, the web front end) | written by step 17 | – | – | 17 |
+| 18 | The proof check and the derivation within bounds; first the wrong verdict on a JSON sequent with a repeated atom name; the tests also run with debug assertions in the flake | `18-bounded-proofs.md` | Fable 5.1 | xhigh | 17 |
+| 19 | The search keeps its time limit: the stops on one thread and on a pool, the net engine's cubes, a bound on `--jobs`, the portfolio removed | `19-time-limits.md` | Fable 5.1 | xhigh | 18 |
+| 20 | The search keeps its memory, and the inputs their bounds: a memory bound in bytes with its reason, the forest's and the formula's depth bounded, aborts turned into errors | `20-memory-and-boundaries.md` | Fable 5.1 | xhigh | 19 |
+| 21 | The defaults a user meets: the copy bound deepening within a default time limit, one thread first, what "unknown" and "unprovable" say | `21-defaults.md` | Fable 5.1 | high | 20 |
+| 22 | Configurable output, no font in LaTeX and Typst, a Typst layout of linlog's own, a compact view (two sessions) | `22-configurable-output.md` | Opus 5.5 | xhigh | 18 |
+| 23 | The library's API and data model in order, ready for quantifiers | `23-api.md` | Fable 5.1 | xhigh | 22 |
+| 24 | The command, the harness, the flake and the documents in order | `24-command-harness-docs.md` (finished at the review of 23) | Opus 5.5 | xhigh | 23 |
+| 25 | A batch mode, LLTP input for the command, and the draft of the header report | `25-batch.md` (finished at the review of 24) | Opus 5.5 | xhigh | 20, 21, 24 |
+| 26 | Ordinary logic through its embeddings: the layer | `26-ordinary-logic.md` (finished at the review of 25) | Opus 5.5 | xhigh | 21, 25 |
+| 27 | The web front end (three sessions, a plan of its own) | `27-web.md` (finished at the reviews of 22 to 24) | Opus 5.5 | xhigh | 18, 22, 23 |
+| 28 | A Rocq library of linlog's own, `linlog` under `rocq/` (three to four sessions) | `28-rocq-library.md` (finished at the reviews of 18 and 23) | Fable 5.1 | xhigh for the checker and its proof, high for the rest | 18, 23 |
+| 29 | The focused engine in order, and the dispatch as a measured table | `29-focused-engine.md` (finished at the reviews of 20 and 23) | Fable 5.1 | xhigh | 20, 23 |
+| 30 | Horn programs: an engine, coverability, and the coverability suite from practice (two sessions) | `30-horn.md` (finished at the review of 29) | Fable 5.1 | xhigh | 25, 29 |
+| 31 | The third baseline (a night), and the first release prepared | `31-baseline-release.md` (finished at the review of 30) | Opus 5.5 | xhigh | 30 |
+| 32 | MELL proof nets with exponential boxes (two sessions) | `32-mell-nets.md` (finished at the review of 31) | Fable 5.1 | xhigh | 23, 27 |
+| 33 | Cut, and cut elimination on terms and on nets (three sessions) | `33-cut.md` (finished at the review of 32) | Fable 5.1 | xhigh | 32 |
+| 34 | Engines for MLL and IMLL: net pruning, the routing feature, essential nets as an engine and as a drawing (two sessions) | `34-mll-engines.md` (finished at the review of 31) | Fable 5.1 | xhigh | 29, 31 |
+| 35 | Cyclic MLL and the Lambek calculus (two sessions) | `35-lambek.md` (finished at the review of 34) | Fable 5.1 | xhigh | 34 |
+| 36 | The focused inverse method (two sessions) | `36-inverse.md` (finished at the review of 35) | Fable 5.1 | xhigh | 29, 31 |
+| 37 | First-order linear logic (several sessions, a plan of its own) | `37-first-order.md` (finished at the review of 36) | Fable 5.1 | xhigh | 23, 28, 29 |
 
 A step has a whole number, one prompt file named after it, one report
 under `reports/` with the same name, and as many sessions as it takes to
-finish (step 14 took two). Work that is not yet planned is an unnumbered
-candidate in `later.md`, which step 17 assesses and turns into steps;
-small follow-ups are lists there, by area, and are folded into the step
-that touches their code. Until 2026-09-30 some
+finish (step 14 took two). Steps 18 to 37 were planned by step 17 from
+its assessment (`reports/17-assessment.md`) and the author's answers to
+it; a prompt marked "finished at the review of N" says what is fixed and
+is completed by the planning session when it reviews step N, as the
+performance pass's was. `later.md` keeps the sketches the prompts point
+at, what is deferred or dropped with the reason, and the follow-up
+lists, each entry assigned to the step that takes it. Until 2026-09-30 some
 labels carried letters and primes; the Status log and the reports keep
 the labels they were written with, which map as follows: 14b is step 15
 and 14c step 16; 15a to 15i are the candidates of `later.md` by name
@@ -52,7 +77,9 @@ lists (the focused engine, intuitionistic mode, interactive proving, the
 exports, parallel search, the benchmarks).
 
 Steps 5–6 and 7 are independent of each other; 10, 11 and 13 are
-independent of each other. Everything else is in order.
+independent of each other; 22 is independent of 19 to 21, 28 of 24 to
+27, and 32 to 36 of each other except as their rows say. Everything
+else is in order.
 
 ### Why these models and efforts
 
@@ -164,6 +191,39 @@ process, now in `conduct.md`, not of model. The choices from here:
   the purely mechanical ones (a flag, a label table, ids per formula) are
   Sonnet 5.5 at `high`.
 
+Re-evaluated on 2026-10-03 by step 17, for the steps from 18, against
+the docs of the day (platform.claude.com/docs/en/about-claude/models/overview,
+`…/choosing-a-model` and `…/build-with-claude/effort`: the lineup, the
+prices and the default efforts are those of 2026-09-29; the advice is
+still to start with Opus 5.5 and to move to Fable 5.1 where `xhigh` or
+`max` falls short on demanding reasoning or long horizons, and `xhigh`
+is named for agentic coding tasks of more than half an hour, which every
+step is). What steps 15 and 16 added to the record: Fable 5.1 at `xhigh`
+carried four soundness-critical engine changes and a scheduling scheme
+through, with the defects that mattered again found by its fresh-context
+reviewers; Opus 5.5 at `xhigh` took the second baseline and wrote the
+comparison without a slip in the procedure, and attributed the memory of
+fourteen crashed runs to the wrong component, which the review found by
+running the command. So: diagnosis and soundness to Fable, breadth and
+procedure to Opus. The choices:
+
+- **Fable 5.1 at `xhigh`** for the checker's rewrite (18), the engine's
+  stops and bounds (19, 20), the API and data model with quantifiers in
+  view (23, the kind of work step 1 was), the focused engine's
+  refactoring under its oracle (29), every new engine, criterion or
+  logic (30, 32 to 37), and the Rocq checker with its soundness proof
+  (28's first sessions).
+- **Fable 5.1 at `high`** for the defaults (21: little code, but it
+  restates the engine's contract) and for the later sessions of the Rocq
+  library (packaging and bridges, as step 12 was).
+- **Opus 5.5 at `xhigh`** for the exports it wrote (22), the breadth of
+  the command, the harness and the documents (24), the batch mode (25),
+  the layer for ordinary logic (26), the web front end (27) and the
+  baseline with the release (31).
+- `max` stays unused and Sonnet 5.5 unassigned, for the reasons above.
+- A step's sub-agents run on the session's model unless the brief says
+  otherwise; a search through files wants no more than Sonnet 5.5.
+
 ### The commands (nushell)
 
 Run from the repository root, one at a time, in order. `open --raw` reads a
@@ -188,9 +248,32 @@ claude --model claude-opus-5-5 --effort xhigh --name step-14 ((open --raw plan/1
 claude --model claude-fable-5-1 --effort xhigh --name step-15 ((open --raw plan/15-performance.md) + "\n" + (open --raw plan/conduct.md))
 claude --model claude-opus-5-5 --effort xhigh --name step-16 ((open --raw plan/16-baseline.md) + "\n" + (open --raw plan/conduct.md))
 claude --model claude-fable-5-1 --effort xhigh --name step-17 ((open --raw plan/17-assessment.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-18 ((open --raw plan/18-bounded-proofs.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-19 ((open --raw plan/19-time-limits.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-20 ((open --raw plan/20-memory-and-boundaries.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort high --name step-21 ((open --raw plan/21-defaults.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort xhigh --name step-22 ((open --raw plan/22-configurable-output.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-23 ((open --raw plan/23-api.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort xhigh --name step-24 ((open --raw plan/24-command-harness-docs.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort xhigh --name step-25 ((open --raw plan/25-batch.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort xhigh --name step-26 ((open --raw plan/26-ordinary-logic.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort xhigh --name step-27 ((open --raw plan/27-web.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-28 ((open --raw plan/28-rocq-library.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-29 ((open --raw plan/29-focused-engine.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-30 ((open --raw plan/30-horn.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-opus-5-5 --effort xhigh --name step-31 ((open --raw plan/31-baseline-release.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-32 ((open --raw plan/32-mell-nets.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-33 ((open --raw plan/33-cut.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-34 ((open --raw plan/34-mll-engines.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-35 ((open --raw plan/35-lambek.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-36 ((open --raw plan/36-inverse.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-37 ((open --raw plan/37-first-order.md) + "\n" + (open --raw plan/conduct.md))
 ```
 
-The aliases `fable` and `opus` also work for `--model`. The flags are
+A step of several sessions is started again with the same command (step
+28's later sessions at `--effort high`, as its row says); a session
+picks up from the step's report. The aliases `fable` and `opus` also
+work for `--model`. The flags are
 documented at code.claude.com/docs/en/cli-reference.
 
 ## Review protocol
@@ -406,6 +489,76 @@ alternative code paths. A step that adds an output feature says in its
 report which options it exposes and how each front end would set them; a
 step that finds a hidden constant a user might want to change turns it
 into an option or names it as a follow-up.
+
+**D16. Sensible defaults, and every default an option** (the author,
+2026-10-03, and "this should hold throughout the project"). A call
+without flags does what a newcomer expects and what is safe: it answers
+within a bounded time and memory, shows what fits, and says what it left
+out and how to get it. Every such default is a named constant of an
+options value (D15), has a flag in the command and a line of
+documentation, and can be lifted. A step that adds a behaviour chooses
+its default from measurements or from what reputable tools do, says why
+in its report, and never makes an expert's setting the only one.
+
+**D17. Quantifiers are coming, and the propositional case does not pay
+for them** (the author, 2026-10-03). First-order linear logic will be
+implemented (step 37). Every step that settles a type or an interface
+(23, 28, 29, 33, 35) keeps the place for terms, binders, substitutions
+and witnesses, and says in its report where they go. The propositional
+engines must not become meaningfully slower for it: the target set's
+counters stay identical and its pinned CPU time within a few percent,
+by generics or by a duplicated fast path where that is what it takes.
+
+**D18. Until the first release the API is free to change; after it, a
+change is a version** (the author, 2026-10-03). Steps 22 to 29 make the
+library idiomatic, efficient and ergonomic for a caller who is not this
+repository, without regard for what they rename or remove. The
+command's behaviour, the JSON forms and the snapshots are not "the API"
+in this sense: they change only where a step says so. From 0.1.0 on
+(step 31) the crates follow semantic versioning.
+
+**D19. Every sequent gets the engine that is fastest for it,
+automatically** (the author's aim from the start, restated 2026-10-03).
+The smallest fragment is detected, and with it and any other feature
+that separates the engines (the shape of a Horn program, equal literals
+under one tree, width) the dispatch picks a tailored engine. A
+specialised engine is built where there is reason to expect it to win
+and is the default exactly where a measurement shows it winning; D8's
+table is kept as data with the measurement beside each row (step 29),
+and steps 30, 34 and 36 add rows. D7 stands beside it: one engine per
+algorithm, never two implementations of one.
+
+**D20. The Rocq library is `linlog`, under `rocq/`** (the author,
+2026-10-03): a library of this repository, written from nothing, built
+by the flake as nixpkgs builds a Rocq library, with the NanoYalla export
+kept unchanged as the compatibility target. `later.md` has its shape.
+
+**D21. Research and teaching are equal aims, and the command comes
+first** (the author, 2026-10-03). Where two pieces of work compete, the
+one on the command line goes first, since it is the smaller, and the two
+aims alternate after that: the batch mode and ordinary logic before the
+web front end, the Rocq library after it, then the engines, then the
+objects a course shows (MELL nets, cut elimination).
+
+**D22. One workspace, published where its users are; the author
+publishes** (the author's wish of 2026-10-03, with the facts of
+`notes/distribution.md`). The library, the command, the harness and the
+web front end stay one Cargo workspace in one repository, as such
+projects are kept; the Rocq library lives under `rocq/` until it has a
+release rhythm of its own, and may then get a repository; benchmark data
+may move to release assets. The first release is 0.1.0 at step 31: the
+crates `linlog` and `linlog-cli` on crates.io, a tag and a GitHub
+release, a `CITATION.cff` and a DOI. Later, in this order: `rocq-linlog`
+in Rocq's opam archive once the library has a release; `linlog-web` when
+it works, never as a placeholder; nixpkgs when the tool has users beyond
+its author. No registry's policy stands against code written with AI
+assistance; the README and the archive's description say how the code
+was written, and a contribution to nixpkgs carries the trailer its
+policy asks for. An organization on GitHub is free, and the owner is
+settled before the first publication, since the repository's address
+goes into metadata that cannot be changed (the name `linlog` is taken
+there). A session prepares; pushing, tagging, transferring and
+publishing are the author's acts.
 
 ## Status
 
@@ -1128,3 +1281,45 @@ into an option or names it as a follow-up.
   robustness as part of its reading of the baselines (by trying the
   command, since the rows hid two defects), and the default thread
   count and quantifiers among the author's questions. Next: step 17.
+- 2026-10-03: step 17, in two parts, by its own session (this entry is
+  the step's; its review is the planning session's to add). Part one,
+  "Assess the project and the work ahead"
+  (`reports/17-assessment.md`): the plan, the reports and the rules files
+  were read by the session and the whole of `core/`, `cli/`, `bench/`,
+  the flake and the documents by three sub-agents with file and line;
+  two more matched the LLTP library's own result files against the
+  baselines and checked every candidate's premises in the world outside.
+  What it found by running the command rather than reading rows: the
+  check, every drawn format, `interact`'s `close` and `linlog check`
+  take 6 GiB on a proof the search finds in 43 ms, and no proof is
+  checked in a release build unless it is drawn; a pool misses a 5 s
+  limit by minutes on a 19 KB problem (two and four threads), and the
+  net engine on a pool is quadratic on the wide sequents it is the
+  default for; a JSON sequent with a repeated atom name is answered
+  "unprovable" (the one wrong verdict); nothing bounds the memory or,
+  by default, the time. Against the one prover LLTP records (a Maude
+  prover, 1 342 problems) no verdict differs, and the default's copy
+  bound of 3 is the whole difference (196 theorems lost; three with the
+  bound lifted, and 158 gained). The net engine keeps its route, for
+  width; the portfolio goes. One rule was broken: a sub-agent's probe
+  with `--jobs 100000` loaded every core for five minutes.
+  Part two, "Plan the steps from 18", after the author's answers
+  (section 9 of the report has them as given): research and teaching
+  are equal aims with the command first; sensible defaults with every
+  one an option, throughout; one thread before a pool; quantifiers
+  wanted, without cost to the propositional case; the API free to change
+  until a release; the Rocq library named `linlog` under `rocq/`; every
+  teaching object and every engine the dispatch can use wanted; a
+  release, with the header report drafted and the author reminded;
+  later, repositories and registries. They are D16 to D22. Four points
+  of the supervisor, passed on by the author, are in: the JSON defect is
+  step 18's first commit; the search's limits are two steps (19 the
+  time, 20 the memory and the inputs); step 18 owns the test run with
+  debug assertions in the flake; `conduct.md` has the rule for
+  sub-agents' briefs. Planned: steps 18 to 37 with a prompt each (18 to
+  23 in full, the others with what is fixed, finished at the review the
+  table names); `later.md` says where each candidate went and assigns
+  every follow-up; `notes/distribution.md` has the facts on publishing,
+  repositories and policies; README's list of what is planned follows
+  the roadmap. Checked by the session: clippy and the workspace's tests
+  pass at the head; no code changed. Next: step 18.

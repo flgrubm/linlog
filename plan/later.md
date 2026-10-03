@@ -1,13 +1,48 @@
-# Later work: candidates
+# Later work: the sketches, what is deferred, and the follow-ups
 
-Sketches, not steps: unnumbered and in no order. Step 17
-(`17-assessment.md`) assesses them against the state of the repository and
-the two baselines, says which are worth doing, how they depend on each
-other and in which order, puts the decisions that are the author's to the
-author, and then plans the steps from 18 accordingly, with their prompts.
-Until then nothing here is planned. The lists of follow-ups
-at the end are smaller still: each entry is folded into whichever step
-touches its code.
+Step 17 (`reports/17-assessment.md`) assessed the candidates below, and
+the author decided on 2026-10-03; the steps from 18 are in `README.md`'s
+table. The sketches stay because the prompts point at them: a sketch is
+the detail of its step, corrected where the table below says so. The
+follow-up lists at the end are assigned to steps, each list under its
+heading.
+
+## Where each candidate went (2026-10-03)
+
+| candidate | step | what step 17 changed in it |
+|---|---|---|
+| Code audit and refactoring | 23 (the API and data model), 24 (the command, the harness, the documents), 29 (the focused engine) | the audit is section 1 of step 17's report; the API may change freely (D18) and keeps the place for quantifiers (D17) |
+| Configurable output, no font | 22 | the curryst limit is reported upstream and closed as not planned (curryst issue 19), so the Typst tree of linlog's own is built, not weighed |
+| Net-engine pruning and routing | 34 | no verdict to gain (the focused engine is within a factor of three on the net engine's case); kept by D19, each row to be earned by a measurement; the cubes' defect on a pool is step 19's |
+| MELL proof nets with boxes | 32 | – |
+| Essential nets for IMLL | 34 | as an engine only where it beats the embedding; as a drawing regardless. Moot's paper is of 2004 (arXiv 2008) |
+| The focused inverse method | 36 | two cases left (many hypotheses, Mix); stays an option if it wins no row |
+| The !-Horn fragment through Petri-net reachability | 30 | reshaped: an engine of linlog's own with coverability for affine mode. KReach has not changed since 2020; the maintained tools (verifypn, Mist) are GPL-3.0 and could only be called, never linked |
+| Cyclic MLL and the Lambek calculus | 35 | – |
+| First-order linear logic | 37 | wanted (D17). First-order MALL is NEXPTIME-complete (Lincoln and Shankar 1994 for membership) |
+| A Rocq library of linlog's own | 28 | named `linlog`, under `rocq/` (D20). The Mix reduction is machine-checked in Yalla without cut (`mix2_to_ll`); Yalla's general Mix is on its untagged master only; a Lean target exists now (`leanprover/cslib` has classical linear logic with units), deferred until after step 28 |
+| MALL proof nets | dropped | non-canonical or exponentially large: a display feature without a use |
+| A batch mode for the CLI | 25 | with LLTP input and the draft of the header report |
+| Ordinary logic through its embeddings | 26 | the layer; termination on the image of a translation is deferred and assessed in step 26's report (the literature terminates on the intuitionistic side: Dyckhoff's LJT, loop-checked LJ) |
+| The web front end | 27 | – |
+| Problems from practice | 30 | the coverability suite of `blondimi/qcover` (176 instances, real non-theorems). Deferred: Model Checking Contest nets beyond the 76 LLTP used, and planning domains, for which no collection in linear logic exists. Dropped: Granule's synthesis benchmarks (graded signatures with data types, few of them propositional ILL) and llprover's examples (one file of 70 lines without a licence) |
+
+New from step 17, sketched in its report's section 5: a call that keeps
+its limits (steps 18, 19 and 20), the defaults a user meets and why a
+sequent is unprovable (21), cut and cut elimination (33), a release
+(31), the wrong LLTP headers (drafted in 25, the author reminded in 31).
+
+Deferred beyond the table, with the reason: a search that can be
+suspended (an explicit stack in the focused engine; decided by what
+step 27 measures under wasm); a Lean certificate target (after 28); a
+per-worker proof arena, the duplicated exploration of `&` premises, a
+thread sanitizer (no measurement asks); sharing more among
+interchangeable sequents, the order of a split search's members, the
+intersection for `&` (no target asks); the net engine on a sub-forest
+(no client asks). Dropped: the restart of a copy-bound level from the
+frontier and the tuning of the unit of work, if step 30's engine takes
+the nets; the member list, `OccSet` and link-time optimisation among the
+constant factors; Matsuoka's 3D-Matching family.
 
 ## Code audit and refactoring
 
@@ -582,6 +617,20 @@ holding without it through `textLength`.
 
 ## Follow-ups: the focused engine
 
+*Assigned (2026-10-03).* The check and the derivation of a large net:
+step 18. The forward search's missed stop and the portfolio's removal:
+19. The search's own memory: 20. The copy bound, the five sampled
+problems and the default's contract at the limit: 21. The Horn test on
+the goal, Mix's `3^n`, a level of recursion per link of a free chain and
+the first three constant factors: 29. The unit of work, the forward
+bound on Horn programs only, the restart from the frontier and the free
+splits without rows: superseded by step 30 if its engine takes the nets,
+else 29. A search that can be suspended: by step 27's measurement. The
+pool's split of threads between the two searches: measured in 31. A
+sound affine prune: step 30 answers it for Horn programs. The rest stays
+as written.
+
+
 Left open by step 15 (`plan/reports/15-performance.md`, which has the
 numbers behind each). Step 15 took the canonical choice among identical
 members, the forced rule for a tensor of positive literals and the hash
@@ -781,6 +830,10 @@ meets first on a large problem, and come before any new engine:
 
 ## Follow-ups: intuitionistic mode
 
+*Assigned (2026-10-03).* The written succedent: step 28, whose
+two-sided statement carries it. The rest stands with no need shown.
+
+
 Left open by step 8, none of them a correctness issue. The written
 succedent: for formulas built from `⊤` and `0` alone the reading's goal is
 the last root by id, not the written one (`0, ⊤ ⊢ ⊤` prints as `0, 0 ⊢ 0`;
@@ -793,6 +846,13 @@ the focused engine today. The canonical choice among identical hypotheses
 (step 15) applies two-sided as well.
 
 ## Follow-ups: interactive proving
+
+*Assigned (2026-10-03).* The empty goal a one-sided Mix opens, and
+`close_all` dropping its outcomes on an error: step 23. The reading
+recomputed per operation, a filtered `rules` list, a budget per goal for
+`close_all`, a map from a drawing's inferences to the session's goals:
+steps 22 and 27. The net engine on a sub-forest: deferred.
+
 
 Left open by step 9, none a correctness issue. The net engine works on a
 proof structure over the whole forest, so an MLL goal off the roots goes
@@ -813,6 +873,11 @@ library writes, while `apply` also accepts the classical name in
 intuitionistic mode; harmless for the library's own JSON.
 
 ## Follow-ups: the exports
+
+*Assigned (2026-10-03).* All of it is step 22's. Reporting the curryst
+limit upstream is done by others (issue 19, closed as not planned); the
+layout of linlog's own follows.
+
 
 Left open by step 10 (`plan/reports/10-latex-typst.md`, "Open questions").
 Typst refuses a curryst 0.6.0 tree more than about eleven inferences
@@ -841,6 +906,12 @@ row height for trees without a raised `⊥` (`Style::line_height` is the
 knob).
 
 ## Follow-ups: the command's output
+
+*Assigned (2026-10-03).* Step 18, as the author decided: on a terminal a
+tree is shown only if it fits; into a file or a pipe it is written
+unless its estimated size passes a safety bound (64 MiB by default, an
+option, D16). The compact view is step 22's.
+
 
 **A proof tree that does not fit is not printed** (the author,
 2026-10-03, after the review of step 16 showed the command's default
@@ -883,6 +954,16 @@ and is the better answer for teaching; it changes the type the exports
 read, so it goes with the code audit.
 
 ## Follow-ups: parallel search
+
+*Assigned (2026-10-03).* The false assertion of `agree`, the missed
+stop on the SYJ problems (which step 17 reproduced at two and four
+threads on a 19 KB file), the net engine's cubes on sequents with forced
+links, a bound on `--jobs` and the portfolio's removal: step 19. The
+pool's memory on the largest files: 20. The default thread count: one
+thread first, then the pool (the author's answer; step 21). A `Runtime`
+kept across calls: 25. "The parallel tests take about a minute" no
+longer holds (5 s for the core crate's 122 tests). The rest is deferred.
+
 
 Found by the review of step 15's second session, and older than it: the
 doc comment and the second assertion of `focus::parallel::tests::agree`
@@ -945,6 +1026,15 @@ The parallel tests take about a minute in debug builds; trim the samples
 if the suite's time matters more than the coverage.
 
 ## Follow-ups: the benchmarks
+
+*Assigned (2026-10-03).* `derive`'s memory, the verdict written before
+the check, the kill counted from the end of the load: step 18. `summary`
+counting a late verdict as solved, a table of counters, the script's
+values hard-coded for the second baseline, `bench/reruns.txt`: 24. LLTP
+input for the command and the draft of the header report: 25 (the author
+sends it; step 31 reminds). The net engine's test period: 34. Problems
+from practice: the table at the top.
+
 
 Left open by step 14 (`plan/reports/14-benchmarks.md`), beyond the two
 baselines, which are steps 14 and 16. Twenty-eight LLTP files have

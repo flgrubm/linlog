@@ -1,8 +1,10 @@
 # Step 17 report: where the project stands, and the work ahead
 
-Session of 2026-10-03. Part one of the step: the assessment and the
-questions to the author. No code was changed. Part two (the plan of the
-steps from 18) follows the author's answers and is recorded at the end.
+Session of 2026-10-03, in two parts: the assessment with its questions
+to the author (sections 1 to 8, as written before the answers), and the
+answers with what they changed (section 9), after which the steps from
+18 were planned. No code was changed. Sections 6 and 7 are the proposal;
+where they differ from section 9 and from `plan/README.md`, those hold.
 
 ## Summary
 
@@ -1338,5 +1340,96 @@ Each can be answered in a line. The recommendation is first.
   are in the session's scratch directory, outside the repository; none
   is committed.
 
-Part two adds the author's answers and what they changed below this
-line.
+## 9. The author's answers (2026-10-03), and what they changed
+
+The answers, as given. "The proposed order looks good." Then, by
+question:
+
+1. "research and teaching should be eqal foci; in this case, implement
+   the cli part first, since that's easier/less work"
+2. "I want sensible defaults and the ability to fine-tune if needed.
+   This should hold throughout the project!"
+3. "same as above. if you're unsure, you can look what reputable sources
+   say or how reputable projects handle it. But it sounds like a good
+   idea in principle, so that running lots of small samples will not
+   inflate the timings unnecessarily"
+4. "Yes, they should be implemented eventually, so any architecture
+   should keep that in mind. Though, the performance of the
+   propositional calculi should not be meaningfully decreased! If this
+   requires code duplication and/or generics, so be it. Go with whatever
+   is best and most idiomatic currently"
+5. "Yes, please! Make it as good as possible and don't care about API
+   changes at all. Make sure the program runs efficiently, the
+   code/project structure is idiomatic and best-practice and the outward
+   facing API is ergonomic to use. Later changes to the API (once a
+   version is released) will require version jumps."
+6. "The timing is okay as shown, maybe also "linlog"? and for now just
+   under rocq. Make sure the nix flake setup reflects that change
+   idiomatically."
+7. "All of them. Go with whatever order you recommend. Also, in the
+   beginning the idea was that we have one most efficient solver (if
+   deviating from the more general one) for each fragment and automatic
+   smallest-fragment determination, so that each sequent has a tailored
+   search algorithm that is as fast as possible. If there are factors
+   other than fragment that might determine the algorithm to use, then
+   that should also be implemented. Also go with the order that you
+   recommend. You can also slot them into different gaps if it you
+   recommend it"
+8. "Sensible defaults, again"
+9. "Only the release, you can draft the report somewhere and remember me
+   when the time comes"
+
+And beyond the questions: "at some point the different parts should
+probably be separated into different repos", with release tags on
+GitHub, publication on crates.io, in Rocq's package archive and maybe in
+nixpkgs, checked for how and when and against the respective policies on
+AI. The planning session's supervisor added four points through the
+author: the JSON defect first, since it is a wrong verdict; step 19 as
+proposed was too much for one session; the debug-assertion gap needs a
+step that owns it; and sub-agents' briefs must carry the shared-machine
+rules, in `plan/conduct.md`.
+
+**What the answers changed.**
+
+- *Decisions.* D16 (sensible defaults, every default an option), D17
+  (quantifiers are coming, the propositional case does not pay), D18
+  (the API is free until the first release), D19 (the fastest engine per
+  fragment and feature, by measurement), D20 (the Rocq library is
+  `linlog` under `rocq/`), D21 (research and teaching equal, the command
+  first) and D22 (how the project is distributed) in `plan/README.md`.
+- *The steps*, renumbered from section 6's proposal:
+
+  | section 6 | now | what changed |
+  |---|---|---|
+  | 18 | 18 | begins with the JSON defect; owns the flake's test run with debug assertions |
+  | 19 | 19 and 20 | split: the time limit (stops, the net engine's cubes, `--jobs`, the portfolio) and then the memory bound with the input boundaries |
+  | 20 | 21 | the deepening default, a default time limit, one thread first, as the author answered |
+  | 21 | 22 | – |
+  | 22 | 23 and 24 | split by kind: the API and the data model with quantifiers in view (Fable 5.1), and the command, the harness and the documents (Opus 5.5) |
+  | 23 | 25 | with the draft of the header report |
+  | – | 26 | ordinary logic's layer, slotted after the batch mode: it is on the command line, small, and teaching's |
+  | 24 | 27 | – |
+  | 25 | 28 | named, placed, and written with quantifiers in view |
+  | 26 | 29 | gains the dispatch as a measured table (D19) |
+  | 27 | 30 | – |
+  | 28 | 31 | the release prepared for the author to make; the reminder about the header report |
+  | deferred | 32 to 37 | MELL nets, cut elimination, the engines for MLL and IMLL with essential nets, the Lambek calculus, the inverse method, first-order logic: all wanted, after the release, in this order |
+
+- *The order of 32 to 37.* The objects a course shows come first (MELL
+  nets, then cut elimination, which is drawn on them), then the engines
+  D19 asks for where step 17 found the least to gain (so that each is
+  measured against the third baseline), and first-order logic last,
+  since it goes through everything and every earlier step has left its
+  place.
+- *What "not worth doing" became.* Net-engine pruning, essential nets
+  as an engine and the inverse method are planned after all, by D19.
+  The assessment of each stands in its prompt as the honest starting
+  point: each must earn its row of the dispatch by a measurement, and a
+  step that wins none says so and leaves an option, not a default.
+- *The plan's own files.* The prompts `plan/18-…md` to `plan/37-…md`
+  (18 to 23 in full; the others with what is fixed, finished at the
+  review the step table names); `plan/later.md` with where each
+  candidate went and every follow-up list assigned; `plan/conduct.md`
+  with the sub-agents' rule and D16 to D18; `plan/notes/distribution.md`
+  on publishing, repositories, policies and what other tools do about
+  threads and time limits; README's list of what is planned.

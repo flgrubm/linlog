@@ -651,9 +651,29 @@ Built:
 
 Planned, in roughly this order:
 
-- Later: proof nets with exponential boxes, essential nets for
-  intuitionistic MLL, the inverse method, the Lambek calculus, and a web
-  front end.
+- Limits that hold: proofs of any size checked and shown within bounded
+  memory, time limits kept on one thread and on several, a memory bound
+  for the search, and bounds on what an input may be.
+- Sensible defaults, each of them an option: a copy bound that deepens
+  within a default time limit, one thread before several, and reasons
+  with every "unknown" and "unprovable".
+- Output configured through the library (styles, rule labels, the
+  certificate's names), LaTeX and Typst output that sets no font, Typst
+  trees of any height, and a compact view of large derivations.
+- A batch mode: many sequents per call, from files, directories and
+  standard input, in the LLTP library's format as well.
+- Ordinary classical, intuitionistic and minimal propositional logic
+  through their translations into linear logic.
+- A web front end for proving step by step in the browser.
+- A Rocq library of linlog's own with certificates for every mode, next
+  to the NanoYalla export.
+- An engine for Horn programs (Petri nets), with coverability as a
+  decision procedure in affine mode.
+- A first release.
+- Later: proof nets with exponential boxes, cut elimination on proofs
+  and on nets, further engines for MLL and intuitionistic MLL (pruned
+  net search, essential nets), the Lambek calculus, the inverse method,
+  and first-order linear logic.
 
 The design follows [Click and Collect](https://www.click-and-collect.linear-logic.org)
 where it is good and departs from it where it is not. Feature requests and
