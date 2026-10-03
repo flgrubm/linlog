@@ -142,6 +142,11 @@ pub(crate) struct Memo {
     /// an insertion beyond is answered [`Inserted::Full`].
     len: usize,
     /// The extra copies of every record's linear zone, one after another.
+    /// A record names its own by a 32-bit offset and a 32-bit length, so
+    /// the list holds at most `u32::MAX` of them: a key that would take it
+    /// beyond is answered [`Inserted::Full`], never recorded under an
+    /// offset that wrapped, which would compare it with another record's
+    /// copies.
     extras: Vec<(OccId, u32)>,
     /// The number of entries the table holds at most; zero switches the memo
     /// off.
@@ -290,7 +295,8 @@ impl Memo {
             }
             return Inserted::Done;
         }
-        if self.len >= self.limit || !self.reserve(key, account) {
+        let extras_fit = self.extras.len() + key.gamma.extra().len() <= u32::MAX as usize;
+        if self.len >= self.limit || !extras_fit || !self.reserve(key, account) {
             return if self.len == 0 {
                 Inserted::NoRoom
             } else {
