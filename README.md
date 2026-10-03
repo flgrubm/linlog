@@ -5,12 +5,12 @@ library that parse, print and decide sequents of classical and
 intuitionistic linear logic and their fragments, keep the proofs in a
 checkable form and show them as derivation trees or proof nets.
 
-[API documentation](https://flgrubm.github.io/linlog/) (rustdoc of `main`,
+[API documentation](https://linlog-prover.github.io/linlog/) (rustdoc of `main`,
 rebuilt on every push).
 
 ## Usage
 
-The command line program is `linlog` (`nix run github:flgrubm/linlog -- …`,
+The command line program is `linlog` (`nix run github:linlog-prover/linlog -- …`,
 `nix build`, or `cargo run -p linlog-cli -- …` in a checkout). `linlog --help`
 and `linlog <command> --help` document every option.
 

@@ -235,7 +235,7 @@ workflows are in `.claude/rules/ci.md`, which loads under `.github/`.
 ## Version control: jj only
 
 A jj repository, colocated with git only so that nix and the GitHub remote
-`origin` (`github.com/flgrubm/linlog`) keep working. **Never run git, not
+`origin` (`github.com/linlog-prover/linlog`) keep working. **Never run git, not
 even to read.** Every operation goes through `jj`, including lock updates:
 `nix … --commit-lock-file` commits through git. The `Bash(git *)` deny rule and
 `.claude/hooks/block-git.py` enforce this.
