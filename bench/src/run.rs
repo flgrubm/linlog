@@ -5,8 +5,11 @@
 //! child (`one`) for every run, so that a crash, a stack overflow or a run
 //! that ignores its time limit costs that run only; the child times the
 //! search alone, not its start or the parsing, and prints the tail of the
-//! run's CSV row. A child that outlives its time limit by more than the
-//! grace period is killed.
+//! run's CSV row: once with the search's verdict, before it checks a
+//! proof, and once more with the check's result. A child that takes too
+//! long to load its problem, or outlives its time limit by more than the
+//! grace period counted from the end of the load, is killed; one that
+//! dies in its check leaves the row its verdict.
 
 use crate::problems::{self, Reference, mode_name};
 use crate::{OneArgs, RunArgs};
@@ -15,9 +18,10 @@ use clap::ValueEnum;
 use linlog::search::{Engine, Options, Reason, Verdict, prove_until};
 use linlog::{Atom, Bias, Error, Forest, Mode, Sign};
 use std::collections::HashSet;
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -25,10 +29,18 @@ use std::time::{Duration, Instant};
 pub const HEADER: &str = "source,family,size,index,problem,mode,engine_requested,jobs,portfolio,\
                           test_period,timeout_s,run,copies,expected,verdict,reason,checked,engine,\
                           fragment,occurrences,multiplicity,time_ms,nodes,memo_hits,memo_entries,\
-                          splits,links,tests,recursion_limit,cpu_ms,wait_ms,bias,forward_copies";
+                          splits,links,tests,recursion_limit,cpu_ms,wait_ms,bias,forward_copies,\
+                          check_ms";
 
 /// The columns the child prints.
-const TAIL: usize = 21;
+const TAIL: usize = 22;
+
+/// The line the child prints when its problem is loaded and its search
+/// starts, from which the parent counts the time limit.
+const LOADED: &str = "loaded";
+
+/// The tail's column that says how the check of a proof went.
+const CHECKED: usize = 4;
 
 /// Which mode to run a problem in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -335,59 +347,102 @@ fn child(
         .stderr(Stdio::piped())
         .spawn()
         .context("starting a child")?;
-    let reader = |mut pipe: Box<dyn Read + Send>| {
-        thread::spawn(move || {
-            let mut text = String::new();
-            let _ = pipe.read_to_string(&mut text);
-            text
-        })
-    };
-    let stdout = reader(Box::new(process.stdout.take().expect("piped")));
-    let stderr = reader(Box::new(process.stderr.take().expect("piped")));
+    // The child's rows, and the moment it said its problem was loaded.
+    let (loaded_at, loaded) = mpsc::channel();
+    let pipe = process.stdout.take().expect("piped");
+    let stdout = thread::spawn(move || {
+        let mut rows = Vec::new();
+        for line in BufReader::new(pipe).lines().map_while(Result::ok) {
+            if line == LOADED {
+                let _ = loaded_at.send(Instant::now());
+            } else {
+                rows.push(line);
+            }
+        }
+        rows
+    });
+    let mut pipe = process.stderr.take().expect("piped");
+    let stderr = thread::spawn(move || {
+        let mut text = String::new();
+        let _ = pipe.read_to_string(&mut text);
+        text
+    });
 
-    let start = Instant::now();
-    // Time for the parser, the pool's teardown and the proof check.
+    let spawned = Instant::now();
+    let mut searching = None;
+    // Time for the pool's teardown and the proof check.
     let grace = args.grace.unwrap_or(args.timeout * 0.1 + 5.0);
     let limit = Duration::from_secs_f64(args.timeout + grace);
+    let load_limit = Duration::from_secs_f64(args.load_limit);
     let status = loop {
+        if searching.is_none() {
+            searching = loaded.try_recv().ok();
+        }
         if let Some(status) = process.try_wait()? {
             break Some(status);
         }
-        if start.elapsed() > limit {
+        let over = match searching {
+            Some(since) => since.elapsed() > limit,
+            None => spawned.elapsed() > load_limit,
+        };
+        if over {
             process.kill()?;
             process.wait()?;
             break None;
         }
         thread::sleep(Duration::from_millis(2));
     };
-    let stdout = stdout.join().map_err(|_| anyhow!("reading a child"))?;
+    let rows = stdout.join().map_err(|_| anyhow!("reading a child"))?;
     let stderr = stderr.join().map_err(|_| anyhow!("reading a child"))?;
-    let died = |reason: String| {
-        let mut fields = vec![String::new(); TAIL];
-        fields[2] = "unknown".to_owned();
-        fields[3] = reason;
-        fields[19] = name(&args.bias);
-        fields[20] = forward_copies(args.forward_copies).to_string();
-        fields[9] = format!("{:.3}", start.elapsed().as_secs_f64() * 1000.0);
-        fields.join(",")
-    };
-    Ok(match status {
-        None => died("killed".to_owned()),
-        Some(status) if status.success() && stdout.trim().split(',').count() == TAIL => {
-            stdout.trim().to_owned()
+    let row = rows.iter().rev().find(|row| row.split(',').count() == TAIL);
+    // A child that died after it printed its verdict died in the check of
+    // its proof: the row keeps the verdict and says what became of the
+    // check. One that died before leaves a row of its own.
+    let died = |reason: String| match row {
+        Some(row) => {
+            let mut fields: Vec<&str> = row.split(',').collect();
+            let checked = format!("failed: {reason}");
+            fields[CHECKED] = &checked;
+            fields.join(",")
         }
-        Some(status) => {
-            // The row keeps the last line; the log gets all of it, since a
-            // panic's message and backtrace come before that line.
+        None => {
+            let mut fields = vec![String::new(); TAIL];
+            fields[2] = "unknown".to_owned();
+            fields[3] = reason;
+            fields[19] = name(&args.bias);
+            fields[20] = forward_copies(args.forward_copies).to_string();
+            let since = searching.unwrap_or(spawned);
+            fields[9] = format!("{:.3}", since.elapsed().as_secs_f64() * 1000.0);
+            fields.join(",")
+        }
+    };
+    Ok(match (status, row) {
+        (Some(status), Some(row)) if status.success() => row.clone(),
+        (None, _) if searching.is_none() => died("killed while loading".to_owned()),
+        (None, _) => died("killed".to_owned()),
+        (Some(status), _) => {
+            // The row keeps the line that says why; the log gets all of
+            // the error output, a panic's place and backtrace with it.
             eprintln!(
                 "{} crashed ({status}); its error output:\n{}",
                 reference.name,
                 stderr.trim_end()
             );
-            let last = stderr.lines().rev().find(|l| !l.trim().is_empty());
-            died(clean(&format!("crash ({status}): {}", last.unwrap_or(""))))
+            died(clean(&format!("crash ({status}): {}", cause(&stderr))))
         }
     })
+}
+
+/// Returns the line of a dead child's error output that says why it died:
+/// the last one that is neither empty nor a note, such as the hint about
+/// backtraces that follows a panic's message.
+fn cause(stderr: &str) -> &str {
+    stderr
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with("note:"))
+        .unwrap_or("")
 }
 
 /// Makes text a CSV field: no commas, no line breaks.
@@ -405,11 +460,20 @@ pub fn one(args: OneArgs) -> Result<()> {
         .spawn(move || tail(&args))?
         .join()
         .map_err(|_| anyhow!("the child panicked"))?;
-    println!("{line}");
+    say(&line);
     Ok(())
 }
 
-/// Loads and runs one problem and returns the tail of its row.
+/// Prints a line for the parent at once.
+fn say(line: &str) {
+    let mut out = std::io::stdout().lock();
+    let _ = writeln!(out, "{line}");
+    let _ = out.flush();
+}
+
+/// Loads and runs one problem and returns the tail of its row; on the
+/// way it says when the problem is loaded, and prints the tail of a
+/// proved problem once before the proof is checked.
 fn tail(args: &OneArgs) -> String {
     let problem = match problems::load(&args.problem) {
         Ok(problem) => problem,
@@ -442,7 +506,10 @@ fn tail(args: &OneArgs) -> String {
         .bias(args.bias.bias())
         .forward_copies(forward_copies(args.forward_copies))
         .test_period(args.test_period)
-        .recursion_limit(recursion);
+        .recursion_limit(recursion)
+        // The check is the child's own, outside the time measured.
+        .check(false);
+    say(LOADED);
 
     // The clock is read every 64 polls on one thread, where the engine
     // polls millions of times a second, and every poll on a pool, whose
@@ -491,15 +558,9 @@ fn tail(args: &OneArgs) -> String {
             ]);
         }
     };
-    let (verdict, reason, checked) = match &outcome.verdict {
-        Verdict::Proved(proof) => {
-            let checked = match proof.check(mode) {
-                Ok(()) => "ok".to_owned(),
-                Err(error) => clean(&format!("failed: {error}")),
-            };
-            ("proved", "", checked)
-        }
-        Verdict::Unprovable => ("unprovable", "", String::new()),
+    let (verdict, reason) = match &outcome.verdict {
+        Verdict::Proved(_) => ("proved", ""),
+        Verdict::Unprovable => ("unprovable", ""),
         Verdict::Unknown(reason) => {
             let reason = match reason {
                 Reason::Stopped => "timeout",
@@ -507,34 +568,49 @@ fn tail(args: &OneArgs) -> String {
                 Reason::RecursionLimit => "recursion_limit",
                 _ => "other",
             };
-            ("unknown", reason, String::new())
+            ("unknown", reason)
         }
     };
     let s = outcome.statistics;
-    [
-        copies.to_string(),
-        expected.to_owned(),
-        verdict.to_owned(),
-        reason.to_owned(),
-        checked,
-        outcome.engine.to_string(),
-        outcome.fragment.name_in(mode).to_owned(),
-        occurrences.to_string(),
-        multiplicity.to_string(),
-        format!("{time:.3}"),
-        s.nodes.to_string(),
-        s.memo_hits.to_string(),
-        s.memo_entries.to_string(),
-        s.splits.to_string(),
-        s.links.to_string(),
-        s.tests.to_string(),
-        recursion.to_string(),
-        cpu,
-        wait,
-        name(&args.bias),
-        forward_copies(args.forward_copies).to_string(),
-    ]
-    .join(",")
+    let tail = |checked: &str, check_ms: &str| {
+        [
+            copies.to_string(),
+            expected.to_owned(),
+            verdict.to_owned(),
+            reason.to_owned(),
+            checked.to_owned(),
+            outcome.engine.to_string(),
+            outcome.fragment.name_in(mode).to_owned(),
+            occurrences.to_string(),
+            multiplicity.to_string(),
+            format!("{time:.3}"),
+            s.nodes.to_string(),
+            s.memo_hits.to_string(),
+            s.memo_entries.to_string(),
+            s.splits.to_string(),
+            s.links.to_string(),
+            s.tests.to_string(),
+            recursion.to_string(),
+            cpu.clone(),
+            wait.clone(),
+            name(&args.bias),
+            forward_copies(args.forward_copies).to_string(),
+            check_ms.to_owned(),
+        ]
+        .join(",")
+    };
+    let Verdict::Proved(proof) = &outcome.verdict else {
+        return tail("", "");
+    };
+    // The verdict is out before the check, which a proof can outgrow.
+    say(&tail("", ""));
+    let start = Instant::now();
+    let checked = match proof.check(mode) {
+        Ok(()) => "ok".to_owned(),
+        Err(error) => clean(&format!("failed: {error}")),
+    };
+    let check = start.elapsed().as_secs_f64() * 1000.0;
+    tail(&checked, &format!("{check:.3}"))
 }
 
 /// A tail with the given fields filled in and the others empty.

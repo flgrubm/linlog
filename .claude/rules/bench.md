@@ -25,14 +25,25 @@ beyond clap and anyhow, which the CLI already has.
   expected; copies; sequent`; the name's part before `/` is the family.
 - `src/run.rs`: the parent (`run`) and the child (`one`). One child
   process per run: the child loads the problem, builds the forest (for
-  `occurrences` and `multiplicity`), times `prove_until` alone with a
-  deadline in its stop closure (the clock read every 64 polls on one
-  thread, every poll on a pool, as the CLI does), checks the proof outside
-  the timed part, and prints the 16-field tail of the CSV row. The parent
-  kills a child that outlives its limit by `--grace` seconds (by default a
-  tenth of the limit and five) and writes the row itself (`reason` `killed`, or `crash (status): <last
-  stderr line>`, the child's whole error output going to the parent's
-  standard error, which is the run's log).
+  `occurrences` and `multiplicity`), prints the line `loaded`, times
+  `prove_until` alone with a deadline in its stop closure (the clock read
+  every 64 polls on one thread, every poll on a pool, as the CLI does)
+  and with the library's own check off (`Options::check(false)`), prints
+  the 22-field tail of the CSV row with the search's verdict, and for a
+  proof checks it outside the timed part and prints the tail once more
+  with `checked` and `check_ms`. The parent takes the last tail. It kills
+  a child that has not said `loaded` within `--load-limit` seconds
+  (`DEFAULT_LOAD_LIMIT`, 120) or that outlives its time limit by `--grace`
+  seconds (by default a tenth of the limit and five) *counted from that
+  line*, so a file of a hundred megabytes gets its whole limit for the
+  search. A child that dies leaves its last tail with `checked` saying how
+  (`failed: killed`, `failed: crash (status): <line>`): it died in the
+  check, and the verdict it printed stands. One that dies before any tail
+  gets the parent's row (`reason` `killed`, `killed while loading`, or
+  `crash (status): <line>`, the line being the last of its error output
+  that is not a `note:`, so a panic's message and not the hint about
+  backtraces; the whole error output goes to the parent's standard error,
+  which is the run's log).
 - `src/summary.rs`: Markdown from CSV. A problem counts once per
   configuration (CSV file, family, mode, requested engine, jobs, portfolio, test
   period): the first run's verdict, the median of the runs' times.
@@ -76,7 +87,9 @@ beyond clap and anyhow, which the CLI already has.
   `NotAdditive`, `IntuitionisticMix`: the configuration does not apply)
   and `error` (every other `Error`, a parse failure, a missing reading;
   these are findings, not configurations). `checked` is `ok` or the
-  checker's message for a proof of the roots.
+  checker's message for a proof of the roots, or `failed: …` with how the
+  child died in the check; `check_ms` is the wall-clock time of the check
+  alone.
 - **`time_ms` is wall-clock time of the search alone** (`Instant` around
   `prove_until`): forest construction and pool start-up included, parsing,
   the proof check and process start excluded; the time limit is
@@ -94,9 +107,10 @@ beyond clap and anyhow, which the CLI already has.
   stream 3–11 % against the same run alone (shared L3, heat), the same
   for every sequential row, which is why stage 3 takes its own one-thread
   rows. The kill at the limit plus the grace counts from
-  the child's start, parse included, so a `killed` row on a file of
-  megabytes may be its parse; on a small file it is a search that did
-  not stop. The `bench` flake check runs the
+  the end of the child's load (before: from its start, parse included,
+  so that a `killed` row of the first two baselines on a file of
+  megabytes may be its parse): a `killed` row is a search that did not
+  stop, `killed while loading` a load past `--load-limit`. The `bench` flake check runs the
   harness for its verdicts only (a `MISMATCH` fails it), never for times.
 - **A mismatch is a verdict against the known one.** For a generated
   family it is a bug in an engine or in the family's construction; for an

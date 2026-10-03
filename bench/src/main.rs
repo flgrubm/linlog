@@ -60,6 +60,10 @@ enum Command {
     One(OneArgs),
 }
 
+/// The seconds a child gets to load its problem by default: several times
+/// what the largest file of the LLTP library takes (16 s for 103 MB).
+const DEFAULT_LOAD_LIMIT: f64 = 120.0;
+
 /// The arguments of `run`.
 #[derive(Args, Debug)]
 pub struct RunArgs {
@@ -126,11 +130,17 @@ pub struct RunArgs {
     /// The time limit per run, in seconds
     #[arg(long, default_value_t = 60.0)]
     timeout: f64,
-    /// The seconds a child may run past its time limit before it is killed,
-    /// for its start, the parsing, the pool's teardown and the proof check
+    /// The seconds a child may run past its time limit, counted from the
+    /// end of its load, before it is killed: for the pool's teardown and
+    /// the proof check
     /// (default: a tenth of the limit and five seconds)
     #[arg(long, value_name = "SECONDS")]
     grace: Option<f64>,
+    /// Seconds a child may take to load its problem before its search
+    /// starts and the time limit counts; a child that takes longer is
+    /// killed
+    #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_LOAD_LIMIT)]
+    load_limit: f64,
     /// How often to run a problem whose first run took less than
     /// `--repeat-under` seconds; the summary takes the median
     #[arg(long, default_value_t = 1)]
