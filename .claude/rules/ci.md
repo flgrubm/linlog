@@ -12,8 +12,11 @@ Loaded when a file under `.github/` is read.
   `setup-rust`, `apt` or `cargo install`: they would check with other versions
   than the devshell does. A new check goes into the flake
   (`modules/checks.nix`), not into a workflow step.
-- **Third-party actions are pinned to a full commit SHA**, with the release as
-  a comment: `uses: owner/repo@<sha> # vX.Y.Z`. Resolve a tag with
+- **Every action is pinned to a full commit SHA**, with the release as
+  a comment: `uses: owner/repo@<sha> # vX.Y.Z`. The organization
+  `linlog-prover` requires it of all actions, GitHub's own included
+  (its Actions policy, since 2026-10-03): a `uses:` with a tag or a
+  branch fails the run. Resolve a tag with
   `gh api repos/<owner>/<repo>/commits/<tag> --jq .sha`, and read that
   commit's `action.yml` for its inputs. Dependabot proposes the bumps, weekly,
   as one pull request. The pin of `cachix/install-nix-action` also fixes the
