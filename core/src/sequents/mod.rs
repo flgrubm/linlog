@@ -7,6 +7,7 @@ pub mod fmt;
 pub mod term;
 
 pub use fmt::Formula;
+pub(crate) use fmt::{Visit, Walk};
 pub use term::{Atom, Kind, Term, TermId};
 
 use crate::hash::HashMap;

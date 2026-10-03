@@ -66,7 +66,7 @@ use super::Form;
 use super::notation::{Step, walk};
 use crate::occurrences::{Forest, OccId};
 use crate::proofs::{Derivation, InfId, Rule};
-use crate::sequents::{Sequent, Term, TermId};
+use crate::sequents::{Sequent, Term, TermId, Visit, Walk};
 use std::fmt::Write;
 use thiserror::Error;
 
@@ -244,40 +244,42 @@ fn identifiers(atoms: &[String], lemma: &str) -> Vec<String> {
 /// `argument` is set and it is an application.
 fn term(out: &mut String, sequent: &Sequent, names: &[String], id: TermId, argument: bool) {
     use Term::*;
-    let t = sequent.term(id);
-    let atom = |out: &mut String, a| out.push_str(&names[a as usize]);
-    let application = argument && !matches!(t, Var(_) | One | Bot | Top | Zero);
-    if application {
-        out.push('(');
-    }
-    match t {
-        Var(a) => atom(out, a.get()),
-        DualVar(a) => {
-            out.push_str("dual ");
-            atom(out, a.get());
+    for visit in Walk::new(id, argument, |k| sequent.term(k).operands()) {
+        match visit {
+            Visit::Enter(k, argument) => {
+                let t = sequent.term(k);
+                if argument && !matches!(t, Var(_) | One | Bot | Top | Zero) {
+                    out.push('(');
+                }
+                match t {
+                    Var(a) => out.push_str(&names[a.index()]),
+                    DualVar(a) => {
+                        out.push_str("dual ");
+                        out.push_str(&names[a.index()]);
+                        if argument {
+                            out.push(')');
+                        }
+                    }
+                    One => out.push_str("one"),
+                    Bot => out.push_str("bot"),
+                    Top => out.push_str("top"),
+                    Zero => out.push_str("zero"),
+                    Tensor(..) => out.push_str("tens "),
+                    Par(..) => out.push_str("parr "),
+                    With(..) => out.push_str("awith "),
+                    Plus(..) => out.push_str("aplus "),
+                    Bang(_) => out.push_str("oc "),
+                    Quest(_) => out.push_str("wn "),
+                }
+            }
+            Visit::Between(_) => out.push(' '),
+            // What has subformulas is an application.
+            Visit::Exit(_, argument) => {
+                if argument {
+                    out.push(')');
+                }
+            }
         }
-        One => out.push_str("one"),
-        Bot => out.push_str("bot"),
-        Top => out.push_str("top"),
-        Zero => out.push_str("zero"),
-        Tensor(k, l) | Par(k, l) | With(k, l) | Plus(k, l) => {
-            out.push_str(match t {
-                Tensor(..) => "tens ",
-                Par(..) => "parr ",
-                With(..) => "awith ",
-                _ => "aplus ",
-            });
-            term(out, sequent, names, k, true);
-            out.push(' ');
-            term(out, sequent, names, l, true);
-        }
-        Bang(k) | Quest(k) => {
-            out.push_str(if matches!(t, Bang(_)) { "oc " } else { "wn " });
-            term(out, sequent, names, k, true);
-        }
-    }
-    if application {
-        out.push(')');
     }
 }
 

@@ -8,7 +8,7 @@
 
 use crate::occurrences::{Forest, OccId, Position, Reading};
 use crate::proofs::{Derivation, InfId};
-use crate::sequents::{Kind, Sequent, Term, TermId};
+use crate::sequents::{Kind, Sequent, Term, TermId, Visit, Walk};
 
 /// How a target writes formulas and sequents: the spelling of every
 /// connective, unit and of the turnstile, and how an atom's name is
@@ -54,40 +54,38 @@ impl Notation {
     /// brackets if it is binary and `brackets` is set.
     pub(crate) fn term(&self, out: &mut String, sequent: &Sequent, id: TermId, brackets: bool) {
         use Term::*;
-        let binary = |out: &mut String, k: TermId, symbol: &str, l: TermId| {
-            if brackets {
-                out.push('(');
-            }
-            self.term(out, sequent, k, true);
-            out.push(' ');
-            out.push_str(symbol);
-            out.push(' ');
-            self.term(out, sequent, l, true);
-            if brackets {
-                out.push(')');
-            }
-        };
-        match sequent.term(id) {
-            Var(a) => (self.atom)(out, sequent.atom_name(a)),
-            DualVar(a) => {
-                (self.atom)(out, sequent.atom_name(a));
-                out.push_str(self.dual);
-            }
-            One => out.push_str(self.one),
-            Bot => out.push_str(self.bot),
-            Top => out.push_str(self.top),
-            Zero => out.push_str(self.zero),
-            Tensor(k, l) => binary(out, k, self.tensor, l),
-            Par(k, l) => binary(out, k, self.par, l),
-            With(k, l) => binary(out, k, self.with, l),
-            Plus(k, l) => binary(out, k, self.plus, l),
-            Bang(k) => {
-                out.push_str(self.bang);
-                self.term(out, sequent, k, true);
-            }
-            Quest(k) => {
-                out.push_str(self.quest);
-                self.term(out, sequent, k, true);
+        for visit in Walk::new(id, brackets, |k| sequent.term(k).operands()) {
+            match visit {
+                Visit::Enter(k, nested) => match sequent.term(k) {
+                    Var(a) => (self.atom)(out, sequent.atom_name(a)),
+                    DualVar(a) => {
+                        (self.atom)(out, sequent.atom_name(a));
+                        out.push_str(self.dual);
+                    }
+                    One => out.push_str(self.one),
+                    Bot => out.push_str(self.bot),
+                    Top => out.push_str(self.top),
+                    Zero => out.push_str(self.zero),
+                    Tensor(..) | Par(..) | With(..) | Plus(..) if nested => out.push('('),
+                    Tensor(..) | Par(..) | With(..) | Plus(..) => {}
+                    Bang(_) => out.push_str(self.bang),
+                    Quest(_) => out.push_str(self.quest),
+                },
+                Visit::Between(k) => {
+                    out.push(' ');
+                    out.push_str(match sequent.term(k) {
+                        Tensor(..) => self.tensor,
+                        Par(..) => self.par,
+                        With(..) => self.with,
+                        _ => self.plus,
+                    });
+                    out.push(' ');
+                }
+                Visit::Exit(k, nested) => {
+                    if nested && sequent.term(k).kind().arity() == 2 {
+                        out.push(')');
+                    }
+                }
             }
         }
     }
@@ -98,43 +96,34 @@ impl Notation {
     pub(crate) fn ill(&self, out: &mut String, reading: &Reading, o: OccId, brackets: bool) {
         use Kind::*;
         let forest = reading.forest();
-        let binary = |out: &mut String, k: OccId, symbol: &str, l: OccId| {
-            if brackets {
-                out.push('(');
-            }
-            self.ill(out, reading, k, true);
-            out.push(' ');
-            out.push_str(symbol);
-            out.push(' ');
-            self.ill(out, reading, l, true);
-            if brackets {
-                out.push(')');
-            }
-        };
-        let (l, r) = (forest.left(o), forest.right(o));
-        match (forest.kind(o), reading.position(o)) {
-            (Var | DualVar, _) => {
-                (self.atom)(out, forest.sequent().atom_name(forest.atom(o).unwrap()));
-            }
-            (One | Bot, _) => out.push_str(self.one),
-            (Top, Position::Output) | (Zero, Position::Input) => out.push_str(self.top),
-            (Zero, Position::Output) | (Top, Position::Input) => out.push_str(self.zero),
-            (Tensor, Position::Output) | (Par, Position::Input) => {
-                binary(out, l.unwrap(), self.tensor, r.unwrap());
-            }
-            (Tensor, Position::Input) | (Par, Position::Output) => {
-                let (antecedent, consequent) = reading.implication(o).unwrap();
-                binary(out, antecedent, self.lollipop, consequent);
-            }
-            (With, Position::Output) | (Plus, Position::Input) => {
-                binary(out, l.unwrap(), self.with, r.unwrap());
-            }
-            (Plus, Position::Output) | (With, Position::Input) => {
-                binary(out, l.unwrap(), self.plus, r.unwrap());
-            }
-            (Bang | Quest, _) => {
-                out.push_str(self.bang);
-                self.ill(out, reading, l.unwrap(), true);
+        for visit in Walk::new(o, brackets, |o| reading.operands(o)) {
+            match visit {
+                Visit::Enter(o, nested) => match (forest.kind(o), reading.position(o)) {
+                    (Var | DualVar, _) => {
+                        (self.atom)(out, forest.sequent().atom_name(forest.atom(o).unwrap()));
+                    }
+                    (One | Bot, _) => out.push_str(self.one),
+                    (Top, Position::Output) | (Zero, Position::Input) => out.push_str(self.top),
+                    (Zero, Position::Output) | (Top, Position::Input) => out.push_str(self.zero),
+                    (Tensor | Par | With | Plus, _) if nested => out.push('('),
+                    (Tensor | Par | With | Plus, _) => {}
+                    (Bang | Quest, _) => out.push_str(self.bang),
+                },
+                Visit::Between(o) => {
+                    out.push(' ');
+                    out.push_str(match (forest.kind(o), reading.position(o)) {
+                        (Tensor, Position::Output) | (Par, Position::Input) => self.tensor,
+                        (Tensor, Position::Input) | (Par, Position::Output) => self.lollipop,
+                        (With, Position::Output) | (Plus, Position::Input) => self.with,
+                        _ => self.plus,
+                    });
+                    out.push(' ');
+                }
+                Visit::Exit(o, nested) => {
+                    if nested && forest.kind(o).arity() == 2 {
+                        out.push(')');
+                    }
+                }
             }
         }
     }

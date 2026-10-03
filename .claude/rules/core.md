@@ -26,6 +26,22 @@ its parents, one descending pass sees every parent before its subterms
 deserialization runs the check. Code that builds or rewrites an arena must
 preserve it.
 
+**Nothing recurses over a formula.** A sequent read from JSON can be nested
+as deep as it is long, and a recursion per level ends the process where
+an error is owed. So every walk is a pass over the arena or over the
+forest in index order (`fragment`, `optimize`, `Forest`, `Reading::new`,
+the engines' `Classes` and `Counts`), or, where a formula is written, a
+loop over `sequents::fmt::Walk`: the stops of a formula in the order it is
+written (`Enter` a subformula, `Between` the two subformulas of a binary
+one, `Exit` a compound one), from a stack of its own whose first sixteen
+steps are inline, so that an ordinary formula costs no allocation. The
+`Display` of `Sequent` and `Formula`, `Reading`'s printing, the exports'
+`Notation::term` and `Notation::ill` and the Rocq printer are each one
+`match` over those stops, and a new printer is another: never a function
+that calls itself. `core/tests/depth.rs` runs every walk the public API
+offers on formulas nested 100 000 deep, on a thread with a stack of
+256 KiB.
+
 `optimize()` runs after parsing. It deduplicates atom names, hash-conses
 identical terms, drops unreachable ones and sorts `roots`. Nothing else
 guarantees that every arena term is reachable: a deserialized sequent may
@@ -1870,7 +1886,8 @@ writes derivations as Rocq proof scripts for NanoYalla (`rocq`, in a
   curryst's nesting. Nothing in the emitters recurses over the tree, so
   the output is linear in the inferences (each prints its whole sequent)
   and never as wide as the tree, unlike the text renderer. The formula
-  printers recurse to the formula's depth, as `Display` does.
+  printers do not recurse either: they are loops over `sequents::fmt::Walk`,
+  as `Display` is.
 - **An open goal is one shape in both targets**: its sequent under
   vertical dots with no inference line (`\hypo{\vdots}` then
   `\infer[no rule]1{…}`; a curryst leaf that is a centred `grid` of

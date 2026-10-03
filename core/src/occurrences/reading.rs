@@ -18,7 +18,7 @@
 //! output-shaped root, the goal, and every other root input-shaped.
 
 use super::{Forest, OccId};
-use crate::sequents::Kind;
+use crate::sequents::{Kind, Visit, Walk};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 /// The side of `⊢` an occurrence stands on under the intuitionistic reading
@@ -340,48 +340,48 @@ impl<'a> Reading<'a> {
         }
     }
 
+    /// Returns the first and the second subformula of the intuitionistic
+    /// formula at `o`, each if there is one, in the order they are written:
+    /// of an implication the antecedent, then the consequent.
+    pub(crate) fn operands(&self, o: OccId) -> (Option<OccId>, Option<OccId>) {
+        match self.implication(o) {
+            Some((antecedent, consequent)) => (Some(antecedent), Some(consequent)),
+            None => (self.forest.left(o), self.forest.right(o)),
+        }
+    }
+
     /// Writes the formula at `o`, in brackets if it is binary and `brackets`
     /// is set.
     fn fmt_formula(&self, o: OccId, f: &mut Formatter<'_>, brackets: bool) -> FmtResult {
         use Kind::*;
         let forest = self.forest;
-        let p = self.position(o);
-        let binary = |f: &mut Formatter<'_>, k: OccId, symbol: &str, l: OccId| {
-            if brackets {
-                f.write_str("(")?;
-            }
-            self.fmt_formula(k, f, true)?;
-            write!(f, " {symbol} ")?;
-            self.fmt_formula(l, f, true)?;
-            if brackets {
-                f.write_str(")")?;
-            }
-            Ok(())
-        };
-        let (l, r) = (forest.left(o), forest.right(o));
-        match (forest.kind(o), p) {
-            (Var | DualVar, _) => f.write_str(forest.sequent().atom_name(forest.atom(o).unwrap())),
-            (One | Bot, _) => f.write_str("1"),
-            (Top, Position::Output) | (Zero, Position::Input) => f.write_str("⊤"),
-            (Zero, Position::Output) | (Top, Position::Input) => f.write_str("0"),
-            (Tensor, Position::Output) | (Par, Position::Input) => {
-                binary(f, l.unwrap(), "⊗", r.unwrap())
-            }
-            (Tensor, Position::Input) | (Par, Position::Output) => {
-                let (antecedent, consequent) = self.implication(o).unwrap();
-                binary(f, antecedent, "⊸", consequent)
-            }
-            (With, Position::Output) | (Plus, Position::Input) => {
-                binary(f, l.unwrap(), "&", r.unwrap())
-            }
-            (Plus, Position::Output) | (With, Position::Input) => {
-                binary(f, l.unwrap(), "⊕", r.unwrap())
-            }
-            (Bang | Quest, _) => {
-                f.write_str("!")?;
-                self.fmt_formula(l.unwrap(), f, true)
+        for visit in Walk::new(o, brackets, |o| self.operands(o)) {
+            match visit {
+                Visit::Enter(o, nested) => match (forest.kind(o), self.position(o)) {
+                    (Var | DualVar, _) => {
+                        f.write_str(forest.sequent().atom_name(forest.atom(o).unwrap()))?;
+                    }
+                    (One | Bot, _) => f.write_str("1")?,
+                    (Top, Position::Output) | (Zero, Position::Input) => f.write_str("⊤")?,
+                    (Zero, Position::Output) | (Top, Position::Input) => f.write_str("0")?,
+                    (Tensor | Par | With | Plus, _) if nested => f.write_str("(")?,
+                    (Tensor | Par | With | Plus, _) => {}
+                    (Bang | Quest, _) => f.write_str("!")?,
+                },
+                Visit::Between(o) => f.write_str(match (forest.kind(o), self.position(o)) {
+                    (Tensor, Position::Output) | (Par, Position::Input) => " ⊗ ",
+                    (Tensor, Position::Input) | (Par, Position::Output) => " ⊸ ",
+                    (With, Position::Output) | (Plus, Position::Input) => " & ",
+                    _ => " ⊕ ",
+                })?,
+                Visit::Exit(o, nested) => {
+                    if nested && forest.kind(o).arity() == 2 {
+                        f.write_str(")")?;
+                    }
+                }
             }
         }
+        Ok(())
     }
 }
 

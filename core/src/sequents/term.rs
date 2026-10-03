@@ -194,13 +194,18 @@ impl Term {
     /// Returns the subterms in order: none for a literal or a unit, one for
     /// `!` and `?`, the left one then the right one for a binary connective.
     pub fn subterms(self) -> impl Iterator<Item = TermId> {
+        let (first, second) = self.operands();
+        first.into_iter().chain(second)
+    }
+
+    /// Returns the first and the second subterm, each if there is one.
+    pub(crate) const fn operands(self) -> (Option<TermId>, Option<TermId>) {
         use Term::*;
-        let (first, second) = match self {
+        match self {
             Tensor(k, l) | Par(k, l) | With(k, l) | Plus(k, l) => (Some(k), Some(l)),
             Bang(k) | Quest(k) => (Some(k), None),
             Var(_) | DualVar(_) | One | Bot | Top | Zero => (None, None),
-        };
-        first.into_iter().chain(second)
+        }
     }
 
     /// Returns the term with every subterm index replaced by what `f` maps it
