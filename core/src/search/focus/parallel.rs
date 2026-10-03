@@ -175,6 +175,43 @@ impl Baton {
         self.wait(me)
     }
 
+    /// Gives way to the second search from the first, which runs on the
+    /// calling thread, and waits for its turn to come again, unless the
+    /// second has ended. While it waits it wakes once every [`POLL`] and
+    /// polls the caller's stop condition for the polls the second search
+    /// made meanwhile, so that a slice of the second search, which in
+    /// seconds may be long, does not keep the condition waiting. Returns
+    /// whether both must stop.
+    fn pass_polling(&self, stop: &mut dyn FnMut() -> bool) -> bool {
+        {
+            let mut turns = self.lock();
+            if turns.stop || turns.ended[1] {
+                return turns.stop;
+            }
+            turns.holder = 1;
+        }
+        self.changed.notify_all();
+        loop {
+            {
+                let turns = self.lock();
+                if turns.stop {
+                    return true;
+                }
+                if turns.holder == 0 {
+                    break;
+                }
+                let waited = self.changed.wait_timeout(turns, POLL);
+                drop(waited.unwrap_or_else(|poisoned| poisoned.into_inner()));
+            }
+            // The caller's condition runs without the lock.
+            if self.caught_up(stop) {
+                self.stop();
+                return true;
+            }
+        }
+        self.caught_up(stop)
+    }
+
     /// Tells both searches to stop.
     fn stop(&self) {
         self.halt.store(true, Ordering::Relaxed);
@@ -232,8 +269,9 @@ impl Drop for Ended<'_> {
 /// of the input. The first to decide stops the other at the end of its
 /// slice; a search that ended without deciding leaves the other to run
 /// on. The caller's stop condition is polled by the first search at its
-/// own polls, and once for every poll of the second: when the first gets
-/// its turn back, and every millisecond once it has ended. Returns what
+/// own polls, and once for every poll of the second, within a millisecond
+/// of it: the calling thread wakes that often while the second search
+/// has its turn or runs on alone. Returns what
 /// [`super::search_goal`] does, the counters of both searches together,
 /// or `None` when the thread cannot start.
 #[allow(clippy::too_many_arguments)]
@@ -283,8 +321,7 @@ pub(super) fn alternate(
         let _stop = StopOnPanic(baton);
         let forward = {
             let _ended = Ended(baton, 0);
-            let mut give_way =
-                |passed: bool| stop() || (passed && (baton.pass(0) || baton.caught_up(stop)));
+            let mut give_way = |passed: bool| stop() || (passed && baton.pass_polling(stop));
             let (result, nodes, statistics, _) = first.search(
                 forest,
                 goal,
