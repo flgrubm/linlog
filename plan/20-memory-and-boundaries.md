@@ -43,6 +43,32 @@ formatting; `OccSet::is_subset` and `is_disjoint` truncate silently on
 sets of different widths, and the public `ProofStructure::link` only
 debug-asserts its arguments.
 
+## What step 18 and its review left you
+
+The checker's zones are counters now, and the review found them wrapping
+in a release build: a proof file of 131 nodes was a "valid proof" of
+`⊢ !⊥, 1` (`plan/reports/18-bounded-proofs.md`, "Corrections from the
+review"). The review's fix refuses a zone that the rest of the proof
+cannot consume (`Pass::within`, `Problem::Surplus`), which bounds every
+zone by the goal plus twice the nodes and makes the counters exact. What
+is left there:
+
+- **The clone per reader.** A node read by several others is cloned for
+  all but the last, and the clones live until their own readers come, so
+  a proof file of about a megabyte (a zone of thousands of distinct
+  members, read by thousands of nodes that are all derived before any
+  is consumed) can make the pass hold nodes × zone, gigabytes.
+- **The other integers** of the pass and of the size estimate
+  (`readers`, `outputs`, the weights an observer adds up, `Sub`'s
+  fields) were not argued one by one.
+- **The lifted limit.** `--derivation-limit none` on a proof whose
+  derivation is larger than the machine's memory ends with the kernel's
+  kill and no verdict written, though the verdict was known before
+  anything was built.
+- **The builder's recursion** is as deep as the derivation is high; the
+  command runs it on the search's stack. A derivation 8 000 high was
+  built; nothing says where it stops.
+
 ## Goal
 
 A search that would exhaust memory answers "unknown" with a reason
@@ -76,7 +102,20 @@ other than by an error with exit status 2.
 6. **The small aborts**: the caret past column 65 535; set operations on
    different widths; `ProofStructure::link` validated at the public
    boundary.
-7. **Documentation**: the rules file (what counts toward the bound, what
+7. **The checker and the derivation within the bound.** `linlog check`
+   on any proof file, and the check inside a search, stay within the
+   memory bound or end with an error that names it: the states the pass
+   holds are counted, or made persistent so that a reader's copy costs
+   nothing; a test with a file of about a megabyte that takes gigabytes
+   today. Every integer of the pass and of the size estimate either
+   cannot reach its limit, with the reason written where it is declared,
+   or saturates into a refusal; no arithmetic of the checker may wrap in
+   any build. The memory bound also holds for what is built after the
+   search: a derivation whose estimate passes it is not built even with
+   `--derivation-limit none`, the verdict stands and the line says which
+   bound it was. The derivation builder gets an explicit stack, or
+   refuses a height its stack cannot take, by `Size::height`.
+8. **Documentation**: the rules file (what counts toward the bound, what
    does not), README's limits, the help texts.
 
 ## Constraints
@@ -95,7 +134,9 @@ other than by an error with exit status 2.
 The checks of CLAUDE.md's table, both `cargo hack` runs,
 `bench/targets.sh` once, `nix flake check`. Then, in scopes capped at
 twice the bound under test: R8 and R9 of the assessment ending "unknown"
-by the bound with the memory under it; `qbf/48#0` for 120 s on one
+by the bound with the memory under it; the megabyte proof file of item 7
+refused or checked within the bound, and `TokenRing-50-unfolded_1_1`
+with `--derivation-limit none` ending with its verdict; `qbf/48#0` for 120 s on one
 pinned core, its memory flat; the four Philosophers-10000 nets of
 `lltp-recursion.csv` under `--recursion-limit 16384`; D5's file refused
 in milliseconds; R11 an error.

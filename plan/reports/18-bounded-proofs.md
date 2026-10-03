@@ -314,3 +314,65 @@ crate's build, so it adds about what `test` itself costs to
   go, and `Observer::weight` (per occurrence today, from a table per
   term) becomes a function of the instance. `ViewOptions` and `Size`
   need no change of shape.
+
+## Corrections from the review (2026-10-03)
+
+The planning session ran the command and the harness itself, in scopes
+of 1 GiB on pinned cores, and read the checker.
+
+- **The rewritten checker accepted a term that is no proof.** Its zones
+  are counters (`Bag`: `u32` per member, `usize` for the length), and in
+  a release build they wrapped. A proof file of 131 nodes that mixes 2⁶⁴
+  copies of `⊢ 1` (64 doublings by `Mix(p, p)`), puts `⊥` on top,
+  promotes it (the zone's length read zero, so the promotion's "linear
+  zone empty" passed) and mixes one more `1` in was answered `valid
+  proof of ⊢ !⊥, 1 (classical with Mix)` by `linlog check --mix`, exit
+  status 0; the search refutes that sequent exhaustively. The first
+  implementation could not do this (it held real lists and ran out of
+  memory instead), and neither the differential test nor the reviewer's
+  27 000 random terms reach 2³² copies. No engine builds such a term;
+  a proof file can. Fixed in the review, in "Refuse a zone the rest of a
+  proof cannot consume": a rule consumes two members of a premise's zone
+  at most and the root's zone lies within the goal, so node `i` of `n`
+  may derive at most `|goal| + 2·(n − 1 − i)` members
+  (`Problem::Surplus`, in the checker and in the oracle alike, so the
+  two still agree on the error); the counters saturate, and a saturated
+  one is over the bound. The rule only ever rejects more.
+  `refuses_a_zone_too_large_to_conclude` pins the file's term.
+- So the follow-up "a malformed proof term can still take memory beyond
+  its size" reads differently now. It was not memory in the pass (the
+  counters cost nothing) but in the error report, which wrote the zone
+  out: 28 doublings killed `linlog check` at 1 GiB. With the bound every
+  zone and every report is within the goal plus twice the nodes, and the
+  files above are refused in milliseconds within 5 MB. What remains for
+  step 20 is the other follow-up, the clone per reader: a file of about
+  a megabyte can still make the pass hold nodes × zone.
+- **With the limit lifted, a run can die with its verdict unwritten.**
+  `--derivation-limit none` on `TokenRing-50-unfolded_1_1` (3.7 TiB
+  estimated) is killed by the kernel after a second at 1 GiB, before the
+  2 s time limit can fire, and nothing is printed: the verdict is
+  assembled with the derivation and written after it. The same on a
+  proof that unfolds 2²² times (`⊢ (⊥ & ⊥) ⊕ 0, …` 22 times over, `1`:
+  45 stable sequents, 5.4 GiB of derivation). The user asked for it, but
+  the verdict was known. Step 20's.
+- A count that saturated was printed as `18446744073709551615
+  inferences`; the command now writes `more than 10¹⁹` ("Write a
+  saturated count of a derivation as more than 10¹⁹"). `ViewError`'s own
+  `Display` still writes the raw numbers (step 22).
+- `--tree never` leaves the derivation out of every format, LaTeX, Typst,
+  SVG and Rocq included, where its help speaks of the text tree (step
+  22).
+- What the review measured besides: the ten largest nets of the former
+  crash rows through the command with its default output, each proved,
+  checked and answered in 0.25 to 2.0 s within 233 MB, exit status 0;
+  `TokenRing-50` in every format, through `--format json` and `check -i`
+  (0.17 s, 91 MB) and classically; `interact`'s `close` on
+  `TokenRing-40`; the terminal switch on a pseudo-terminal of 80 and of
+  200 columns; a derivation 8 000 inferences high written with the limit
+  lifted (512 MB of text, 1 GB at the peak, no stack overflow); the time
+  limit and Ctrl-C during the building of `wide-m1` at 2 048, each
+  leaving the verdict and no file; the target set's file against
+  `after-bias.csv` (no verdict and no counter differs); and the whole
+  LLTP library through the harness at one second with the fixed checker:
+  1 859 proofs, every one `checked` `ok`, the longest check 20.7 ms
+  (`SYJ202+1.005`), no proof refused.

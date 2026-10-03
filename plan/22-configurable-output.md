@@ -33,6 +33,19 @@ depth constants. A drawing's inference ids are the derivation's and the
 interactive session numbers its goals otherwise, with no map between
 them. Of the 33 rule labels per target, 19 are in no snapshot.
 
+Step 18 put one options value in front of every derivation
+(`ViewOptions`, with the bound on its estimated size) and left these to
+this step: the four exports return a `String` and cannot be stopped
+inside; the command assembles its whole output as one string before it
+writes it, twice the text tree at the peak, and the verdict with it; the
+SVG layout takes 50 bytes of memory per character of sequent, six times
+the other formats; `SCREENS` in the command and `GAP` in the text
+renderer are constants; `linlog check` writes the whole sequent in its
+verdict line, 8 MB for the largest net, with `--quiet` too; `--tree
+never` leaves the derivation out of every format where its help speaks
+of the text tree; and `ViewError`'s `Display` writes a saturated count
+as `18446744073709551615` where the command writes `more than 10¹⁹`.
+
 ## Goal
 
 Everything a user might want to vary in an output is a field of one
@@ -52,7 +65,9 @@ First session:
    each with `Default`, `Clone`, `PartialEq` and serde behind
    `serialize`, holding what `plan/later.md` lists; presets as named
    values. One signature for "write this derivation" across the
-   outputs.
+   outputs: into a writer, with a stop condition, so that the command
+   writes the verdict first and the derivation after it as it is made,
+   and holds no second copy of it.
 3. **The rule labels as one table** per convention, not one match per
    target, with a user table as an option; and the round trip
    `Rule::from_str(rule.name())` as a test over every rule.
@@ -60,6 +75,10 @@ First session:
    (the options' JSON), `--lemma` and `--prelude`, whether the verdict
    comment is written; `interact` certifies a finished session, and its
    `show` and `proof` take a format without colliding with a file name.
+   What step 18 left as constants or as one switch gets its place here:
+   the screens a tree may fill, the gap between premises, how a sequent
+   is abbreviated in a verdict line, and whether `--tree` speaks for
+   the text tree alone.
 5. **Ids a client can click**: a group per formula of a goal's sequent
    with its position, and a map from a drawing's inferences to the
    session's goals.

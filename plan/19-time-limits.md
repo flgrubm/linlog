@@ -48,6 +48,17 @@ fast:
   reaches its count of cubes where every link is forced, and starts
   again at every depth.
 
+Step 18 added work after the search that no stop reaches inside the
+library: `prove_goal` ends with the check of the proof it found
+(`Options::check`; 14 ms on the largest net measured, one pass), and a
+caller that asks for a derivation pays a pass for its size first. The
+command polls its own condition again while a derivation is built and
+written (`halt` in `cli/src/prove.rs`). The harness's child prints
+`loaded` before it searches, the parent counts its kill from that line,
+and at the review of step 18 the harness still reported 5.2 to 7.5 s on
+five-second limits for the larger `TokenRing-50` and
+`DrinkVendingMachine` nets.
+
 Also: `--jobs` has no bound (10 000 threads on `A |- A` cost 183
 CPU-seconds), `Options::portfolio` has shown no gain in two baselines,
 and the second assertion of `focus::parallel::tests::agree` claims what
@@ -65,8 +76,10 @@ its start.
 1. **The stops**, each with the instance above as its test and a
    statement of where the engine now polls: the forced chains (and
    `dual_in` in time linear in what it returns); the wait in
-   `alternate`; the search's set-up, polled or bounded; whatever the
-   pool's miss turns out to be. Find that cause before you fix anything
+   `alternate`; the search's set-up, polled or bounded; the check of the
+   proof found and the size pass of a derivation, measured on the
+   library's largest proofs and polled if either can pass the slack;
+   whatever the pool's miss turns out to be. Find that cause before you fix anything
    around it, and say in the report what it was.
 2. **The limit counts from the start.** The command's limit covers
    reading and parsing the sequent; a library caller's stop closure is

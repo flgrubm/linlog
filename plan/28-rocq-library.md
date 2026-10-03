@@ -4,7 +4,8 @@ You are working in the linlog repository. CLAUDE.md applies throughout: jj
 only (never git), thematic commits as soon as a unit is done, doc comments on
 every item, the verification table, no pushing. The step takes three
 to four sessions, each leaving something usable; this prompt is finished
-at the reviews of steps 18 and 23. Read before you start:
+at the review of step 23 (the checker's part was added at the review of
+step 18). Read before you start:
 
 - `plan/later.md`: "Second certificate kernels: a Rocq library of
   linlog's own, NanoYalla kept for compatibility" (the shape is the
@@ -47,10 +48,23 @@ proof term. The NanoYalla export stays exactly as it is.
 6. **In the exporter** a second kernel behind `rocq::Options`, chosen by
    the mode where the user did not choose.
 
+7. **The algorithm to verify** is `core/src/proofs/check.rs` as steps
+   18 and 20 leave it, whose rules `.claude/rules/core.md` states under
+   "The checker": per node a state `⊢ Θ ; Γ` with the absorbing flag,
+   `Θ` the least unrestricted zone, the rule table of `Pass::rule`, the
+   one-succedent condition as three clauses, and the conclusion at the
+   root. The Rust pass is one of several ways to run that algorithm
+   (states moved between nodes, tables for the zones); the Rocq function
+   is another and need not mirror its memory discipline. The refusal of
+   a zone too large to conclude (`Problem::Surplus`) exists because
+   Rust's counters are finite; over `nat` it is a lemma or nothing, and
+   the report says which. The first implementation
+   (`core/src/proofs/oracle.rs`, lists and no tables) is the closer text
+   to translate.
+
 ## What waits
 
-The checker's final shape (step 18) and the proof term's API (step 23).
-No `Admitted`, no axiom.
+The proof term's API (step 23). No `Admitted`, no axiom.
 
 ## Deliverables
 

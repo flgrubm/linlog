@@ -46,8 +46,10 @@ sent to a server.
    Pages cannot set. So: one thread; a stop that counts the engine's
    work, with a budget that is an option; the stack raised or the
    recursion limit lowered, with a test at the limit under wasm; step
-   18's bound on every derivation, with a smaller default than the
-   command's.
+   18's bound on every derivation (`ViewOptions`), with a smaller
+   default than the command's, and `Size::height` asked before a
+   derivation is built, since the builder recurses to that depth unless
+   step 20 gave it a stack of its own.
 3. **The two searches of the default bias** take turns from their start
    without threads, at up to five times the better search. The first
    session measures it under wasm on the target set's small rows and

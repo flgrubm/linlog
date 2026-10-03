@@ -71,7 +71,7 @@ session's transcript is
 
 ## Where things stand
 
-As of 2026-10-03 (evening) steps 1 to 17 are finished, reviewed and
+As of 2026-10-03 (evening) steps 1 to 18 are finished, reviewed and
 pushed. Step 17 assessed the project (`plan/reports/17-assessment.md`)
 and, on the author's answers, planned steps 18 to 37: the step table,
 the decisions D16 to D22 and the commands are in `plan/README.md`, the
@@ -79,10 +79,14 @@ prompts are `plan/18-…md` to `plan/37-…md` (18 to 23 written in full;
 each later one says what is fixed and is finished by you at the review
 its row names), `plan/later.md` says where every candidate and follow-up
 went, and `plan/notes/distribution.md` has the facts on releases,
-repositories and the organization. The next command is step 18:
+repositories and the organization. Step 18 rewrote the checker for
+linear memory, made every proof pass it in every build and bounded what
+any front end builds of a derivation; its review found the new checker's
+counters wrapping (a crafted file passed as a proof of an unprovable
+sequent) and fixed that itself. The next command is step 19:
 
 ```nu
-claude --model claude-fable-5-1 --effort xhigh --name step-18 ((open --raw plan/18-bounded-proofs.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-19 ((open --raw plan/19-time-limits.md) + "\n" + (open --raw plan/conduct.md))
 ```
 
 What the author decided on 2026-10-03, in a line each: sensible
@@ -104,7 +108,11 @@ organization: ask before every administrative task through it
 The lesson of steps 16 and 17, for every review: run the command on the
 largest problems yourself. Rows and reports hid a checker that takes
 gigabytes, time limits missed by minutes and a wrong verdict at the
-JSON boundary; each was found by a call, not by reading.
+JSON boundary; each was found by a call, not by reading. The lesson of
+step 18: where a step replaces a structure by counters or indices, ask
+what each does at its limit and feed it a file that gets there. The
+step's own differential test and its reviewer's random terms could not
+reach 2³² copies; a proof file of 131 nodes did.
 
 ## What a review is
 

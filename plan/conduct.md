@@ -77,6 +77,15 @@ brief does not name is asked for through you. One sub-agent, told only
 about memory, probed the command with `--jobs 100000` and loaded every
 core for five minutes.
 
+Where soundness rests on a number (a counter, a length, an index, a
+bound), say at its declaration why it cannot reach its limit, or make
+reaching it a refusal, and test the refusal with an input that gets
+there: no arithmetic of a checker or a criterion may wrap in any build.
+A rewritten checker once kept its zones as counters, passed a
+differential test and a reviewer's 27 000 random terms, and accepted a
+proof file of 131 nodes for an unprovable sequent, because 64 doublings
+wrapped a counter that no random term had come near.
+
 Record what a future session must know and cannot see in the code in
 `.claude/rules/core.md` (invariants, why a choice was made, what a check
 cannot catch), one point per bullet, and in your step report. Update an

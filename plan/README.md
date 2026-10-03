@@ -46,7 +46,7 @@ amended (see "Review protocol"). `notes/` holds research the prompts rely on.
 | 25 | A batch mode, LLTP input for the command, and the draft of the header report | `25-batch.md` (finished at the review of 24) | Opus 5.5 | xhigh | 20, 21, 24 |
 | 26 | Ordinary logic through its embeddings: the layer | `26-ordinary-logic.md` (finished at the review of 25) | Opus 5.5 | xhigh | 21, 25 |
 | 27 | The web front end: the bindings in the workspace, the client in a repository of its own (three sessions, a plan of its own) | `27-web.md` (finished at the reviews of 22 to 24) | Opus 5.5 | xhigh | 18, 22, 23 |
-| 28 | A Rocq library of linlog's own, `linlog` under `rocq/` (three to four sessions) | `28-rocq-library.md` (finished at the reviews of 18 and 23) | Fable 5.1 | xhigh for the checker and its proof, high for the rest | 18, 23 |
+| 28 | A Rocq library of linlog's own, `linlog` under `rocq/` (three to four sessions) | `28-rocq-library.md` (finished at the review of 23) | Fable 5.1 | xhigh for the checker and its proof, high for the rest | 20, 23 |
 | 29 | The focused engine in order, and the dispatch as a measured table | `29-focused-engine.md` (finished at the reviews of 20 and 23) | Fable 5.1 | xhigh | 20, 23 |
 | 30 | Horn programs: an engine, coverability, and the coverability suite from practice (two sessions) | `30-horn.md` (finished at the review of 29) | Fable 5.1 | xhigh | 25, 29 |
 | 31 | The third baseline (a night), and the first release prepared | `31-baseline-release.md` (finished at the review of 30) | Opus 5.5 | xhigh | 30 |
@@ -1423,3 +1423,45 @@ publishing are the author's acts.
   Checked by the session: clippy, the workspace's tests, both
   `cargo hack` runs, the families' verdicts (no mismatch) and
   `nix flake check`. Next: step 19.
+- 2026-10-03: review of step 18, accepted with one soundness fix made in
+  the review. Read: the report, the checker's rewrite in full, the
+  search's front door, the JSON boundary, the derivation view's and the
+  command's diffs; no comment names the plan, the two new Rust files
+  carry the header. Run by hand, in scopes of 1 GiB on pinned cores: the
+  ten largest nets of the former crash rows through the command with its
+  default output (proved, checked, 0.25 to 2.0 s, at most 233 MB, exit
+  0), every format and the JSON round trip on `TokenRing-50`,
+  `interact`'s `close`, the terminal switch on a pseudo-terminal, the
+  time limit and Ctrl-C while a derivation is built, proofs that unfold
+  to more than 2⁶⁴ inferences, a derivation 8 000 high with the limit
+  lifted, the JSON file of the wrong verdict (proved now), and the
+  target set's file against `after-bias.csv` (no verdict or counter
+  differs). **Found: the new checker's zones are counters that wrapped
+  in a release build**, and a crafted proof file of 131 nodes was
+  answered "valid proof of ⊢ !⊥, 1" (unprovable; 2⁶⁴ copies of `1` made
+  by `Mix(p, p)`, a promotion over a zone whose length read zero). No
+  engine builds such a term and the first implementation ran out of
+  memory instead, so neither the differential test nor the step's
+  reviewer saw it. Fixed as "Refuse a zone the rest of a proof cannot
+  consume": node `i` of `n` may derive at most `|goal| + 2·(n − 1 − i)`
+  members (`Problem::Surplus`), in the checker and its oracle alike, the
+  counters saturating; a rule that only rejects more, pinned by
+  `refuses_a_zone_too_large_to_conclude`. Also "Write a saturated count
+  of a derivation as more than 10¹⁹". After the fix: clippy, the
+  workspace's tests, both `cargo hack` runs, `cargo deny`, the families'
+  verdicts (no mismatch, 59 proofs checked) and `nix flake check` pass,
+  and the whole LLTP library through the harness at one second on one
+  thread (4 512 problems under `ILL` and `CLL`): 1 859 proofs, every one
+  `checked` `ok`, the longest check 20.7 ms; the 14 verdicts against a
+  header are all among the 28 known wrong headers; nine `GPPP` nets were
+  killed five seconds past the limit, which is step 19's forced chain.
+  Left open and assigned: with `--derivation-limit none` a derivation
+  larger than memory ends in the kernel's kill with the verdict
+  unwritten, the checker's clone per reader of a shared node, its other
+  integers, and the builder's recursion (step 20, items added to its
+  prompt); the exports' `String`, the output assembled as one string,
+  `--tree never` on other formats, `check`'s verdict line (step 22);
+  the check and the size pass outside any poll (step 19). Prompt 28 now
+  names the algorithm the Rocq checker verifies and waits for steps 20
+  and 23; `plan/conduct.md` gained the rule that no arithmetic of a
+  checker may wrap, with a test at the limit. Next: step 19.

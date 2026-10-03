@@ -920,8 +920,12 @@ sequent, six times the other formats; the command assembles its output
 as one string, twice the text tree's size at the peak; `SCREENS` and the
 text tree's `GAP` are constants; `check` prints the whole sequent in its
 verdict line. For step 20: a malformed proof term (`Mix(p, p)` repeated)
-doubles a zone of the checker per node before the root rejects it; a
-zone longer than the roots plus the nodes still to come is the test.
+doubles a zone of the checker per node; the review of step 18 found that
+this made the zones' counters wrap and a non-proof pass, and added the
+test (a zone longer than the goal plus twice the nodes still to come is
+refused, `Problem::Surplus`). Left for step 20: the clone per reader of
+a shared node, the other integers of the pass, the verdict lost when
+`--derivation-limit none` meets a derivation larger than memory.
 For the web front end: the derivation builder recurses to the
 derivation's height, which `Size::height` tells beforehand.
 
