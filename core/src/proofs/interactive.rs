@@ -803,11 +803,32 @@ impl Interactive {
         let sequent = self.open(goal)?.to_vec();
         let outcome = search::prove_goal(&self.forest, &sequent, self.mode, options, &mut stop)?;
         if let Verdict::Proved(proof) = &outcome.verdict {
-            let found = Derivation::of_goal(proof, &sequent, self.mode, view, &mut stop)?;
-            self.graft(goal, found);
-            self.history.push(goal);
+            self.close_with(goal, proof, view, stop)?;
         }
         Ok(outcome)
+    }
+
+    /// Closes an open goal with a proof of it that a search found, as
+    /// [`close`](Self::close) does with its own: the proof's root must
+    /// conclude the goal, as the proof of [`prove_goal`] on the goal's
+    /// occurrences ([`goal`](Self::goal)) does, and its derivation is
+    /// grafted within the bound of `view` as one step. A caller that runs
+    /// the search itself, several of them side by side for one, closes the
+    /// goal with this.
+    ///
+    /// [`prove_goal`]: crate::search::prove_goal
+    pub fn close_with(
+        &mut self,
+        goal: InfId,
+        proof: &Proof,
+        view: &ViewOptions,
+        mut stop: impl FnMut() -> bool,
+    ) -> Result<(), Error> {
+        let sequent = self.open(goal)?.to_vec();
+        let found = Derivation::of_goal(proof, &sequent, self.mode, view, &mut stop)?;
+        self.graft(goal, found);
+        self.history.push(goal);
+        Ok(())
     }
 
     /// Runs the search on every open goal in turn, as [`close`](Self::close)
