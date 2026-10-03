@@ -220,9 +220,16 @@ of terms. Invariants the code relies on:
   the net search's cycle rejection is only valid within one root.
 
 `OccSet` (`occurrences/set.rs`) is `Box<[u64]>` with the forest's width fixed
-at creation (`Forest::empty_set`, `root_set`, `OccSet::empty(len)`).
-Word-wise operations debug-assert equal widths; combining sets of different
-forests is a bug the release build will not catch. `Hash` is over the words,
+at creation (`Forest::empty_set`, `root_set`, `OccSet::empty(len)`). Its
+binary operations are defined on sets of different widths, in every build,
+as on the sets of ids they are: the words a narrower set lacks count as
+empty (`is_subset` is false when the receiver has a member beyond the
+other's width), a set that changes keeps its width, and the one result a
+width cannot hold, a union with a member beyond it, panics rather than
+lose the member; `&a | &b` is as wide as the wider. Between sets of one
+forest they cost what they did but a comparison of two lengths. Combining
+sets of different forests is still a bug nothing catches: the ids mean
+different occurrences. Equality and `Hash` are over the words, the latter
 through the crate's `hash::HashMap` (foldhash with a fixed seed: reproducible
 runs, no OS randomness, works on wasm).
 

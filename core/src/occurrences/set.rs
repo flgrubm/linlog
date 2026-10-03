@@ -8,6 +8,19 @@ use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Sub, SubAssign};
 /// A set of occurrence ids of one forest: a bitset whose width is fixed when
 /// it is made, one bit per occurrence. Sets of the same forest have the same
 /// width, so they compare, hash and combine word by word.
+///
+/// Sets of different widths combine too, as the sets of ids they are: a
+/// narrower set holds nothing beyond its width, so the words it lacks count
+/// as empty. An operation that changes a set leaves it at its width, since
+/// a set is never widened. An intersection and a difference always fit;
+/// the one result a width cannot hold, a union with a member beyond it, is
+/// a panic in every build, and never a set that lacks the member. A
+/// difference of widths as such is no error: inclusion and disjointness
+/// have an answer for any two sets, and the operations follow them rather
+/// than refuse what the tests accept.
+///
+/// Equality, order and hash are of the words, so two sets of different
+/// widths are different values even with the same members.
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct OccSet {
     /// Bit `i` of word `i / 64` is set when occurrence `i` is a member.
@@ -122,37 +135,60 @@ impl OccSet {
     }
 
     /// Adds every member of `other`.
+    ///
+    /// # Panics
+    ///
+    /// If `other` is wider and has a member beyond this set's width, which
+    /// this set cannot hold: dropping it would give a union that lacks a
+    /// member.
     pub fn union_with(&mut self, other: &Self) {
+        let beyond = other.beyond(self);
+        if let Some(i) = beyond.iter().position(|&w| w != 0) {
+            let member = (self.words.len() + i) * 64 + beyond[i].trailing_zeros() as usize;
+            panic!(
+                "a union with occurrence {member}, which a set of {} ids cannot hold",
+                self.capacity()
+            );
+        }
         self.zip_with(other, |a, b| a | b);
     }
 
-    /// Keeps only the members `other` has too.
+    /// Keeps only the members `other` has too. A narrower `other` has none
+    /// of the members beyond its width.
     pub fn intersect_with(&mut self, other: &Self) {
         self.zip_with(other, |a, b| a & b);
+        let shared = self.words.len().min(other.words.len());
+        self.words[shared..].fill(0);
     }
 
-    /// Removes every member of `other`.
+    /// Removes every member of `other`, whatever its width.
     pub fn difference_with(&mut self, other: &Self) {
         self.zip_with(other, |a, b| a & !b);
     }
 
-    /// Combines the sets word by word; both must have the same width.
+    /// Combines the words both sets have, pair by pair, and leaves this
+    /// set's words beyond the width of `other` as they are.
     fn zip_with(&mut self, other: &Self, f: impl Fn(u64, u64) -> u64) {
-        debug_assert_eq!(self.words.len(), other.words.len(), "sets of one forest");
         for (a, b) in self.words.iter_mut().zip(&other.words) {
             *a = f(*a, *b);
         }
     }
 
-    /// Returns whether every member is a member of `other`.
-    pub fn is_subset(&self, other: &Self) -> bool {
-        self.words
-            .iter()
-            .zip(&other.words)
-            .all(|(a, b)| a & !b == 0)
+    /// Returns the words of this set beyond the width of `other`: none
+    /// unless this set is the wider one.
+    fn beyond(&self, other: &Self) -> &[u64] {
+        self.words.get(other.words.len()..).unwrap_or_default()
     }
 
-    /// Returns whether no member is a member of `other`.
+    /// Returns whether every member is a member of `other`: never, when
+    /// this set has a member beyond the width of `other`.
+    pub fn is_subset(&self, other: &Self) -> bool {
+        let mut shared = self.words.iter().zip(&other.words);
+        shared.all(|(a, b)| a & !b == 0) && self.beyond(other).iter().all(|&w| w == 0)
+    }
+
+    /// Returns whether no member is a member of `other`. Members beyond the
+    /// width of the narrower set are members of one set only.
     pub fn is_disjoint(&self, other: &Self) -> bool {
         self.words.iter().zip(&other.words).all(|(a, b)| a & b == 0)
     }
@@ -185,7 +221,8 @@ impl Debug for OccSet {
 }
 
 impl BitOrAssign<&OccSet> for OccSet {
-    /// Adds every member of `other`.
+    /// Adds every member of `other`, and panics as
+    /// [`union_with`](OccSet::union_with) does.
     fn bitor_assign(&mut self, other: &OccSet) {
         self.union_with(other);
     }
@@ -208,10 +245,15 @@ impl SubAssign<&OccSet> for OccSet {
 impl BitOr for &OccSet {
     type Output = OccSet;
 
-    /// The union.
+    /// The union, as wide as the wider of the two sets.
     fn bitor(self, other: Self) -> OccSet {
-        let mut set = self.clone();
-        set |= other;
+        let (wider, narrower) = if self.words.len() < other.words.len() {
+            (other, self)
+        } else {
+            (self, other)
+        };
+        let mut set = wider.clone();
+        set |= narrower;
         set
     }
 }
@@ -219,7 +261,7 @@ impl BitOr for &OccSet {
 impl BitAnd for &OccSet {
     type Output = OccSet;
 
-    /// The intersection.
+    /// The intersection, as wide as the left set.
     fn bitand(self, other: Self) -> OccSet {
         let mut set = self.clone();
         set &= other;
@@ -230,7 +272,8 @@ impl BitAnd for &OccSet {
 impl Sub for &OccSet {
     type Output = OccSet;
 
-    /// The difference: the members of the left set that the right one lacks.
+    /// The difference: the members of the left set that the right one
+    /// lacks, as wide as the left set.
     fn sub(self, other: Self) -> OccSet {
         let mut set = self.clone();
         set -= other;
@@ -353,6 +396,49 @@ mod tests {
         let mut d = OccSet::empty(70);
         d.extend([o(65), o(1), o(2)]);
         assert_eq!(d, a);
+    }
+
+    /// Sets of different widths combine as the sets of ids they are: the
+    /// narrower one has nothing beyond its width, and a set that changes
+    /// keeps its own.
+    #[test]
+    fn different_widths() {
+        let narrow = OccSet::of(64, [o(1), o(2)]);
+        let wide = OccSet::of(200, [o(2), o(130)]);
+        let members = |s: &OccSet| s.iter().map(OccId::get).collect::<Vec<_>>();
+        assert!(
+            !wide.is_subset(&narrow),
+            "130 is no member of the narrow set"
+        );
+        assert!(!narrow.is_subset(&wide));
+        assert!(OccSet::of(200, [o(2)]).is_subset(&narrow));
+        assert!(OccSet::of(64, [o(2)]).is_subset(&wide));
+        assert!(!wide.is_disjoint(&narrow) && !narrow.is_disjoint(&wide));
+        assert!(OccSet::of(200, [o(130)]).is_disjoint(&narrow));
+        assert!(narrow.is_disjoint(&OccSet::of(200, [o(130)])));
+
+        let (meet, other) = (&wide & &narrow, &narrow & &wide);
+        assert_eq!((members(&meet), meet.capacity()), (vec![2], 256));
+        assert_eq!((members(&other), other.capacity()), (vec![2], 64));
+        let (rest, other) = (&wide - &narrow, &narrow - &wide);
+        assert_eq!((members(&rest), rest.capacity()), (vec![130], 256));
+        assert_eq!((members(&other), other.capacity()), (vec![1], 64));
+        let (join, other) = (&wide | &narrow, &narrow | &wide);
+        assert_eq!((members(&join), join.capacity()), (vec![1, 2, 130], 256));
+        assert_eq!(join, other);
+        // A wider set without a member beyond the narrow one's width fits.
+        let mut fits = narrow.clone();
+        fits |= &OccSet::of(200, [o(3)]);
+        assert_eq!((members(&fits), fits.capacity()), (vec![1, 2, 3], 64));
+    }
+
+    /// A union that the set's width cannot hold panics in every build, and
+    /// names the member.
+    #[test]
+    #[should_panic(expected = "a union with occurrence 130, which a set of 64 ids cannot hold")]
+    fn a_union_loses_no_member() {
+        let mut narrow = OccSet::of(64, [o(1)]);
+        narrow |= &OccSet::of(200, [o(2), o(130)]);
     }
 
     /// Equal sets are equal and hash alike; the words are what gets hashed.
