@@ -26,8 +26,10 @@ beyond clap and anyhow, which the CLI already has.
 - `src/run.rs`: the parent (`run`) and the child (`one`). One child
   process per run: the child loads the problem, builds the forest (for
   `occurrences` and `multiplicity`), prints the line `loaded`, times
-  `prove_until` alone with a deadline in its stop closure (the clock read
-  every 64 polls on one thread, every poll on a pool, as the CLI does)
+  `prove_until` alone with a deadline in its stop closure (a flag that a
+  thread of its own raises at the limit, as the CLI's is: a clock read
+  every 64 polls was seconds late on the large nets, where a poll comes
+  many milliseconds after the last)
   and with the library's own check off (`Options::check(false)`), prints
   the 22-field tail of the CSV row with the search's verdict, and for a
   proof checks it outside the timed part and prints the tail once more

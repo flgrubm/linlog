@@ -21,7 +21,8 @@ use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -515,17 +516,23 @@ fn tail(args: &OneArgs) -> String {
         .check(false);
     say(LOADED);
 
-    // The clock is read every 64 polls on one thread, where the engine
-    // polls millions of times a second, and every poll on a pool, whose
-    // driver polls once a millisecond.
-    let every = if args.jobs > 1 { 1 } else { 64 };
-    let mut polls = 0u64;
+    // The limit is a flag that a thread of its own raises, so that a poll
+    // costs one load whatever the engine's cadence: a clock read every so
+    // many polls is late by that many, which on a large net, where a poll
+    // comes many milliseconds after the last, was seconds.
+    let expired = Arc::new(AtomicBool::new(false));
+    let limit = Duration::from_secs_f64(args.timeout);
     let (cpu_before, wait_before) = (cpu_ms(), wait_ms());
     let start = Instant::now();
-    let deadline = start + Duration::from_secs_f64(args.timeout);
+    {
+        let expired = Arc::clone(&expired);
+        thread::spawn(move || {
+            thread::sleep(limit);
+            expired.store(true, Ordering::Relaxed);
+        });
+    }
     let outcome = prove_until(&problem.sequent, mode, &options, || {
-        polls += 1;
-        polls.is_multiple_of(every) && Instant::now() >= deadline
+        expired.load(Ordering::Relaxed)
     });
     let time = start.elapsed().as_secs_f64() * 1000.0;
     // The time the search took on the CPUs, and the time its thread was
