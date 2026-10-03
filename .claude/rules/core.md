@@ -769,9 +769,9 @@ the net engine's, and the others stay zero.
   `lib.rs` show the common path (parse, fragment, prove, derivation, JSON)
   as a doc test; keep it the shortest correct program when the API moves.
   The focused engine recurses on the caller's stack, bounded by
-  `Options::recursion_limit`, and the net engine's sequentialization
-  recurses to the derivation's height; a caller that raises the limit or
-  proves a huge net runs the search on a thread with a larger stack.
+  `Options::recursion_limit`; a caller that raises the limit runs the
+  search on a thread with a larger stack (`Options::stack_size`). The net
+  engine and its sequentialization keep stacks of their own.
 
 ## The focused engine
 
@@ -1483,9 +1483,15 @@ What the code relies on:
   literals are an axiom (`Ax(min, max)`), else the splitting `⊗` with the
   smallest id is applied and the conclusions reached from its left premise
   go left. Handled conclusions are deleted in the scratch, so a sub-net is
-  what its conclusions reach. O(n²) in the net's size; the recursion is as
-  deep as the derivation. The proof is checked in a `debug_assert!` and the
-  round trip derivation → net → derivation is a test.
+  what its conclusions reach. O(n²) in the net's size. It does not
+  recurse: a stage leaves what proves its sub-net as steps on a stack of
+  the sequentialization's own (`Step`: a sub-net to prove, a Mix, a `⊗`,
+  the `⅋` rules of the stage), taken in the order a recursion would make
+  its calls, so the nodes come in that order too and a derivation of any
+  height costs the caller's stack nothing
+  (`a_high_derivation_needs_no_stack`). The proof is checked in a
+  `debug_assert!` and the round trip derivation → net → derivation is a
+  test.
 - **Nets and terms.** `from_proof` reads the links off the `Ax` nodes and
   returns the net only if it is correct; every proof the checker accepts
   gives a correct net, two proofs that differ by rule permutations give the

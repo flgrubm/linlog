@@ -30,6 +30,8 @@ impl ProofStructure {
             net: self,
             scratch: self.scratch(),
             nodes: Vec::with_capacity(self.forest.len()),
+            steps: Vec::new(),
+            proved: Vec::new(),
         };
         let root = run.sequentialize(self.forest.roots().to_vec());
         let proof = Proof::new(self.forest.clone(), run.nodes, root)
@@ -58,6 +60,26 @@ struct Sequentialization<'a> {
     scratch: Scratch,
     /// The proof's arena so far.
     nodes: Vec<Node>,
+    /// What is yet to do, the next step last. A derivation is as high as
+    /// its net is large, so the steps are kept here and not on the
+    /// caller's stack.
+    steps: Vec<Step>,
+    /// The nodes concluding the sub-nets proved and not yet used as a
+    /// premise, the last proved last.
+    proved: Vec<NodeId>,
+}
+
+/// A step of a sequentialization.
+enum Step {
+    /// Prove the sub-net with these conclusions.
+    Prove(Vec<OccId>),
+    /// Join the last two sub-nets proved with Mix.
+    Mix,
+    /// Apply this `⊗` to the last two sub-nets proved, which hold its left
+    /// and its right premise.
+    Tensor(OccId),
+    /// Apply these `⅋` to the last sub-net proved, the last of them first.
+    Pars(Vec<OccId>),
 }
 
 impl Sequentialization<'_> {
@@ -67,9 +89,52 @@ impl Sequentialization<'_> {
         NodeId::new(self.nodes.len() as u32 - 1)
     }
 
+    /// Takes the node concluding the last sub-net proved.
+    fn premise(&mut self) -> NodeId {
+        self.proved
+            .pop()
+            .expect("a sub-net proved for every premise")
+    }
+
     /// Proves the sub-net with the given conclusions and returns the node
     /// concluding it.
-    fn sequentialize(&mut self, mut gamma: Vec<OccId>) -> NodeId {
+    fn sequentialize(&mut self, gamma: Vec<OccId>) -> NodeId {
+        self.steps.push(Step::Prove(gamma));
+        while let Some(step) = self.steps.pop() {
+            let node = match step {
+                Step::Prove(gamma) => {
+                    self.stage(gamma);
+                    continue;
+                }
+                Step::Mix => {
+                    let other = self.premise();
+                    let node = self.premise();
+                    self.push(Node::Mix(node, other))
+                }
+                Step::Tensor(t) => {
+                    let right = self.premise();
+                    let left = self.premise();
+                    self.push(Node::Tensor(t, left, right))
+                }
+                Step::Pars(pars) => {
+                    let mut node = self.premise();
+                    for &p in pars.iter().rev() {
+                        node = self.push(Node::Par(p, node));
+                    }
+                    node
+                }
+            };
+            self.proved.push(node);
+        }
+        self.premise()
+    }
+
+    /// One stage, on the sub-net with the given conclusions: proves it by
+    /// an axiom, or leaves the steps that prove it, which are its parts
+    /// with a Mix after each but the first, or the two sides of its
+    /// splitting `⊗` and the `⊗` after them; the `⅋` conclusions it opened
+    /// come after either.
+    fn stage(&mut self, mut gamma: Vec<OccId>) {
         let f = self.net.forest();
         let graph = &self.net.graph;
         let child = |o: OccId, left: bool| if left { f.left(o) } else { f.right(o) }.unwrap();
@@ -89,9 +154,12 @@ impl Sequentialization<'_> {
                 i += 1;
             }
         }
+        if !pars.is_empty() {
+            self.steps.push(Step::Pars(pars));
+        }
 
         let parts = graph.search(&mut self.scratch, gamma.iter().map(|o| o.get()));
-        let mut node = if parts > 1 {
+        if parts > 1 {
             debug_assert!(self.net.mix, "a proof net without Mix is connected");
             let mut labels: Vec<OccId> = Vec::new();
             for &c in &gamma {
@@ -100,27 +168,21 @@ impl Sequentialization<'_> {
                     labels.push(label);
                 }
             }
-            let parts: Vec<Vec<OccId>> = labels
-                .iter()
-                .map(|&l| {
-                    gamma
-                        .iter()
-                        .copied()
-                        .filter(|&c| self.scratch.component(c) == l)
-                        .collect()
-                })
-                .collect();
-            let mut parts = parts.into_iter();
-            let mut node = self.sequentialize(parts.next().unwrap());
-            for part in parts {
-                let other = self.sequentialize(part);
-                node = self.push(Node::Mix(node, other));
+            // The steps are taken from the last: the first part, then
+            // every other one and the Mix that joins it to those before.
+            for (i, &label) in labels.iter().enumerate().rev() {
+                if i > 0 {
+                    self.steps.push(Step::Mix);
+                }
+                let part = gamma.iter().copied();
+                let part = part.filter(|&c| self.scratch.component(c) == label);
+                self.steps.push(Step::Prove(part.collect()));
             }
-            node
         } else if gamma.iter().all(|&c| f.is_literal(c)) {
             debug_assert!(gamma.len() == 2 && self.net.partner(gamma[0]) == Some(gamma[1]));
             let (x, y) = (gamma[0].min(gamma[1]), gamma[0].max(gamma[1]));
-            self.push(Node::Ax(x, y))
+            let axiom = self.push(Node::Ax(x, y));
+            self.proved.push(axiom);
         } else {
             // The splitting ⊗ conclusion with the smallest id: one whose
             // premise edge is a bridge.
@@ -145,39 +207,80 @@ impl Sequentialization<'_> {
                     right.push(c);
                 }
             }
-            let (left, right) = (self.sequentialize(left), self.sequentialize(right));
-            self.push(Node::Tensor(t, left, right))
-        };
-        for &p in pars.iter().rev() {
-            node = self.push(Node::Par(p, node));
+            self.steps.push(Step::Tensor(t));
+            self.steps.push(Step::Prove(right));
+            self.steps.push(Step::Prove(left));
         }
-        node
     }
 }
 
-#[cfg(all(test, feature = "parse"))]
+#[cfg(test)]
 mod tests {
     use super::super::ProofStructure;
     use crate::fragment::Mode;
     use crate::occurrences::{Forest, OccId};
+    #[cfg(feature = "parse")]
     use crate::proofs::{Node, NodeId};
     use crate::sequents::Sequent;
 
     /// Wraps a raw id.
+    #[cfg(feature = "parse")]
     const fn o(id: u32) -> OccId {
         OccId::new(id)
     }
 
     /// Builds the structure of `input` with the links, or panics.
+    #[cfg(feature = "parse")]
     fn net(input: &str, mix: bool, links: &[(u32, u32)]) -> ProofStructure {
         let s: Sequent = input.parse().unwrap_or_else(|e| panic!("{input:?}: {e}"));
         let links: Vec<(OccId, OccId)> = links.iter().map(|&(x, y)| (o(x), o(y))).collect();
         ProofStructure::from_links(Forest::new(&s).unwrap(), mix, &links).unwrap()
     }
 
+    /// A net whose derivation is thousands of inferences high is
+    /// sequentialized on a stack too small for a recursion to follow it,
+    /// 64 bytes a level: the tensors of `⊢ a1 ⊗ (a2 ⊗ (… ⊗ an)), ~a1, …,
+    /// ~an` split off one axiom at a time.
+    #[test]
+    fn a_high_derivation_needs_no_stack() {
+        use crate::occurrences::Sign;
+        use crate::sequents::{Atom, Term, TermId};
+        const PAIRS: u32 = 2048;
+        // Terms 2i and 2i + 1 are the two literals of atom i.
+        let mut terms: Vec<Term> = (0..PAIRS)
+            .map(Atom::new)
+            .flat_map(|a| [Term::Var(a), Term::DualVar(a)])
+            .collect();
+        let mut chain = TermId::new(2 * (PAIRS - 1));
+        for a in (0..PAIRS - 1).rev() {
+            terms.push(Term::Tensor(TermId::new(2 * a), chain));
+            chain = TermId::new(terms.len() as u32 - 1);
+        }
+        let mut roots = vec![chain];
+        roots.extend((0..PAIRS).map(|a| TermId::new(2 * a + 1)));
+        let atoms = (0..PAIRS).map(|a| format!("a{a}")).collect();
+        let forest = Forest::new(&Sequent {
+            terms,
+            roots,
+            atoms,
+        })
+        .unwrap();
+        let literal = |a, sign| forest.literals(Atom::new(a), sign)[0];
+        let links: Vec<(OccId, OccId)> = (0..PAIRS)
+            .map(|a| (literal(a, Sign::Var), literal(a, Sign::DualVar)))
+            .collect();
+        let net = ProofStructure::from_links(forest, false, &links).unwrap();
+        let thread = std::thread::Builder::new().stack_size(128 * 1024);
+        let proof = thread.spawn(move || net.sequentialize()).unwrap();
+        let proof = proof.join().unwrap().unwrap();
+        assert_eq!(proof.nodes().len(), 2 * PAIRS as usize - 1);
+        assert_eq!(proof.check(Mode::CLASSICAL), Ok(()));
+    }
+
     /// The classic nets sequentialize into the expected terms: the ⅋ below
     /// the ⊗ that is not splitting until it is opened, a Mix for a
     /// disconnected net, and an error for a structure that is no net.
+    #[cfg(feature = "parse")]
     #[test]
     fn classic_nets() {
         use Node::*;
