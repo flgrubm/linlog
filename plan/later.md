@@ -220,6 +220,66 @@ not cross in the cyclic order of literals), no exchange in the derivation
 view and exports, and the Lambek restrictions (no empty antecedent, the two
 divisions). Fable 5.1, xhigh.
 
+## First-order linear logic
+
+Quantifiers and predicates with terms (the author's question,
+2026-10-03: is it intractable?). It is not, in the sense that the
+quantifiers cost less than the connectives linlog decides already
+(`proof-search-specifications.md`, "First-order fragments", has the
+sources): first-order MLL stays in NP, since without contraction every
+quantifier is instantiated once and the instance is found by
+unification at the axioms; first-order MALL is decidable and
+NEXPTIME-hard where the propositional logic is PSPACE-complete; and with
+exponentials the logic is undecidable, as propositional LL is, so the
+copy bound and its three-valued answer carry over unchanged. The
+specification said not to build this before the propositional engines
+pass their tests, which they now do.
+
+What it means for search is known technique: `∀` is invertible and takes
+a fresh eigenvariable, `∃` is a focused rule that takes a metavariable,
+an axiom unifies its two atoms, and the eigenvariable condition is kept
+by Skolem terms or by levels on the variables. Moot's LinearOne
+(first-order MILL by proof nets with unification) and Chaudhuri and
+Pfenning's focused inverse method are the working designs, and
+llprover reads first-order input.
+
+What it costs here is that it goes through every layer, which is why it
+is a candidate and not a follow-up:
+
+- **The data model.** Atoms become predicates applied to terms, formulas
+  get binders, and the sequent's arena, its negation normal form, the
+  parser, the printer and the JSON change with them. Without
+  exponentials the occurrence forest survives, since an occurrence is
+  instantiated once on a branch and a substitution beside the forest
+  says with what; under `!` and `?` every copy needs its own instance,
+  which the copies of the dyadic context have to carry.
+- **The engines.** Bindings are made and undone with the search (a
+  trail). What step 15 built has to be gone through piece by piece:
+  counting atoms prunes by predicate symbol only, classes of
+  interchangeable occurrences and failures keyed up to renaming have to
+  treat open terms correctly, and a goal that shares a metavariable
+  with its sibling is no longer independent of it, which the `&`
+  premises and the cubes of the parallel runtime assume. The net engine
+  gains unification on its links and loses nothing else.
+- **Proofs.** Proof terms carry witnesses, the checker checks them and
+  the eigenvariable conditions, the derivation views, the interactive
+  rules (where the user gives a witness or leaves it open) and the four
+  exports follow. NanoYalla is propositional, so certificates wait for
+  the Rocq library of linlog's own, which would have to be planned with
+  quantifiers from the start if this candidate is wanted at all.
+- **Problems.** LLTP is propositional and no first-order library for
+  linear logic is known; the problems come from use: linear logic
+  programs, planning and Petri nets with parameters, and categorial
+  grammars, where the Lambek calculus embeds in first-order MILL (which
+  bears on "Cyclic MLL and the Lambek calculus": the embedding may be
+  the cheaper way to that candidate).
+
+Several steps, the data model first and by itself, since everything
+else stands on it and it must not slow the propositional case, which
+both baselines pin. The question for the author before any of it is
+whether research or teaching needs quantifiers; if they do, the audit
+should know before it settles the types.
+
 ## Second certificate kernels: a Rocq library of linlog's own, NanoYalla kept for compatibility
 
 Left open by step 12 (`plan/reports/12-certificates.md`, "Open questions").
