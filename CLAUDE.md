@@ -41,8 +41,11 @@ Workspace crates:
   output; `--copies` bounds the copies of `?` formulas per branch and
   `--bias` picks the focused engines' atom bias (`--forward-copies` the
   bound of the forward search that the default runs on Horn programs);
-  `--jobs N` (default: every core) runs the search on a pool and
-  `--deterministic` the sequential engines; exit status 0 proved/valid,
+  `--jobs N` (default: every core, which is also the most a search uses;
+  more is taken as that with a note) runs the search on a pool and
+  `--deterministic` the sequential engines; `--timeout` counts from the
+  command's start, reading and parsing included (`limit.rs`: a flag a
+  timer thread raises, read at every poll); exit status 0 proved/valid,
   1 unprovable/invalid, 2 error, 3 unknown. Its
   invariants and extension points live in `.claude/rules/cli.md`, which
   loads when a file under `cli/` is read.
@@ -91,7 +94,9 @@ the `Size` of either without building it, and `derivation_with(&view,
 stop)` under a `ViewOptions` (the bound on the estimated size that every
 path which builds a derivation honours, `ViewError::TooLarge` beyond it);
 and `prove(&sequent, mode,
-&options)` (or `prove_until` with a stop closure) for proof search, which
+&options)` (or `prove_until` with a stop closure, which every engine
+polls wherever it can spend time: `.claude/rules/core.md` lists the
+places) for proof search, which
 dispatches on the fragment and the mode and returns an `Outcome` with a
 three-valued `Verdict`, its proof checked before it is returned
 (`Options::check`). The engines: `search::net` (axiom-linking search
@@ -121,9 +126,10 @@ roots being the sequent itself. With the `parallel` feature and
 `Options::jobs` above one, the focused and the net engine run on a rayon
 pool of their own (`search::parallel`: cube-and-conquer over the choices
 near the root, and-parallel `&` premises, a sharded memo and one arena
-shared by the workers, cubes of the first links for the net engine; the
+shared by the workers, cubes of the first choices for the net engine; the
 caller's stop closure is polled on the calling thread and raises the
-workers' flag); the additive path stays sequential. `Interactive` (`proofs::interactive`,
+workers' flag; never more threads than the machine runs at once, nor
+than `Options::MAX_JOBS`); the additive path stays sequential. `Interactive` (`proofs::interactive`,
 feature `interactive`) is a proof in progress: `new(&sequent, mode)`,
 `goals()`, `rules(goal, position)`, `apply(goal, position, rule, left)`,
 `undo()`, `close(goal, options, view, stop)`/`close_all`, `derivation()` with open goals as

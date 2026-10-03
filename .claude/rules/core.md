@@ -607,7 +607,8 @@ the `Mode`, the `Engine` that ran, the `Statistics`, and `net`, the
 `bias`, `forward_copies`, `check`), the
 constants `DEFAULT_MEMO_LIMIT`, `DEFAULT_RECURSION_LIMIT`,
 `DEFAULT_COPIES` and `DEFAULT_FORWARD_COPIES`, which the CLI shows as
-its defaults, and `stack_size()`,
+its defaults, `MAX_JOBS` (256: `jobs` takes more as that many, and zero
+as one), and `stack_size()`,
 the stack a thread needs at the recursion limit, which sizes the CLI's
 search thread and the parallel pool's workers alike;
 `Reason`, `Statistics`, `Engine` and `Outcome` are `#[non_exhaustive]` so
@@ -672,14 +673,59 @@ the net engine's, and the others stay zero.
   which switches off the prunes that only hold in the smaller one and
   picks the engine (`--fragment mall` on an MLL input runs `focus`).
 - The crate has no clock (D11): a time limit is a closure the caller gives
-  `prove_until`, polled once per node (a stable sequent, or a literal
-  chosen) and, in the focused engine, once every `SPLITS_PER_POLL` (4096)
-  steps of its searches for the splits of a `⊗` or a Mix (`poll_splits`,
-  on a counter of its own, `Engine::steps`): a split search whose splits
-  fail in focus visits no stable sequent and can run for minutes. It
-  answers `Unknown (Reason::Stopped)`. Both polls pass the work done
-  since the last one (`Stop::fired(work)`), which only the two searches
-  of the default bias count (`Stop::Slice`, `Stop::Turn`). The crate docs in
+  `prove_until`, and it answers `Unknown (Reason::Stopped)`. **Where it
+  is polled**, which is every place a search can spend time without
+  reaching another of them:
+  - *The focused engine*: once per stable sequent (`prove_stable`); once
+    every `SPLITS_PER_POLL` (4096) steps of its searches for the splits
+    of a `⊗` or a Mix (`poll_splits`, on a counter of its own,
+    `Engine::steps`: a split search whose splits fail in focus visits no
+    stable sequent and can run for minutes); once every
+    `FORCED_PER_POLL` (4096) forced splits and literals of tensors
+    closed in place (`poll_forced`, counter `Engine::forced`: a chain of
+    forced splits visits no stable sequent either, and a marking of a
+    Petri net is a tensor of thousands of literals); and on a pool at
+    every `&` (`with_parallel`, below). The first two pass the work
+    done since the last poll (`Stop::fired(work)`), which only the two
+    searches of the default bias count (`Stop::Slice`, `Stop::Turn`);
+    the chain's poll passes none, so that the slices of those two
+    searches are what they were before it existed and the counters of a
+    decided run did not move.
+  - *The net engine*: once per literal chosen (`decide`) and once per
+    exact test that fails (`explore`): a run of failures chooses no
+    literal.
+  - *The set-up*, on a forest of `SET_UP_POLL` (65 536) occurrences or
+    more (`set_up_stopped`): in `prove_goal` once the fragment, the
+    reading and the dispatch are done, in `focus::search_goal` (and the
+    pool's) after the classes and after the plan, and inside
+    `Counts::new_until` every 65 536 occurrences visited, which is the
+    longest pass. On the library's largest problem (`SYJ212+1.020` in
+    its cbv translation, 27.8 million occurrences) the first poll comes
+    after 0.12 s and no two are more than 0.2 s apart; without them the
+    first came after 1.27 s. A smaller forest gets none of these polls:
+    a pass takes under a millisecond there, and a condition that counts
+    its polls (a test, a front end that counts work) sees the engine's
+    own and no others.
+  - *Not polled*: `Forest::new` (0.43 s on that problem; a caller with
+    a deadline builds the forest itself, as the CLI does, and calls
+    `prove_goal`), a single pass over the forest, the check of the
+    proof at the end of `prove_goal` and the size pass of a derivation
+    (below), `sequentialize`, and the freeing of a search's memo and
+    arena when it returns, which is what a stop is late by in practice:
+    0.1 to 0.35 s for a memo at its default cap of 2²⁰ entries.
+  - *The check and the size pass are not polled because they are
+    short*: on the largest proof the engines find in the LLTP library
+    (`SYJ202+1.005` in its cbv translation, 566 490 inferences) the
+    check takes 22 ms and `Proof::derivation_size`, the same pass with
+    an observer, 39 ms; on the largest Petri nets proved 3 to 6 ms and
+    5 to 8 ms. Poll them when a proof a hundred times that size is in
+    reach.
+  A condition must be cheap, because it is asked at every poll, and it
+  must not ration its own work by counting polls: polls come millions
+  of times a second on a small problem and 30 ms apart on a forest of
+  millions of occurrences, so "look at the clock every 1 024 polls" was
+  exact on the first and half a minute late on the second. The CLI and
+  the harness read a flag that a timer thread raises. The crate docs in
   `lib.rs` show the common path (parse, fragment, prove, derivation, JSON)
   as a doc test; keep it the shortest correct program when the API moves.
   The focused engine recurses on the caller's stack, bounded by
@@ -938,9 +984,12 @@ relies on:
     wakes once a millisecond. The caller's stop is not `Send`, so it
     lives on the calling thread, and it is polled once for every poll
     of either search: at the forward search's own polls, and for the
-    backward search's (counted in `Baton::polls`) when the forward one
-    gets its turn back and at every wake-up after it has ended
-    (`Baton::caught_up`). A condition that counts its polls or reads a
+    backward search's (counted in `Baton::polls`) within a millisecond
+    of each, since the calling thread wakes that often while the
+    backward search has its turn (`Baton::pass_polling`) and after the
+    forward one has ended (`Baton::caught_up`). It used to wait for the
+    whole slice on the condition variable, and a slice is counted in
+    work, not in time. A condition that counts its polls or reads a
     clock every `n` of them, as the CLI does every 1 024 on one thread,
     therefore sees what it sees of one search; polled only once per
     wake-up, it was a second late (a review's finding). The backward
@@ -1248,8 +1297,17 @@ relies on:
   literals). A positive literal that forces a split is closed in place
   (`Ax`, or `Ax` under `Copy` from `Θ`, exactly what `initial` does on
   one or two members), and a dual literal is looked up through the
-  forest's list of that literal's occurrences (`dual_in`), in id order
-  as before, not by a pass over the zone. None of this changes a counter
+  forest's list of that literal's occurrences, in id order
+  as before, not by a pass over the zone: in a chain by `dual_from`,
+  which starts where the chain's last lookup of that literal ended
+  (`Cursors`, one position per list, reset through the list of those
+  that moved; a chain's context only loses members, so what a lookup
+  passed over is gone for the rest of the chain), and elsewhere, for
+  the unrestricted zone, by `dual_in` from the head. From the head
+  every time, a chain over a marking of thousands of equal tokens was
+  quadratic in them. A nested chain (below a `!` that a forced split
+  promotes) has another context and takes cursors of its own from the
+  pool. None of this changes a counter
   on the sequential targets; what changes is which sequents reach the
   limit. Free splits still cost a level per link. Measured stack per
   level, on a chain of tensors whose splits are searched, which is the
@@ -1268,10 +1326,20 @@ relies on:
   path only costs an allocation later. The memo insert clones its key,
   and a repeated occurrence grows a context's extra list; those are the
   allocations per stable sequent. The copies are ordered by an unstable
-  sort on the rank and one pass that asks `meets` once per formula: a
+  sort on the id and one pass that asks `meets` once per formula: a
   stable `sort_by_key` allocated its buffer for every stable sequent
   with more than twenty copies and called `meets` at every comparison
-  (58 % of the samples on the chain of 256 clauses).
+  (58 % of the samples on the chain of 256 clauses). `meets` itself
+  reads marks: `mark_literals` stamps, once per stable sequent, the
+  lists of the literals among its members (`Engine::present`, one
+  stamp per list of the forest, `Engine::stamp` the current one, a
+  `u64` that cannot wrap in any run), and a formula of `Θ` meets a
+  member when a literal below it has its dual's list stamped. Comparing
+  every literal below every formula with every member was their
+  product: a quarter of a second per stable sequent on
+  `GPPP_G-PPP-1000-10_10_1` (a marking of thousands of tokens under
+  clauses of thousands of literals), between two polls. The order of
+  the copies and the work counted for a slice are what they were.
 - **The memo can change decisiveness within the bound, never a verdict.**
   An `Exhausted` entry is a fact about the sequent alone, the loop check
   about the branch, so a run with the memo may answer `Unknown` where a
@@ -1451,14 +1519,21 @@ What the code relies on:
   complete linking. Between tests a doomed branch is followed for at most
   `period − 1` links. `is_correct` (witnesses, allocation) is never called
   in the loop; `sequentialize` calls it once at the end.
-- **The stack** (`Frame { literal, next }`): every frame but the top has
+- **The stack** (`Frame { literal, next, forced }`): every frame but the top has
   its current link made, the top is looking for one; `next_partner`
   moves `next` past the partner it returns, so a linking is tried at most
   once; a dead end, a failed test or an exhausted frame takes the last
   link back, always in stack order, which the structure's undo log
   requires. `remaining[atom]` (unlinked pairs per atom) follows every
   link and unlink. The stop condition is polled once per node, in
-  `decide`, so a frame's candidates run between two polls.
+  `decide`, and once per exact test that fails: a run of failed
+  candidates and exhausted frames chooses no literal, and each failure
+  costs a test over the structure. A frame is `forced` when its literal
+  had exactly one admissible partner when it was chosen (`choose`
+  counts the best literal's partners to the end, so the count is exact
+  and is what `next_partner` will find); `Engine::choices` counts the
+  frames that are not, which is what a pool's cubes are cut by (below).
+  Neither changes the search on one thread.
 - **Where it loses.** Horn encodings (Matsuoka's Partition and Lincoln's
   two-literal 3-Partition, `families::partition` and
   `families::three_partition_mll`) have few atoms
@@ -1498,7 +1573,15 @@ has no or-choices worth sharing out). What the code relies on:
   (the net engine's in `prove_goal`, the focused engine's in
   `focus::parallel::search_goal`, which builds two for the two searches
   of the default bias with exponentials and splits `jobs` between them);
-  `Error::ThreadPool` when the threads cannot start. Never touch rayon's
+  `Error::ThreadPool` when the threads cannot start. **A search starts
+  no more threads than the machine runs at once**: `prove_goal` takes
+  `Options::jobs` through `parallel::threads`, the smaller of it and
+  `std::thread::available_parallelism()` (which on Linux follows the
+  process's CPU set and quota; where the platform does not tell, the
+  options' own bound `MAX_JOBS` is all there is), and one thread left
+  is the sequential path. So the tests' `jobs(4)` is two threads on a
+  machine of two, and a harness row never names more threads than its
+  process may run (`linlog-bench run` refuses the count). Never touch rayon's
   global pool: a library must not size or seed it, and `RAYON_NUM_THREADS`
   is read only when a builder's thread count is zero, which ours never
   is.
@@ -1545,7 +1628,21 @@ has no or-choices worth sharing out). What the code relies on:
   after its own alternative. The `&` rule within the levels runs its
   right premise on a worker of the pool and its left one on a worker on
   its own thread (`with_parallel`); the `⊗` premises stay sequential
-  (the first usually fails fast). Mix stays sequential after the
+  (the first usually fails fast). **`with_parallel` polls the engine's
+  flags before it starts anything.** The asynchronous phase polls
+  nowhere else (its stable sequents do), and the `&` rule on the pool,
+  unlike the sequential one, starts its right premise without waiting
+  for the left: a worker that was cancelled or stopped therefore went
+  on to start both premises of every `&` below it, each of which did
+  the same, and only their stable sequents ended them. With `n` `&` in
+  one asynchronous phase that is `2ⁿ` workers. `SYJ202+1.008` in its
+  cbv translation (19 KB) has such a tower: under a 5 s limit two
+  threads ended after 46 s and four not within 150 s, with 578 stable
+  sequents really searched and 268 million stopped at their poll; the
+  first failed premise alone set it off, long before the limit.
+  `a_cancelled_premise_starts_no_other` pins it on forty roots `a & b`
+  (2⁴⁰ premises without the poll). A new rule that fans out on the pool
+  polls before it spawns. Mix stays sequential after the
   parallel alternatives failed (`last_resort`).
 - **A worker is a copy of the branch, not of the engine** (`Spawn`,
   `Spawn::worker`): the shared parts by reference (forest, reading,
@@ -1607,21 +1704,39 @@ has no or-choices worth sharing out). What the code relies on:
   `exhausted` after every task of the level has ended (the scope waits),
   so the or-reduction over the workers is the merge above and a level is
   `Unprovable` only with every worker's flag clear.
-- **The net engine's cubes are the branches of the first `d` links**
-  (`Engine::explore` with a limit records a branch that reaches it and
-  takes the link back; `seed` makes a cube's links on an empty
-  structure; `reset` takes every link back and clears the frames but
-  keeps the counters), enumerated on the root engine with the tests the
-  search applies, `d` growing until there are `CUBES_PER_THREAD` (16)
-  cubes per thread or the enumeration decided the sequent (a proof
-  within the limit, or no branch surviving, which is `Unprovable`).
-  Workers pull cubes from an atomic counter with one engine each, so the
-  per-worker state is allocated once; a worker that finds a net stores
-  it and raises the flag; `Unprovable` needs every cube to have ended
-  `Ok(false)`, and any error or a real stop makes the verdict `Unknown`.
-  The choice order (fewest admissible partners first) is the cube order,
-  so cubes are already the small-multiplicity atoms first. No state is
-  shared beyond the flags: the structure and the scratch are per worker.
+- **The net engine's cubes are what is left of the search, split at
+  its choices** (`net::parallel::search`). A cube is the links of a
+  branch nobody has followed yet. The root engine starts from the one
+  cube without a link and, while there are fewer than
+  `CUBES_PER_THREAD` (16) cubes per thread, takes the oldest (`reset`,
+  `seed`) and replaces it by the branches of its next choice
+  (`explore(Some(1), …)`: the search below the seed with every branch
+  recorded and taken back at its first link of a literal with more
+  than one admissible partner; the forced links on the way to that
+  choice are made and stay in the cube). A branch that dies leaves no
+  cube, a proof net found on the way ends everything, and an empty
+  queue is `Unprovable`. So nothing is searched twice: the cubes
+  partition the remaining search at every moment, and a sequent whose
+  links are all forced is decided by the first `explore`, which is the
+  sequential search, link for link (`forced_links_are_made_once` pins
+  equal statistics on `wide(64, 1)`). Before, the cubes were the
+  branches of the first `d` links found by a search from the root for
+  `d = 1, 2, …`; with forced links there is one branch at every depth,
+  the count was never reached, and `wide-m1` at 512 pairs made
+  1 + 2 + … + 1 024 = 524 800 links (9.5 s on two threads against
+  33 ms on one). What it costs now where the queue stays short: the
+  seed's links again per cube taken, without their tests, which is of
+  the order of the `choose` the sequential search pays per node.
+  Workers pull cubes from an atomic counter with one engine each, so
+  the per-worker state is allocated once; a worker that finds a net
+  stores it and raises the flag; `Unprovable` needs every cube to have
+  ended `Ok(false)`, and any error or a real stop makes the verdict
+  `Unknown`. The queue is first in, first out, so the cubes are the
+  shallow branches first and of mixed depth when the count is reached.
+  No state is shared beyond the flags: the structure and the scratch
+  are per worker. A cube's seed must reproduce the root engine's state
+  at the record: the links in order, which the structure's undo log and
+  the test cadence (a multiple of the period in links) both follow.
 - **A parallel run may return another proof, never another verdict**:
   every level is searched to its end by some worker with no cube
   abandoned unless a proof or an error ends it, so `Proved` and
@@ -1630,7 +1745,14 @@ has no or-choices worth sharing out). What the code relies on:
   the memo's contents depend on the interleaving. A parallel run may
   answer `Proved` where the sequential one answers `Unknown
   (RecursionLimit)` on another alternative. `Unknown (Stopped)` is the
-  caller's stop, never a cancellation. The tests
+  caller's stop, never a cancellation. **What a pool promises about
+  time**: a stop is honoured by every worker at its next poll (the
+  list under "Proof search: the front door"), the driver asks the
+  caller's condition once a millisecond, and a pool costs its start
+  (some tens of microseconds per thread) plus, on the net engine, the
+  seeds above; it promises no speedup, and on the focused engine no
+  bound on the work relative to one thread (and-parallel `&` premises
+  and cubes search what one thread might have skipped). The tests
   (`focus::parallel::tests`, `net::parallel_tests`) assert exactly this
   on the generated samples with two and four threads; every proof is
   checked. For the focused engine that is `agree`: the two verdicts

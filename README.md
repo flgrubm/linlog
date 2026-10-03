@@ -195,19 +195,40 @@ $ linlog prove -q --copies 1 --forward-copies 1 "!A, !(A -o B), !(B -o C) |- C"
 unknown (MELL, classical, focus engine): the copy bound of 1 was reached; raise it with --copies
 ```
 
+`--timeout` counts from the start of the command, so it covers reading
+and parsing the sequent as well as the search, and the command answers
+within a fraction of a second of it, on one thread and on several:
+
+```console
+$ linlog prove -q --copies 12 --forward-copies 12 --timeout 1s "!(A -o A * A), !(B * B -o C), A, B |- C"
+unknown (MELL, classical, focus engine): the time limit of 1s was reached
+$ linlog prove -q -i --timeout 1s --file SYJ212+1.020.txt
+unknown: the time limit of 1s was reached while the sequent was read
+```
+
+The second sequent is the largest problem of the LLTP library in linlog's
+syntax, a file of 86 MB that takes twelve seconds to parse; both commands
+end with exit status 3 a second after they started.
+
 The search runs on every core by default: `--jobs N` (`-j`) sets the
 threads, and `--deterministic` runs the sequential engines, whose proof
 and statistics are a function of the input, where a parallel run may find
 a different proof of the same sequent, never a different verdict. The
 focus engine splits the choices nearest the root among the threads and
-shares its memo; the net engine splits the first links into cubes; the
-additive engine is sequential in every case:
+shares its memo; the net engine splits its search into cubes at its
+first choices, and where every link is forced it makes each link once,
+as one thread does; the additive engine is sequential in every case. A
+search never uses more threads than the machine runs at once, and a
+larger `--jobs` is taken as that many, with a note:
 
 ```console
 $ linlog prove -q -j 4 "!(A -o A * A), !(B * B -o C), A, B |- A * A * A"
 unknown (MELL, classical, focus engine): the copy bound of 3 was reached; raise it with --copies
 $ linlog prove -q --deterministic "!(A -o A * A), !(B * B -o C), A, B |- A * A * A"
 unknown (MELL, classical, focus engine): the copy bound of 3 was reached; raise it with --copies
+$ linlog prove -q -j 10000 "A |- A"
+note: --jobs 10000 is more than the 16 threads a search uses at most on this machine; it uses 16
+provable (MLL, classical, net engine)
 ```
 
 `--intuitionistic` (`-i`) reads the sequent as intuitionistic linear logic:
@@ -672,9 +693,15 @@ Built:
 - Parallel search, behind the library's `parallel` feature and on by
   default in the command: the focus engine runs the choices nearest the
   root on a thread pool, cube-and-conquer style, with the `&` premises in
-  parallel and one memo shared by every thread; the net engine splits the
-  first links into cubes for the pool; a stop condition reaches every
-  thread; the sequential engines stay one flag away.
+  parallel and one memo shared by every thread; the net engine splits its
+  search into cubes at its first choices for the pool; a stop condition
+  reaches every thread; a pool has at most as many threads as the machine
+  runs at once; the sequential engines stay one flag away.
+- Time limits that hold: a stop condition is asked wherever a search can
+  spend time (stable sequents, split searches, chains of forced splits,
+  the set-up on a large sequent, every thread of a pool), and the
+  command's `--timeout` counts from its start, reading and parsing
+  included, and is kept to within a fraction of a second.
 - The `linlog` command: `prove`, `check`, `interact` and `seq`, with time
   limits, Ctrl-C, statistics, JSON output, proof nets, LaTeX, Typst,
   SVG and Rocq output, and `--jobs` and `--deterministic` for the search;
@@ -692,8 +719,8 @@ Built:
 
 Planned, in roughly this order:
 
-- Limits that hold: time limits kept on one thread and on several, a
-  memory bound for the search, and bounds on what an input may be.
+- Limits that hold: a memory bound for the search, and bounds on what
+  an input may be.
 - Sensible defaults, each of them an option: a copy bound that deepens
   within a default time limit, one thread before several, and reasons
   with every "unknown" and "unprovable".
