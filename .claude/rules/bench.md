@@ -334,7 +334,12 @@ beyond clap and anyhow, which the CLI already has.
   `memory_limit` (the search under a bound of one gibibyte, the memo as
   records in chunks, the kept arena collected): the 99 decided rows
   have the counters of `after-limits`, and the rows over a second are 8
-  to 18 % faster (`mix` at 10: 151 s before, 125 s).
+  to 18 % faster (`mix` at 10: 151 s before, 125 s). `after-defaults`
+  is the first with `copies_reached` and `pool_after`, and its LLTP runs
+  name `--copies 3` (the command's default deepening, the refutation
+  computed after a search that refutes): the 99 decided rows have the
+  counters of `after-memory`, the 66 undecided ones their reasons, and
+  the decided rows' CPU time is 2.1 % above, by day.
 
 ## Extension points
 
