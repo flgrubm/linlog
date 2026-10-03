@@ -10,7 +10,7 @@ use crate::{Status, catch_interrupt, interrupted};
 use anyhow::{Context, Result, anyhow, bail};
 use linlog::export::svg::{self, Style};
 use linlog::export::{Form, latex, rocq, typst};
-use linlog::search::{Engine, Options, Outcome, Reason, Statistics, Verdict, prove_goal};
+use linlog::search::{Engine, Options, Outcome, Reason, Verdict, prove_goal};
 use linlog::{
     Error, Forest, Fragment, Mode, Proof, ProofStructure, Reading, Sequent, Size, ViewError,
     ViewOptions,
@@ -648,7 +648,7 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
                 Shown::Nothing => {}
             }
             if args.stats {
-                let statistics = statistics(outcome.engine, &outcome.statistics, elapsed);
+                let statistics = statistics(&outcome, elapsed);
                 write!(text, "\n{}", note(format, &statistics))?;
             }
             text
@@ -727,9 +727,11 @@ pub(crate) fn unknown(reason: Reason, outcome: &Outcome, ended: &Ended) -> Strin
 }
 
 /// Returns the statistics as text, one counter per line: the counters the
-/// engine that ran keeps.
-fn statistics(engine: Engine, s: &Statistics, elapsed: Duration) -> String {
-    match engine {
+/// engine that ran keeps, and the copy bound it reached where the
+/// fragment has exponentials.
+fn statistics(outcome: &Outcome, elapsed: Duration) -> String {
+    let s = &outcome.statistics;
+    match outcome.engine {
         Engine::Additive => format!(
             "pairs of subformulas visited: {} ({} from the memo)\n\
              memo entries: {}\n\
@@ -746,10 +748,17 @@ fn statistics(engine: Engine, s: &Statistics, elapsed: Duration) -> String {
         _ => format!(
             "stable sequents visited: {} ({} from the memo)\n\
              memo entries at most: {}\n\
-             splits examined: {}\n\
-             copy bound reached: {}\n\
+             splits examined: {}\n{}\
              time: {elapsed:.2?}",
-            s.nodes, s.memo_hits, s.memo_entries, s.splits, s.copies
+            s.nodes,
+            s.memo_hits,
+            s.memo_entries,
+            s.splits,
+            if outcome.fragment.has_exponentials() {
+                format!("copy bound reached: {}\n", s.copies)
+            } else {
+                String::new()
+            }
         ),
     }
 }
