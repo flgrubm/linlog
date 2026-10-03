@@ -1,6 +1,7 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
+#[cfg(test)]
 use chumsky::error::Simple;
 use std::fmt;
 
@@ -35,6 +36,7 @@ impl fmt::Display for ParseError {
     }
 }
 
+#[cfg(test)]
 impl<'a, T: fmt::Display> From<Simple<'a, T>> for ParseError {
     /// Copies the span and the token found out of a chumsky error, which borrows
     /// the input.

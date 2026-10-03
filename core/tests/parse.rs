@@ -5,7 +5,7 @@
 
 #![cfg(feature = "parse")]
 
-use linlog::Sequent;
+use linlog::{Error, Sequent};
 
 /// Parses `input` as a sequent of classical linear logic and prints it back.
 fn pretty(input: &str) -> String {
@@ -145,4 +145,84 @@ fn printed_sequents_parse_back() {
         let printed = pretty(input);
         assert_eq!(pretty(&printed), printed, "{input:?}");
     }
+}
+
+/// An error names the first character that cannot go on a sequent, by its
+/// byte offset, or the end of the input; of `|-` and `-o` cut short that
+/// is the character after the first.
+#[test]
+fn error_positions() {
+    for (input, at, found) in [
+        ("", 0, None),
+        ("A", 1, None),
+        ("|- (A", 5, None),
+        ("|- A,", 5, None),
+        ("|- A * )", 7, Some(")")),
+        ("|- A B", 5, Some("B")),
+        ("|- A parx B", 5, Some("p")),
+        ("|- (A, B)", 5, Some(",")),
+        ("A, |- B", 3, Some("|")),
+        ("A |- B |- C", 8, Some("-")),
+        ("(A |- A)", 4, Some("-")),
+        ("| A |- B", 1, Some(" ")),
+        ("A - B |- C", 3, Some(" ")),
+        ("A -", 3, None),
+        ("|- é * ∀", 8, Some("∀")),
+    ] {
+        let Err(Error::SequentParsing(errors)) = input.parse::<Sequent>() else {
+            panic!("{input:?} is no parse error");
+        };
+        let [error] = &errors[..] else {
+            panic!("{input:?} has {} errors", errors.len());
+        };
+        assert_eq!(
+            (error.span.start, error.found.as_deref()),
+            (at, found),
+            "{input:?}"
+        );
+    }
+}
+
+/// Neither the nesting of a formula nor the length of a chain costs any
+/// stack: formulas 100 000 deep parse on a thread with a small one, to a
+/// sequent of as many subformula occurrences as the text has.
+#[test]
+fn depth_costs_no_stack() {
+    /// How many connectives each formula has.
+    const N: usize = 100_000;
+    let work = || {
+        let chain = |operator: &str| format!("|- {}a", format!("a {operator} ").repeat(N));
+        for (shape, input, occurrences) in [
+            (
+                "nested to the right",
+                format!("|- {}a{}", "a * (".repeat(N), ")".repeat(N)),
+                2 * N + 1,
+            ),
+            (
+                "nested to the left",
+                format!("|- {}a{}", "(".repeat(N), " * a)".repeat(N)),
+                2 * N + 1,
+            ),
+            ("a chain of tensors", chain("*"), 2 * N + 1),
+            ("a chain of lollipops", chain("-o"), 2 * N + 1),
+            ("prefix operators", format!("|- {}a", "!".repeat(N)), N + 1),
+            ("postfix operators", format!("|- a{}", "^".repeat(N)), 1),
+            (
+                "on the left of the turnstile",
+                format!("{}a{} |-", "!(a -o ".repeat(N), ")".repeat(N)),
+                3 * N + 1,
+            ),
+        ] {
+            let sequent: Sequent = input
+                .parse()
+                .unwrap_or_else(|e| panic!("{shape} does not parse: {e}"));
+            assert_eq!(sequent.occurrences(), occurrences as u64, "{shape}");
+        }
+    };
+    std::thread::Builder::new()
+        .stack_size(256 * 1024)
+        .spawn(work)
+        .unwrap()
+        .join()
+        .unwrap();
 }

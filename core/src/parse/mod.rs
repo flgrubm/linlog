@@ -1,270 +1,601 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use crate::sequents::{Sequent, Term, TermId};
-use chumsky::pratt::*;
-use chumsky::prelude::*;
+//! A precedence parser that keeps its own stack and writes the terms it
+//! reads straight into the arena, so that neither the nesting of a formula
+//! nor its length costs any of the caller's stack.
+//!
+//! A sequent is `formulas ⊢ formulas`, each side a list separated by commas
+//! and possibly empty, with whitespace allowed between any two tokens. From
+//! the loosest binding to the tightest, a formula is built with `-o`/`⊸`
+//! (to the right), `+`/`⊕`, `&`, `|`/`par`/`⅋`, `*`/`⊗` (these to the
+//! left), the prefix operators `~`, `!` and `?`, and the postfix `^`, over
+//! the constants `0`, `1`, `bot`/`⊥` and `top`/`⊤`, variables and
+//! parentheses. A variable is a Unicode identifier (it starts with `_` or a
+//! character of `XID_Start` and goes on with characters of `XID_Continue`);
+//! `bot`, `top` and `par` are that constant or connective only as whole
+//! identifiers, and `par` only where a connective can stand, so that it is
+//! a variable where a formula starts.
+//!
+//! The arena holds the formulas in negation normal form, one-sided: the
+//! formulas left of the turnstile are negated, `A ⊸ B` is `A^⊥ ⅋ B`, and a
+//! negation is pushed to the atoms. The parser writes every term as it
+//! stands in the text and notes where a negation applies; one pass from
+//! the last term to the first then dualises what stands under an odd
+//! number of them.
 
-/// A parsed formula, before it is lowered into an arena.
-#[derive(Debug)]
-pub(super) enum Tree<'a> {
-    /// A variable, by name.
-    Var(&'a str),
-    /// `0`
-    Zero,
-    /// `1`
-    One,
-    /// `⊥`
-    Bot,
-    /// `⊤`
-    Top,
-    /// Linear negation, `~A` or `A^`.
-    Dual(Box<Tree<'a>>),
-    /// `!A`
-    Bang(Box<Tree<'a>>),
-    /// `?A`
-    Quest(Box<Tree<'a>>),
-    /// `A ⊗ B`
-    Tensor(Box<Tree<'a>>, Box<Tree<'a>>),
-    /// `A ⅋ B`
-    Par(Box<Tree<'a>>, Box<Tree<'a>>),
-    /// `A & B`
-    With(Box<Tree<'a>>, Box<Tree<'a>>),
-    /// `A ⊕ B`
-    Plus(Box<Tree<'a>>, Box<Tree<'a>>),
-    /// `A ⊸ B`
-    Lollipop(Box<Tree<'a>>, Box<Tree<'a>>),
+#[cfg(test)]
+mod oracle;
+
+use crate::Error;
+use crate::errors::ParseError;
+use crate::hash::HashMap;
+use crate::occurrences::Forest;
+use crate::sequents::{Atom, Sequent, Term, TermId};
+
+/// A binary connective as it is written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Binary {
+    /// `*` or `⊗`
+    Tensor,
+    /// `|`, `par` or `⅋`
+    Par,
+    /// `&`
+    With,
+    /// `+` or `⊕`
+    Plus,
+    /// `-o` or `⊸`
+    Lollipop,
 }
 
-/// A parsed two-sided sequent, `left ⊢ right`.
-#[derive(Debug)]
-pub(super) struct TwoSided<'a> {
-    /// The formulas left of the turnstile.
-    pub(super) left: Vec<Tree<'a>>,
-    /// The formulas right of the turnstile.
-    pub(super) right: Vec<Tree<'a>>,
-}
+impl Binary {
+    /// Returns how tightly the connective binds: of two connectives around
+    /// an operand, the one with the larger number takes it.
+    const fn strength(self) -> u8 {
+        match self {
+            Binary::Tensor => 5,
+            Binary::Par => 4,
+            Binary::With => 3,
+            Binary::Plus => 2,
+            Binary::Lollipop => 1,
+        }
+    }
 
-/// Parses a unit constant: `0`, `1`, `bot`/`⊥` or `top`/`⊤`.
-fn constant_parser<'a>() -> impl Parser<'a, &'a str, Tree<'a>, extra::Err<Simple<'a, char>>> + Clone
-{
-    // `text::keyword` only matches identifiers, so digits and symbols need `just`.
-    choice((
-        just('0').map(|_| Tree::Zero),
-        just('1').map(|_| Tree::One),
-        text::keyword("bot").map(|_| Tree::Bot),
-        just('⊥').map(|_| Tree::Bot),
-        text::keyword("top").map(|_| Tree::Top),
-        just('⊤').map(|_| Tree::Top),
-    ))
-}
-
-/// Parses a variable name: a Unicode identifier.
-fn variable_parser<'a>() -> impl Parser<'a, &'a str, Tree<'a>, extra::Err<Simple<'a, char>>> + Clone
-{
-    text::ident().map(Tree::Var)
-}
-
-/// Parses a formula, with its operators' precedence and associativity.
-fn term_parser<'a>() -> impl Parser<'a, &'a str, Tree<'a>, extra::Err<Simple<'a, char>>> + Clone {
-    recursive(|term| {
-        let atom = choice((
-            constant_parser(),
-            variable_parser(),
-            term.delimited_by(just('('), just(')')),
-        ))
-        .padded();
-
-        // binding strength:
-        // postfix '^' > prefix '~', '!', '?' > Tensor > Par > With > Sum > Lollipop
-        atom.pratt((
-            // Unaries
-            postfix(7, just('^').padded(), |lhs, _, _| Tree::Dual(Box::new(lhs))),
-            prefix(6, just('~').padded(), |_, rhs, _| Tree::Dual(Box::new(rhs))),
-            prefix(6, just('!').padded(), |_, rhs, _| Tree::Bang(Box::new(rhs))),
-            prefix(6, just('?').padded(), |_, rhs, _| {
-                Tree::Quest(Box::new(rhs))
-            }),
-            // Tensor
-            infix(left(5), just('*').padded(), |l, _, r, _| {
-                Tree::Tensor(Box::new(l), Box::new(r))
-            }),
-            infix(left(5), just('⊗').padded(), |l, _, r, _| {
-                Tree::Tensor(Box::new(l), Box::new(r))
-            }),
-            // Par
-            infix(left(4), text::keyword("par").padded(), |l, _, r, _| {
-                Tree::Par(Box::new(l), Box::new(r))
-            }),
-            infix(left(4), just('|').padded(), |l, _, r, _| {
-                Tree::Par(Box::new(l), Box::new(r))
-            }),
-            infix(left(4), just('⅋').padded(), |l, _, r, _| {
-                Tree::Par(Box::new(l), Box::new(r))
-            }),
-            // With
-            infix(left(3), just('&').padded(), |l, _, r, _| {
-                Tree::With(Box::new(l), Box::new(r))
-            }),
-            // Plus
-            infix(left(2), just('+').padded(), |l, _, r, _| {
-                Tree::Plus(Box::new(l), Box::new(r))
-            }),
-            infix(left(2), just('⊕').padded(), |l, _, r, _| {
-                Tree::Plus(Box::new(l), Box::new(r))
-            }),
-            // Lollipop
-            infix(right(1), just("-o").padded(), |l, _, r, _| {
-                Tree::Lollipop(Box::new(l), Box::new(r))
-            }),
-            infix(right(1), just('⊸').padded(), |l, _, r, _| {
-                Tree::Lollipop(Box::new(l), Box::new(r))
-            }),
-        ))
-    })
-}
-
-/// Parses a two-sided sequent, `Γ |- Δ`, which must span the whole input.
-fn sequent_parser<'a>() -> impl Parser<'a, &'a str, TwoSided<'a>, extra::Err<Simple<'a, char>>> {
-    let terms_list = term_parser()
-        .clone()
-        .separated_by(just(',').padded())
-        .collect::<Vec<Tree<'a>>>();
-
-    let tack = choice((just("|-"), just("⊢"))).padded();
-
-    terms_list
-        .clone() // Parse LHS
-        .then(tack) // Ignore the tack (but consume it)
-        .then(terms_list) // Parse RHS
-        .map(|((left, _), right)| TwoSided { left, right })
-        .then_ignore(end()) // Ensure the parser consumes the entire input string
-}
-
-impl<'a> TryFrom<&'a str> for TwoSided<'a> {
-    type Error = crate::Error;
-
-    /// Parses `input` into a syntax tree that borrows its variable names, or
-    /// returns every parse error.
-    fn try_from(input: &'a str) -> Result<TwoSided<'a>, Self::Error> {
-        sequent_parser()
-            .parse(input)
-            .into_result()
-            .map_err(|borrowed_errors| {
-                let owned_errors: Vec<crate::errors::ParseError> = borrowed_errors
-                    .into_iter()
-                    .map(crate::errors::ParseError::from)
-                    .collect();
-
-                crate::Error::SequentParsing(owned_errors)
-            })
+    /// Returns whether an operand between this connective on its left and
+    /// `next` on its right is this one's: it binds tighter, or the two are
+    /// the same connective and it associates to the left, as every one but
+    /// `⊸` does.
+    fn takes_before(self, next: Binary) -> bool {
+        self.strength() > next.strength() || (self == next && self != Binary::Lollipop)
     }
 }
 
-impl<'a> From<(Tree<'a>, bool)> for Sequent {
-    /// Lowers a formula into a one-sided sequent of that formula alone, dualised
-    /// if `polarity` is false.
-    fn from((t, polarity): (Tree<'a>, bool)) -> Self {
-        /// Pushes `t` and its subterms onto the arena, dualised if `polarity` is
-        /// false, and returns the index of `t`.
-        fn recursion_helper<'a>(
-            t: Tree<'a>,
-            polarity: bool,
-            terms: &mut Vec<Term>,
-            atoms: &mut Vec<String>,
-        ) -> TermId {
-            use Term as E;
-            use Tree::*;
-            if let Dual(nt) = t {
-                recursion_helper(*nt, !polarity, terms, atoms)
-            } else {
-                let e = match t {
-                    Var(s) => {
-                        let atom = crate::sequents::Atom::new(atoms.len() as u32);
-                        atoms.push(s.to_string());
-                        E::Var(atom)
-                    }
-                    One => E::One,
-                    Bot => E::Bot,
-                    Top => E::Top,
-                    Zero => E::Zero,
-                    Bang(nt) => {
-                        let n = recursion_helper(*nt, polarity, terms, atoms);
-                        E::Bang(n)
-                    }
-                    Quest(nt) => {
-                        let n = recursion_helper(*nt, polarity, terms, atoms);
-                        E::Quest(n)
-                    }
-                    Tensor(nt, mt) => {
-                        let n = recursion_helper(*nt, polarity, terms, atoms);
-                        let m = recursion_helper(*mt, polarity, terms, atoms);
-                        E::Tensor(n, m)
-                    }
-                    Par(nt, mt) => {
-                        let n = recursion_helper(*nt, polarity, terms, atoms);
-                        let m = recursion_helper(*mt, polarity, terms, atoms);
-                        E::Par(n, m)
-                    }
-                    With(nt, mt) => {
-                        let n = recursion_helper(*nt, polarity, terms, atoms);
-                        let m = recursion_helper(*mt, polarity, terms, atoms);
-                        E::With(n, m)
-                    }
-                    Plus(nt, mt) => {
-                        let n = recursion_helper(*nt, polarity, terms, atoms);
-                        let m = recursion_helper(*mt, polarity, terms, atoms);
-                        E::Plus(n, m)
-                    }
-                    Lollipop(nt, mt) => {
-                        // Lollipop is a Par where the first element has its polarity inverted
-                        let n = recursion_helper(*nt, !polarity, terms, atoms);
-                        let m = recursion_helper(*mt, polarity, terms, atoms);
-                        E::Par(n, m)
-                    }
-                    Dual(_) => unreachable!(),
-                };
+/// What has been read and waits for the operand to its right to be
+/// complete.
+#[derive(Clone, Copy, Debug)]
+enum Pending {
+    /// `(`, which waits for its `)`.
+    Open,
+    /// `~`
+    Dual,
+    /// `!`
+    Bang,
+    /// `?`
+    Quest,
+    /// A binary connective with its left operand.
+    Binary(Binary, TermId),
+}
 
-                let index = TermId::new(terms.len() as u32);
-                let e = if polarity { e } else { e.dual() };
-                terms.push(e);
-                index
+/// What the parser reads next.
+enum State {
+    /// Something a formula starts with.
+    Operand,
+    /// Something that follows the operand just read, which is the term
+    /// given.
+    Operator(TermId),
+    /// Nothing: the sequent is complete.
+    End,
+}
+
+/// Returns whether an identifier may start with `c`.
+fn starts_identifier(c: char) -> bool {
+    c == '_' || unicode_ident::is_xid_start(c)
+}
+
+/// A sequent in the reading: the text and the place in it, the arena so
+/// far, and what waits for its right operand.
+struct Parser<'a> {
+    /// The text of the sequent.
+    input: &'a str,
+    /// The byte offset of the next character to read.
+    at: usize,
+    /// Whether the formulas being read stand left of the turnstile.
+    left: bool,
+    /// Whether nothing of this side of the turnstile has been read yet, so
+    /// that the side may still turn out to have no formula.
+    empty: bool,
+    /// The terms read so far, each as it stands in the text.
+    terms: Vec<Term>,
+    /// Per term, whether the text negates it an odd number of times: by a
+    /// `~` or a `^` on it, as the antecedent of a `⊸`, or as a formula
+    /// left of the turnstile. The negations of the terms above it are not
+    /// counted.
+    negated: Vec<bool>,
+    /// The formulas of the sequent, in the order of the text.
+    roots: Vec<TermId>,
+    /// The names of the atoms, in the order they first occur.
+    atoms: Vec<String>,
+    /// The atom of every name read so far.
+    names: HashMap<&'a str, Atom>,
+    /// The prefix operators, parentheses and binary connectives whose
+    /// right operand is being read, the innermost last.
+    pending: Vec<Pending>,
+    /// How many parentheses are open.
+    open: usize,
+    /// The most terms the arena may hold.
+    most: u64,
+}
+
+impl<'a> Parser<'a> {
+    /// Returns a parser at the start of `input`, for a sequent of at most
+    /// `most` terms.
+    fn new(input: &'a str, most: u64) -> Self {
+        Self {
+            input,
+            at: 0,
+            left: true,
+            empty: true,
+            terms: Vec::new(),
+            negated: Vec::new(),
+            roots: Vec::new(),
+            atoms: Vec::new(),
+            names: HashMap::default(),
+            pending: Vec::new(),
+            open: 0,
+            most,
+        }
+    }
+
+    /// Returns the next character, or `None` at the end of the input.
+    fn peek(&self) -> Option<char> {
+        self.input[self.at..].chars().next()
+    }
+
+    /// Returns the error for the character at byte `at`, or for the end of
+    /// the input there.
+    fn unexpected(&self, at: usize) -> Error {
+        let found = self.input[at..].chars().next();
+        Error::SequentParsing(vec![ParseError {
+            span: at..at + found.map_or(0, char::len_utf8),
+            found: found.map(String::from),
+            label: None,
+            expected: Vec::new(),
+        }])
+    }
+
+    /// Appends a term to the arena and returns its index, or fails when
+    /// the arena is full.
+    fn push(&mut self, term: Term) -> Result<TermId, Error> {
+        let index = self.terms.len() as u64;
+        if index >= self.most {
+            // Every term of the text is an occurrence of its own.
+            return Err(Error::TooManyOccurrences {
+                occurrences: self.most.saturating_add(1),
+                limit: self.most,
+            });
+        }
+        self.terms.push(term);
+        self.negated.push(false);
+        Ok(TermId::new(index as u32))
+    }
+
+    /// Notes one more negation of a term.
+    fn negate(&mut self, term: TermId) {
+        self.negated[term.index()] ^= true;
+    }
+
+    /// Reads the rest of the identifier that starts at byte `start` and
+    /// whose first character has been read, and returns it whole.
+    fn identifier(&mut self, start: usize) -> &'a str {
+        let rest = &self.input[self.at..];
+        let end = rest
+            .find(|c| !unicode_ident::is_xid_continue(c))
+            .unwrap_or(rest.len());
+        self.at += end;
+        &self.input[start..self.at]
+    }
+
+    /// Returns the atom called `name`, a new one if the name is.
+    fn atom(&mut self, name: &'a str) -> Atom {
+        let fresh = Atom::new(self.atoms.len() as u32);
+        *self.names.entry(name).or_insert_with(|| {
+            self.atoms.push(name.to_string());
+            fresh
+        })
+    }
+
+    /// Gives `operand` to the pending operators that take it before the
+    /// connective `next` does, or to all of them up to the innermost open
+    /// parenthesis for `None`, the innermost first, and returns the term
+    /// they make of it.
+    fn reduce(&mut self, mut operand: TermId, next: Option<Binary>) -> Result<TermId, Error> {
+        while let Some(&top) = self.pending.last() {
+            let term = match top {
+                Pending::Open => break,
+                Pending::Dual => {
+                    self.negate(operand);
+                    self.pending.pop();
+                    continue;
+                }
+                Pending::Bang => Term::Bang(operand),
+                Pending::Quest => Term::Quest(operand),
+                Pending::Binary(connective, left) => {
+                    if next.is_some_and(|next| !connective.takes_before(next)) {
+                        break;
+                    }
+                    match connective {
+                        Binary::Tensor => Term::Tensor(left, operand),
+                        Binary::Par => Term::Par(left, operand),
+                        Binary::With => Term::With(left, operand),
+                        Binary::Plus => Term::Plus(left, operand),
+                        Binary::Lollipop => {
+                            self.negate(left);
+                            Term::Par(left, operand)
+                        }
+                    }
+                }
+            };
+            self.pending.pop();
+            operand = self.push(term)?;
+        }
+        Ok(operand)
+    }
+
+    /// Completes a formula of the sequent, outside every parenthesis, with
+    /// its last operand.
+    fn root(&mut self, operand: TermId) -> Result<(), Error> {
+        let root = self.reduce(operand, None)?;
+        if self.left {
+            self.negate(root);
+        }
+        self.roots.push(root);
+        Ok(())
+    }
+
+    /// Passes the turnstile: what follows is the right side, of which
+    /// nothing has been read.
+    fn turnstile(&mut self) -> State {
+        self.left = false;
+        self.empty = true;
+        State::Operand
+    }
+
+    /// Notes an operator that stands before its operand, or an open
+    /// parenthesis.
+    fn prefix(&mut self, operator: Pending) -> State {
+        self.pending.push(operator);
+        self.empty = false;
+        State::Operand
+    }
+
+    /// Reads what a formula starts with: a prefix operator, an open
+    /// parenthesis, a constant or a variable. An empty left side may have
+    /// the turnstile there and an empty right side the end of the input.
+    fn operand(&mut self) -> Result<State, Error> {
+        let start = self.at;
+        let Some(c) = self.peek() else {
+            return if self.empty && !self.left {
+                Ok(State::End)
+            } else {
+                Err(self.unexpected(start))
+            };
+        };
+        self.at += c.len_utf8();
+        let term = match c {
+            '~' => return Ok(self.prefix(Pending::Dual)),
+            '!' => return Ok(self.prefix(Pending::Bang)),
+            '?' => return Ok(self.prefix(Pending::Quest)),
+            '(' => {
+                self.open += 1;
+                return Ok(self.prefix(Pending::Open));
+            }
+            '0' => Term::Zero,
+            '1' => Term::One,
+            '⊥' => Term::Bot,
+            '⊤' => Term::Top,
+            '⊢' if self.empty && self.left => return Ok(self.turnstile()),
+            '|' if self.empty && self.left => {
+                // Only `|-` can start a sequent with `|`, so what is wrong
+                // is the character after it.
+                if self.peek() != Some('-') {
+                    return Err(self.unexpected(self.at));
+                }
+                self.at += 1;
+                return Ok(self.turnstile());
+            }
+            _ if starts_identifier(c) => match self.identifier(start) {
+                "bot" => Term::Bot,
+                "top" => Term::Top,
+                name => Term::Var(self.atom(name)),
+            },
+            _ => return Err(self.unexpected(start)),
+        };
+        self.empty = false;
+        Ok(State::Operator(self.push(term)?))
+    }
+
+    /// Reads what follows the operand just read: a postfix `^`, a binary
+    /// connective, a closing parenthesis, or outside every parenthesis a
+    /// comma, the turnstile on the left side and the end of the input on
+    /// the right side.
+    fn operator(&mut self, operand: TermId) -> Result<State, Error> {
+        let start = self.at;
+        let outermost = self.open == 0;
+        let Some(c) = self.peek() else {
+            if self.left || !outermost {
+                return Err(self.unexpected(start));
+            }
+            self.root(operand)?;
+            return Ok(State::End);
+        };
+        self.at += c.len_utf8();
+        let connective = match c {
+            '^' => {
+                self.negate(operand);
+                return Ok(State::Operator(operand));
+            }
+            '*' | '⊗' => Binary::Tensor,
+            '⅋' => Binary::Par,
+            '&' => Binary::With,
+            '+' | '⊕' => Binary::Plus,
+            '⊸' => Binary::Lollipop,
+            '-' => {
+                // Only `-o` starts with `-`, so what is wrong is the
+                // character after it.
+                if self.peek() != Some('o') {
+                    return Err(self.unexpected(self.at));
+                }
+                self.at += 1;
+                Binary::Lollipop
+            }
+            '|' if self.left && outermost && self.peek() == Some('-') => {
+                self.at += 1;
+                self.root(operand)?;
+                return Ok(self.turnstile());
+            }
+            // Where no turnstile can stand, `|-` is a `|` before a `-`,
+            // which starts no formula and is reported as that.
+            '|' => Binary::Par,
+            '⊢' if self.left && outermost => {
+                self.root(operand)?;
+                return Ok(self.turnstile());
+            }
+            ',' if outermost => {
+                self.root(operand)?;
+                return Ok(State::Operand);
+            }
+            ')' if !outermost => {
+                let inner = self.reduce(operand, None)?;
+                // What stopped the reduction is the open parenthesis.
+                self.pending.pop();
+                self.open -= 1;
+                return Ok(State::Operator(inner));
+            }
+            _ if starts_identifier(c) && self.identifier(start) == "par" => Binary::Par,
+            _ => return Err(self.unexpected(start)),
+        };
+        let left = self.reduce(operand, Some(connective))?;
+        self.pending.push(Pending::Binary(connective, left));
+        Ok(State::Operand)
+    }
+
+    /// Reads the whole input as a sequent.
+    fn sequent(mut self) -> Result<Sequent, Error> {
+        let mut state = State::Operand;
+        loop {
+            let blank = &self.input[self.at..];
+            self.at += blank.len() - blank.trim_start().len();
+            state = match state {
+                State::Operand => self.operand()?,
+                State::Operator(operand) => self.operator(operand)?,
+                State::End => return self.finish(),
+            };
+        }
+    }
+
+    /// Applies the negations noted and returns the sequent, optimized.
+    fn finish(mut self) -> Result<Sequent, Error> {
+        // A term comes after its subterms, so one pass from the last term
+        // sees every negation of a term before it reaches the term.
+        for n in (0..self.terms.len()).rev() {
+            if self.negated[n] {
+                let term = self.terms[n].dual();
+                self.terms[n] = term;
+                for k in term.subterms() {
+                    self.negated[k.index()] ^= true;
+                }
             }
         }
-
-        let mut terms = Vec::<Term>::new();
-        let mut atoms = Vec::<String>::new();
-        let index = recursion_helper(t, polarity, &mut terms, &mut atoms);
-
-        Self {
-            terms,
-            roots: vec![index],
-            atoms,
-        }
-    }
-}
-
-impl<'a> From<TwoSided<'a>> for Sequent {
-    /// Lowers a parsed two-sided sequent into an optimized one-sided one, with
-    /// the left side dualised.
-    fn from(s: TwoSided<'a>) -> Self {
-        let lhs_terms = s.left.into_iter().map(|t| (t, false));
-        let rhs_terms = s.right.into_iter().map(|t| (t, true));
-        let mut sequent = Sequent::new();
-        lhs_terms
-            .chain(rhs_terms)
-            .map(Sequent::from)
-            .for_each(|s| sequent.append(s));
-        sequent.optimize().unwrap();
-        sequent
+        let mut sequent = Sequent {
+            terms: self.terms,
+            roots: self.roots,
+            atoms: self.atoms,
+        };
+        sequent.optimize()?;
+        Ok(sequent)
     }
 }
 
 impl std::str::FromStr for Sequent {
-    type Err = crate::Error;
+    type Err = Error;
 
-    /// Parses a two-sided sequent such as `A, B |- A * B`.
+    /// Parses a two-sided sequent such as `A, B |- A * B` into a one-sided
+    /// one, optimized. The nesting of its formulas may be of any depth; a
+    /// sequent of more subformulas than a forest can index is refused.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Sequent::from(TwoSided::try_from(s)?))
+        Parser::new(s, Forest::MOST).sequent()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::search::generate::Rng;
+
+    /// What a parser made of an input, in a form that compares: the
+    /// sequent, or where every error is and what was found there.
+    type Read = Result<Sequent, Vec<(std::ops::Range<usize>, Option<String>)>>;
+
+    /// Returns what a parser's result says, for comparison.
+    fn read(result: Result<Sequent, Error>) -> Read {
+        result.map_err(|error| match error {
+            Error::SequentParsing(errors) => {
+                errors.into_iter().map(|e| (e.span, e.found)).collect()
+            }
+            other => panic!("not a parse error: {other}"),
+        })
+    }
+
+    /// The pieces random inputs are made of: every token in every
+    /// spelling, the keywords and what merely looks like them, and
+    /// characters that are no token.
+    const PIECES: &[&str] = &[
+        "*", "⊗", "|", "par", "⅋", "&", "+", "⊕", "-o", "⊸", "~", "!", "?", "^", "|-", "⊢", "0",
+        "1", "bot", "⊥", "top", "⊤", "(", ")", ",", "A", "B", "a", "x1", "_", "_y", "é", "parx",
+        "bottom", "topx", "par1", "o", "-", "$", "∀", " ", " ", "  ", "\t", "\n", "\u{a0}",
+    ];
+
+    /// Returns a random string of pieces.
+    fn soup(rng: &mut Rng) -> String {
+        (0..rng.below(12))
+            .map(|_| PIECES[rng.below(PIECES.len())])
+            .collect()
+    }
+
+    /// Writes a random formula of at most the depth given, in random
+    /// spellings, with parentheses where they are needed and sometimes
+    /// where they are not.
+    fn formula(rng: &mut Rng, depth: usize, out: &mut String) {
+        let pick =
+            |rng: &mut Rng, spellings: &[&'static str]| spellings[rng.below(spellings.len())];
+        let space = |rng: &mut Rng| pick(rng, &["", " ", " ", "  "]);
+        if depth == 0 || rng.below(4) == 0 {
+            out.push_str(pick(
+                rng,
+                &[
+                    "A", "B", "C", "par", "0", "1", "bot", "⊥", "top", "⊤", "x_1", "é",
+                ],
+            ));
+            return;
+        }
+        match rng.below(8) {
+            0 => {
+                out.push_str(pick(rng, &["~", "!", "?"]));
+                out.push_str(space(rng));
+                formula(rng, depth - 1, out);
+            }
+            1 => {
+                formula(rng, depth - 1, out);
+                out.push_str(space(rng));
+                out.push('^');
+            }
+            2 => {
+                out.push('(');
+                out.push_str(space(rng));
+                formula(rng, depth - 1, out);
+                out.push_str(space(rng));
+                out.push(')');
+            }
+            _ => {
+                formula(rng, depth - 1, out);
+                // `par` needs its spaces only next to an identifier, which
+                // the other parser must find out too.
+                out.push_str(space(rng));
+                out.push_str(pick(
+                    rng,
+                    &["*", "⊗", "|", "par", " par ", "⅋", "&", "+", "⊕", "-o", "⊸"],
+                ));
+                out.push_str(space(rng));
+                formula(rng, depth - 1, out);
+            }
+        }
+    }
+
+    /// Returns a random sequent, well formed up to the spaces around
+    /// `par`.
+    fn sequent(rng: &mut Rng) -> String {
+        let mut out = String::new();
+        for side in 0..2 {
+            for n in 0..rng.below(3) {
+                if n > 0 {
+                    out.push_str(", ");
+                }
+                let depth = rng.below(5);
+                formula(rng, depth, &mut out);
+            }
+            if side == 0 {
+                out.push_str([" |- ", " ⊢ ", "|-", "⊢"][rng.below(4)]);
+            }
+        }
+        out
+    }
+
+    /// Returns `text` with one character removed, replaced or added.
+    fn damaged(rng: &mut Rng, text: &str) -> String {
+        let mut chars: Vec<char> = text.chars().collect();
+        let at = rng.below(chars.len() + 1);
+        let piece = PIECES[rng.below(PIECES.len())];
+        match rng.below(3) {
+            0 if at < chars.len() => {
+                chars.remove(at);
+            }
+            1 if at < chars.len() => {
+                chars.splice(at..=at, piece.chars());
+            }
+            _ => {
+                chars.splice(at..at, piece.chars());
+            }
+        }
+        chars.into_iter().collect()
+    }
+
+    /// The parser reads what the first parser read, to the same sequent,
+    /// and fails where it failed, on the same character.
+    #[test]
+    fn agrees_with_the_first_parser() {
+        let mut rng = Rng::new(20);
+        let (mut accepted, mut refused) = (0, 0);
+        for round in 0..6000 {
+            let input = match round % 3 {
+                0 => soup(&mut rng),
+                1 => sequent(&mut rng),
+                _ => {
+                    let whole = sequent(&mut rng);
+                    damaged(&mut rng, &whole)
+                }
+            };
+            let expected = read(oracle::parse(&input));
+            assert_eq!(read(input.parse()), expected, "{input:?}");
+            match expected {
+                Ok(_) => accepted += 1,
+                Err(_) => refused += 1,
+            }
+        }
+        assert!(accepted > 1000 && refused > 1000, "{accepted} {refused}");
+    }
+
+    /// A sequent of more terms than the arena may hold is refused, and one
+    /// that fills it is read.
+    #[test]
+    fn refuses_more_terms_than_the_arena_holds() {
+        let input = "A |- !A * B";
+        assert_eq!(Parser::new(input, 5).sequent().unwrap().terms().len(), 5);
+        assert!(matches!(
+            Parser::new(input, 4).sequent(),
+            Err(Error::TooManyOccurrences {
+                occurrences: 5,
+                limit: 4
+            })
+        ));
     }
 }

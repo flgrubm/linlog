@@ -42,8 +42,8 @@ the name once; before, such a file gave two atoms that printed alike, and
 distinct names untouched (unused entries and their order included), so a
 JSON sequent is written back as it was read, and it never moves a term or
 a root, so the occurrence ids a stored proof names are those of the file.
-Only the parser's lowering holds a table with repeats (one entry per
-occurrence, joined by the crate-private `append`), until its `optimize`.
+The parser interns the names as it reads them, so its table has distinct
+names before its `optimize` already.
 
 The public surface is read-only accessors (`terms`, `term`, `roots`,
 `atom_names`, `atom_name`, `atom`, `formula`, and `occurrences`, the size
@@ -2011,13 +2011,51 @@ crate-private.
 
 ## Parsing
 
-`core/src/parse/mod.rs` has two stages:
-1. A chumsky Pratt parser produces a borrowed AST (`parse::Tree`/`parse::TwoSided`).
-2. That AST is lowered into the arena, which creates one atom entry per occurrence and then calls `optimize()`.
+`core/src/parse/mod.rs` is a precedence parser written by hand: one loop
+over the characters in two states (`operand`, what a formula starts with,
+and `operator`, what follows an operand) with one explicit stack
+(`Parser::pending`: the open parentheses, the prefix operators, and the
+binary connectives with their left operands, each waiting for the operand
+to its right). A term goes into the arena the moment it is complete, so
+there is no syntax tree, nothing recurses, and nothing has a drop that
+does: a formula nested 100 000 deep, or a chain that long, parses on a
+stack of 256 KiB (`depth_costs_no_stack` in `core/tests/parse.rs`), in
+time and memory linear in the text. What the code relies on:
 
-chumsky's API changed wholesale after 0.9, and most examples online and in
-memory are for the old one. When a signature is in doubt, ask the
-`crate-source-explorer` agent rather than guessing.
+- **The arena comes out in the order a recursive lowering gives it**:
+  postorder, in the order of the text (an operand when it is read, a
+  connective when its right operand is complete), the roots in the order
+  of the text, the atoms numbered by first occurrence. `optimize()` at
+  the end therefore gives the `Sequent` the first parser gave (a
+  recursive descent that built a tree and lowered it), and with it the
+  occurrence ids that every stored proof and snapshot names. A change to
+  the order of the pushes is a format break.
+- **Negation is applied at the end.** A term is pushed as it is written;
+  a `~`, a `^`, being the antecedent of a `⊸` (which is pushed as `⅋`)
+  and standing left of the turnstile each flip the term's flag in
+  `Parser::negated`, and `finish` goes once from the last term to the
+  first, dualises a flagged term (`Term::dual`) and passes the flag to
+  its subterms. Before `optimize` every term has one parent, which is
+  what makes the flag well defined.
+- **Tokens depend on the state**: `par` is the connective only where a
+  connective can stand and a variable where a formula starts (`|- par par
+  par` is `par ⅋ par`); `bot` and `top` are constants only as whole
+  identifiers; `|-` is the turnstile only on the left side outside every
+  parenthesis, and anywhere else a `|` before a `-` that starts no
+  formula. An identifier starts with `_` or `XID_Start` and goes on with
+  `XID_Continue` (the `unicode-ident` crate's tables).
+- **An error is one `ParseError`**: the byte span of the first character
+  that cannot go on a sequent, and that character, or the end of the
+  input. Two tokens of two characters make the exceptions the first
+  parser made: a `-` that no `o` follows where a connective can stand,
+  and a `|` that no `-` follows at the very start (where only the
+  turnstile can stand), report the character after them.
+  `error_positions` in `core/tests/parse.rs` pins both and the rest.
+- A text of more terms than a forest can hold (`Forest::MOST`) is
+  `Error::TooManyOccurrences`: every term of a text is an occurrence.
+- The first parser is `parse/oracle.rs`, compiled for tests only, and
+  `agrees_with_the_first_parser` requires of both the same sequent or
+  the same error at the same place on generated inputs, valid and not.
 
 Every operator has ASCII and Unicode spellings: `* ⊗`, `| par ⅋`, `&`,
 `+ ⊕`, `-o ⊸`, prefix `~ ! ?`, postfix `^`, and `|-`/`⊢`. The constants are
