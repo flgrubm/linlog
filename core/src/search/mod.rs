@@ -906,13 +906,13 @@ impl Display for Refutation {
                 };
                 write!(
                     f,
-                    "{more} occurs {excess} more {} than {fewer}{}, so they cannot all meet in \
-                     axioms",
+                    "{more} occurs {excess} more {} than {fewer} in the one-sided sequent{}, so \
+                     they cannot all meet in axioms",
                     if a == 1 && b == 1 { "time" } else { "times" },
                     if a == b {
                         ""
                     } else {
-                        " whichever additive alternatives a proof takes"
+                        ", whichever additive alternatives a proof takes"
                     }
                 )
             }
@@ -923,14 +923,22 @@ impl Display for Refutation {
                 ones,
                 bottoms,
                 mix,
-            } => write!(
-                f,
-                "the count equation fails: a provable one-sided sequent of MLL with {tensors} ⊗, \
-                 {pars} ⅋, {ones} 1 and {bottoms} ⊥ has {}{tensors} − {pars} − {ones} + {bottoms} \
-                 + 2 = {} formulas, and this one has {formulas}",
-                if *mix { "at least " } else { "exactly " },
-                self.needed().unwrap_or_default()
-            ),
+            } => {
+                // A count below zero with the minus sign of the expression.
+                let needed = self.needed().unwrap_or_default();
+                let needed = if needed < 0 {
+                    format!("−{}", needed.unsigned_abs())
+                } else {
+                    needed.to_string()
+                };
+                write!(
+                    f,
+                    "the count equation fails: a provable one-sided sequent of MLL has {}#⊗ − \
+                     #⅋ − #1 + #⊥ + 2 formulas, here {tensors} − {pars} − {ones} + {bottoms} + 2 = \
+                     {needed}, and this one has {formulas}",
+                    if *mix { "at least " } else { "exactly " },
+                )
+            }
         }
     }
 }
@@ -1081,15 +1089,15 @@ mod tests {
         assert_eq!(hull, unbalanced("a", 1, 2));
         assert_eq!(
             hull.to_string(),
-            "a occurs 1 to 2 more times than ~a whichever additive alternatives a proof \
-             takes, so they cannot all meet in axioms"
+            "a occurs 1 to 2 more times than ~a in the one-sided sequent, whichever additive \
+             alternatives a proof takes, so they cannot all meet in axioms"
         );
         let equation = refuted("|- a par b, ~a, ~b", classical);
         assert_eq!(equation.needed(), Some(1));
         assert_eq!(
             equation.to_string(),
-            "the count equation fails: a provable one-sided sequent of MLL with 0 ⊗, 1 ⅋, 0 1 \
-             and 0 ⊥ has exactly 0 − 1 − 0 + 0 + 2 = 1 formulas, and this one has 3"
+            "the count equation fails: a provable one-sided sequent of MLL has exactly #⊗ − #⅋ − \
+             #1 + #⊥ + 2 formulas, here 0 − 1 − 0 + 0 + 2 = 1, and this one has 3"
         );
         for input in ["|- a par ~a, b * ~b", "|- a & b, ~a"] {
             assert_eq!(

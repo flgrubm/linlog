@@ -317,8 +317,8 @@ fn prove_verdicts_and_exit_statuses() {
             &["prove", "|- A par B, ~A, ~B"],
             1,
             "unprovable (MLL, classical, net engine): the count equation fails: a provable \
-             one-sided sequent of MLL with 0 ⊗, 1 ⅋, 0 1 and 0 ⊥ has exactly 0 − 1 − 0 + 0 + 2 \
-             = 1 formulas, and this one has 3",
+             one-sided sequent of MLL has exactly #⊗ − #⅋ − #1 + #⊥ + 2 formulas, here 0 − 1 − 0 \
+             + 0 + 2 = 1, and this one has 3",
         ),
         (
             &["prove", "-q", "--engine", "focus", "A * B |- A * B"],
@@ -451,8 +451,8 @@ fn intuitionistic_mode() {
         (
             &["prove", "-i", "-q", "(A -o B) -o A |- A"],
             1,
-            "unprovable (IMLL, intuitionistic, net engine): ~A occurs 1 more time than A, so \
-             they cannot all meet in axioms",
+            "unprovable (IMLL, intuitionistic, net engine): ~A occurs 1 more time than A in the \
+             one-sided sequent, so they cannot all meet in axioms",
         ),
         (
             &["prove", "-q", "--engine", "additive", "|- A & B, ~A + ~B"],

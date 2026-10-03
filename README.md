@@ -36,9 +36,9 @@ provable (ALL, classical, additive engine)
 ⊢ ~A ⊕ ~B, A ⊕ B
 
 $ linlog prove "|- A par B, ~A, ~B"
-unprovable (MLL, classical, net engine): the count equation fails: a provable one-sided sequent of MLL with 0 ⊗, 1 ⅋, 0 1 and 0 ⊥ has exactly 0 − 1 − 0 + 0 + 2 = 1 formulas, and this one has 3
+unprovable (MLL, classical, net engine): the count equation fails: a provable one-sided sequent of MLL has exactly #⊗ − #⅋ − #1 + #⊥ + 2 formulas, here 0 − 1 − 0 + 0 + 2 = 1, and this one has 3
 $ linlog prove "A |- B"
-unprovable (MLL, classical, net engine): ~A occurs 1 more time than A, so they cannot all meet in axioms
+unprovable (MLL, classical, net engine): ~A occurs 1 more time than A in the one-sided sequent, so they cannot all meet in axioms
 ```
 
 An unprovable verdict says why where the counts of the sequent tell: an
