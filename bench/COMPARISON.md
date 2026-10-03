@@ -49,24 +49,36 @@ meets the recursion limit, the wide sequents at 2 048 literals (net
 0.64 s). On the wide sequents with 8 to 1 024 literals the two are
 within a factor of three (wide-m3 at 256: focus 3.7 ms, net 9.7 ms).
 
-LLTP, one thread, 5 s (decided within the limit; late: proved after it):
+LLTP, one thread, 5 s (decided; late: those of them proved after the
+limit):
 
 | file | first baseline | second baseline | of which Petri nets |
 |---|--:|--:|---|
-| `lltp-intuitionistic` (4 495 problems) | 737 | 2 049 and 2 late | 210 → 1 520 |
-| `lltp-classical` (4 512) | 742 | 2 008 and 2 late | 204 → 1 468 |
+| `lltp-intuitionistic` (4 495 problems) | 737 | 2 049 (2 late) | 210 → 1 520 (2 late) |
+| `lltp-classical` (4 512) | 742 | 2 008 (2 late) | 204 → 1 468 (2 late) |
 | `lltp-rarer` (new: the backward search alone) | – | 969 | 442 |
-| `lltp-forward` (new: the forward search alone, 30 copies) | – | 2 393 and 2 late | 1 576 |
+| `lltp-forward` (new: the forward search alone, 30 copies) | – | 2 393 (2 late) | 1 576 (2 late) |
 | `lltp-copies-10` (1 003 that ended at the copy bound) | 411 | 458 | 59 → 89 |
 | `lltp-recursion` (995 that ended at the recursion limit) | 56 | 280 | 56 → 280 |
-| `lltp-all-cores` (1 102, every core) | 32 | 625 | |
-| `lltp-portfolio` (the same, with the portfolio) | 34 | 629 | |
+| `lltp-all-cores` (1 102, every core) | 32 (3 late) | 625 (2 late) | |
+| `lltp-portfolio` (the same, with the portfolio) | 34 (4 late) | 629 (2 late) | |
 
 Where the intuitionistic pass ended the undecided: first baseline 984
 at the time limit, 898 at the copy bound, 983 at the recursion limit, 845
 too wide, 47 killed, 1 not loading; second baseline 1 636 at the time
 limit, 727 at the copy bound, 54 at the recursion limit, 15 killed, 14 out
-of memory.
+of memory. Those 14 are nets of tens of thousands of transitions whose
+search finds a proof in 50 ms to 2 s within 250 MB (the command with
+`--quiet`); what runs out of the 12 GiB is the harness's check of that
+proof, so their rows say `crash` where the search's answer was `proved`.
+The 14 `crash` rows of the classical and of the forward pass, the 3 of
+the backward pass and 13 of the 17 of `lltp-recursion` are the same nets
+(the other four, Philosophers-10000 nets under the raised recursion
+limit, run out in the search, as `qbf/48#0` does, whose memo grows for
+290 s). Three refutations under the larger copy
+bounds contradict their headers beyond the 25 files the first baseline
+found (`MISMATCH` below): KLE069 in `KLE-01` and KLE078 and KLE086 in
+`KLE-cbn`, each a translated formula with a classical countermodel.
 
 The default against its two components (intuitionistic library, one
 thread, 5 s):

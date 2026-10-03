@@ -102,7 +102,7 @@ beyond clap and anyhow, which the CLI already has.
   family it is a bug in an engine or in the family's construction; for an
   LLTP problem it may be the header (the intuitionistic headers of
   KLE013 and KLE065 of `KLE-cbn` and of SYN001 contradict their problems;
-  see the step 14 report). Keep the families' claims derived
+  see the step 14 report, and the count of such files below). Keep the families' claims derived
   from the combinatorial problem, never from an engine.
 - **The LLTP library is not in the repository** (GPL-3.0): `nix build
   .#lltp -o bench/lltp` fetches it, `bench/lltp` is ignored.
@@ -160,14 +160,27 @@ beyond clap and anyhow, which the CLI already has.
   second baseline show 11.5 % of their time as waits (5 191 problems
   `†`), the passes under one bias 0.07 % and 0.14 %. Read a night's
   disturbance off the rows with one search.
-- **The 12 GiB cap is reached by searches now, not checks.** In the
-  second baseline 76 runs crashed with `memory allocation … failed`:
-  Petri nets that the first baseline ended at the recursion or width
-  limit within milliseconds (BART, TokenRing-40 and -50,
-  Philosophers-10000, GPPP-1000-1000 and others), which the search now
-  takes on and which fill 12 GiB in 4 to 6 s (14 per default pass, 3
-  under `--bias rarer`); `qbf/48#0` after 290 s; the focused engine
-  forced onto `additive/16`; the largest SYJ files on a pool, as before.
+- **A `crash` row on a large net is the check of a proof the search
+  found.** In the second baseline 76 runs crashed with `memory allocation
+  … failed`. 58 of them are 14 Petri nets of tens of thousands of
+  transitions with a firing sequence of one step (BART, TokenRing-40 and
+  -50, Philosophers-10000, GPPP-1000-1000 and others; 14 per default
+  pass and in the forward pass, 3 under `--bias rarer`, 13 in
+  `lltp-recursion`), which the first baseline ended at the recursion or
+  width limit within milliseconds. The search now proves each in 50 ms
+  to 2 s within 250 MB (`linlog prove --quiet --stats` on the sequent),
+  and the child's check of the proof (`proofs::check::derive`, which
+  keeps what every node derives, on a sequent of 65 000 `!` clauses a
+  list of that length per node) fills the 12 GiB in a few seconds: the
+  row says `unknown` where the search's answer was `proved`. The others
+  are the search's own memory: four Philosophers-10000 nets under the
+  recursion limit of 16 384 (the counts of a split, per level of a deep
+  recursion), `qbf/48#0`, whose memo grows for 290 s, and the largest
+  SYJ files on a pool, as before; the focused engine forced onto
+  `additive/16` crashed in both baselines (which of the two it is was
+  not looked into). To tell which a crash is, run
+  the row alone with core dumps on and read the trace (`coredumpctl
+  info`), or the sequent through the command with `--quiet`.
 - **Stage 4 reruns what more room lets finish**, from `bench/reruns.txt`
   (lines `FILE FAMILY/NAME`: the CSV file of the run that was killed or
   crashed, and the problem), into `FILE-generous.csv`, with `--grace`
@@ -185,9 +198,13 @@ beyond clap and anyhow, which the CLI already has.
   turns the only tab in the library, in `ILL/ILLTP-SYJ-01/SYJ206+1.018.p`,
   into the closing parenthesis it replaced, so that every file of the
   library loads. Every header reads: 111 ILLTP-SYJ problems say
-  `Unsolved` and have no expected verdict, and 25 files contradict their
-  problems (23 headers, and two more translations of one of them; see
-  the step 14 report).
+  `Unsolved` and have no expected verdict, and 28 files contradict their
+  problems: the 25 of the first baseline (23 headers, and two more
+  translations of one of them; see the step 14 report), and three that
+  the second baseline's larger copy bounds refute (`lltp-copies-10`,
+  `lltp-forward`): KLE069 in `KLE-01` and KLE078 and KLE086 in `KLE-cbn`,
+  whose translated formulas have a classical countermodel (the
+  translation lost a negation of the ILTP original).
 - **Every baseline keeps a directory of its own**, `results/DAY/`, DAY
   the day it started, so that two baselines (before and after a
   performance pass) sit side by side. A run without `--fresh` resumes

@@ -569,7 +569,7 @@ took 8 h 4 min with every stage and with the intuitionistic library run
 again under each atom bias alone; `bench/RESULTS.md` has its tables and
 `bench/COMPARISON.md` compares the two: no verdict differs, nothing
 decided before is undecided after, and the intuitionistic LLTP pass
-decides 2 049 problems within 5 s where it decided 737.
+decides 2 047 problems within 5 s where it decided 737.
 
 ## What exists and what is planned
 
