@@ -182,7 +182,7 @@ xhigh.
 What is left for it after the second baseline: Mix (`mix` at ten pairs
 146 s, at eleven over 1 200 s, the same `3^n` memo lookups on every
 thread count), and the Petri nets beyond the forward search (1 594 of
-3 137 at the 5 s limit under the default, 14 out of 12 GiB within 5 s).
+3 137 at the 5 s limit under the default).
 The intuitionistic library outside the nets ends at the copy bound, not
 at the time limit (727 problems), which is a question of `--copies`, not
 of the direction of search.
@@ -208,9 +208,11 @@ The second baseline measured it on the whole library: the default decides
 1 520 of the 3 137 nets within 5 s (210 in the first baseline), the
 backward search alone 442, the forward search alone at 30 copies 1 576;
 1 594 end at the time limit, 2 at the copy bound, 7 are killed (the
-GPPP-1000 nets, whose forward search misses its stop) and 14 run out of
-12 GiB within 5 s. Every LLTP net is a theorem, so the library cannot
-show refutation; the nets beyond 5 s and the memory are what a
+GPPP-1000 nets, whose forward search misses its stop) and 14 are proved
+by the search in under 2 s and counted as crashes, since the harness's
+check of their proofs runs out of 12 GiB (the review of step 16; the
+focused engine's follow-ups have both). Every LLTP net is a theorem, so
+the library cannot show refutation; the nets beyond 5 s are what a
 reachability route would be measured on.
 
 ## Cyclic MLL and the Lambek calculus
@@ -711,21 +713,59 @@ from the frontier.
   research question to keep open; until then affine mode stays bounded.
 - The interval of `&` could be the intersection instead of the hull.
 
-From the second baseline (`plan/reports/16-baseline.md`), all of them
-engine work for a later step, none a wrong verdict:
+From the second baseline (`plan/reports/16-baseline.md`, as its review
+on 2026-10-03 corrected it: the Status log of `plan/README.md` has what
+was run), none of them a wrong verdict. The first two are what a user
+meets first on a large problem, and come before any new engine:
 
-- **Memory on large nets.** 76 runs ran out of their 12 GiB of address
-  space: Petri nets with tens of thousands of transitions or tokens
-  (BART-040 to -060, TokenRing-40 and -50, Philosophers-10000,
-  AirplaneLD-pt-4000, GPPP-1000-1000 and others) fill it within 4 to 6 s,
-  14 per default pass and 3 under `--bias rarer` alone, so the forward
-  search's memo or branch stack grows fastest; `qbf/48#0` after 290 s.
-  The memo's cap counts entries, not bytes.
-- **The forward search misses its stop on the GPPP-1000 nets**: on one
-  thread they are killed past 10.5 s under a 5 s limit, or proved 0.7 to
-  1.0 s late, in the default and the `--bias factors` passes and never
-  under `--bias rarer`. Other stops come up to 3.1 s late on one thread
-  (`PaceMaker_20_1` under `--bias rarer`) and 1.6 s on a pool.
+- **The proof check and the derivation of a large net run out of
+  memory, not the search.** Of the 76 runs that ran out of their 12 GiB,
+  58 are 14 Petri nets of tens of thousands of transitions with a
+  one-step firing sequence (BART-040 to -060, TokenRing-40 and -50,
+  Philosophers-10000_1_1, AirplaneLD-pt-4000, GPPP-1000-1000_1_1 and
+  others; 14 per default pass and in the forward pass, 3 under `--bias
+  rarer`, 13 in `lltp-recursion`). The search proves every one of them
+  in 49 ms to 2.0 s within 232 MB (`linlog prove -i --jobs 1 --quiet
+  --stats` on the sequent, each of the 14 tried; four of them also in
+  classical mode and under the forward search alone). What fills the
+  memory, at a gigabyte or more per second, is `proofs::check::derive`,
+  which keeps what every node derives (`Derived`: a set of the forest's
+  width and a list of occurrences), on a sequent of 65 000 `!` clauses a
+  list of that length for each of as many nodes. It is reached from two
+  places: the harness's check of the proof (the baseline's `crash`
+  rows, which therefore say `unknown` where the search answered
+  `proved`), and `Derivation::build`, so the command's default text
+  output and every drawn format: `linlog prove -i --file` on
+  TokenRing-40 without `--quiet` takes 6 GiB in 2.3 s, with no cap of
+  its own and after the search, where `--timeout` no longer applies. On
+  a machine without a limit that is the whole memory in half a minute.
+  JSON output is unaffected (5.5 MB in 0.3 s). The fix is the one "the
+  benchmarks" below names for the additive identity (what a node
+  derives shared along a branch, or kept only while a premise still
+  needs it); until then the command wants a bound on the derivation it
+  builds, with a message that names `--format json` and `--quiet`.
+- **The search's own memory**, where it is the search: four
+  Philosophers-10000 nets under `--recursion-limit 16384` (the counts
+  of a split allocated per level of the recursion, `Counts::split`),
+  and `qbf/48#0`, whose memo grows by some 15 MB a second until a
+  doubling of its table fails (after 290 s under 12 GiB, after 155 s
+  under 6 GiB). The memo's cap counts entries, not bytes, and nothing
+  bounds the command's memory.
+- **The forward search misses its stop on the GPPP-1000 nets, by
+  minutes.** On one thread they are killed past 10.5 s under a 5 s
+  limit, or proved 0.7 to 1.0 s late, in the default and the `--bias
+  factors` passes and never under `--bias rarer`; the kill hides how
+  late the stop is: `linlog prove -i --jobs 1 --timeout 5s` on
+  `GPPP_G-PPP-1000-10_10_1` (24 clauses, a marking of thousands of equal
+  tokens) answers "provable" after 140 s (568 stable sequents, 4.75
+  million split steps; on an efficiency core), with a limit of 60 s the
+  same, and on `GPPP_G-PPP-1000-1000_5_1` after 11.2 s. On a pool the
+  limit holds (5.4 s on four cores), so the command's default is not
+  affected, and `--jobs 1`, `--deterministic` and a library caller on
+  one thread are. Somewhere between two stable sequents the forward
+  search does thousands of split steps without a poll. Other stops come
+  up to 3.1 s late on one thread (`PaceMaker_20_1` under `--bias
+  rarer`) and 1.6 s on a pool.
 - **The default's contract at the limit**: `ResAllocation_RAS-C-100_5_1`
   is proved in 2.71 s by the backward search alone and not within 5 s by
   the default, inside the two thirds of the limit that the default's
@@ -847,17 +887,33 @@ out at 120 s on every pool. Sixteen SYJ202 and SYJ208 problems in their
 cbv translation (2 000 to 12 000 occurrences) are killed past 10.5 s on
 sixteen threads in both baselines, where one thread stops at 5.1 to
 5.4 s: a stop a pool misses.
+What the ratio leaves out (the review of step 16, from the same rows):
+in time, the 586 problems both decide take 1.1 ms in the median on one
+thread and 4.6 ms on sixteen, the difference is 0.7 ms in the median
+and 9 ms at the ninetieth percentile, 15 problems are more than 100 ms
+slower on sixteen threads and 106 more than 100 ms faster, besides the
+37 gained. So the command's default of every core costs a user
+milliseconds nobody sees on small problems and gains on the large
+ones, and a pool keeps the time limit where one thread's forward
+search misses it by minutes (the focused engine's follow-ups). The
+case against the default is the laptop's other work and the memory of
+a pool on the largest files, not the time.
 The parallel tests take about a minute in debug builds; trim the samples
 if the suite's time matters more than the coverage.
 
 ## Follow-ups: the benchmarks
 
 Left open by step 14 (`plan/reports/14-benchmarks.md`), beyond the two
-baselines, which are steps 14 and 16. Twenty-five LLTP files have
+baselines, which are steps 14 and 16. Twenty-eight LLTP files have
 headers that contradict them (23 headers: KLE065, SYJ212+1.001, SYN001,
 KLE013, SYN041, SYN915, and, found with a copy bound of 10 and confirmed
 by classical countermodels, KLE017, KLE069, KLE078, KLE088, SYJ103,
-SYJ105+1.003 and +1.004, in the translations the report lists) and
+SYJ105+1.003 and +1.004, in the translations the report lists; and three
+files more that the second baseline's passes with 10 and 30 copies
+refute, found by the review of step 16 and confirmed the same way:
+KLE069 in `KLE-01`, and KLE078 and KLE086 in `KLE-cbn`, each a
+translation that lost a negation of the ILTP original under
+`bench/lltp/ILTP+KLE`) and
 SYJ206+1.018 in its 01 translation has a tab for a closing parenthesis
 (repaired in the flake's fetch): worth reporting upstream with linlog's
 checked proofs and the countermodels attached. The CLI does not read
@@ -874,7 +930,13 @@ checker's `derive` keeps a bitset of the forest's width for every node
 of the proof, 7.6 GB for the additive identity of depth 16 (262 141
 nodes of 32 KB), which is what the first baseline took for the additive
 memo; a `Θ` shared along a branch, or a set of ids, would fix it, and
-the caps of `bench/baseline.sh` are sized for it until then. `summary`
+the caps of `bench/baseline.sh` are sized for it until then. Since the
+performance pass it is also what ends 14 large nets per pass of the
+second baseline and the command's own output on them (the focused
+engine's follow-ups above), so it is no longer the harness's matter
+alone. The harness should also write the search's verdict before it
+checks, so that a check that dies leaves the row its verdict and says
+`checked` failed. `summary`
 prints times, not the counters that step 15's comparisons rest on; a
 table of `nodes` and `splits` per configuration would serve the code
 audit's oracle.

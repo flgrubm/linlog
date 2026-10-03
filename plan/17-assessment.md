@@ -21,7 +21,54 @@ only what is written about it:
 - `README.md` (what the project promises its users), `CLAUDE.md` and
   everything under `.claude/rules/`.
 - The whole of `core/src`, `cli/src` and `bench/src`, the tests, the
-  flake's modules, `bench/RESULTS.md` and the result files behind it.
+  flake's modules, `bench/RESULTS.md`, `bench/COMPARISON.md` and the
+  result files behind them.
+
+## What step 16 left you
+
+The second baseline is `bench/results/2026-10-02/`, one night on one
+commit, and `bench/COMPARISON.md` sets it beside the first. No verdict
+differs between the two and nothing decided before is undecided after.
+Its review (the Status log of `plan/README.md`, 2026-10-03) corrected
+the report in three places, and the corrections change what comes
+first, so read them with it (the report ends with them, and
+`plan/later.md`, "Follow-ups: the focused engine", has the details and
+the commands that showed each):
+
+- **The large nets that "ran out of memory" are proved by the search.**
+  The 14 nets per pass that the report gives to the search's memory are
+  proved in 49 ms to 2 s within 232 MB; what runs out is
+  `proofs::check::derive`, which the harness reaches through the check
+  and the command through the derivation it prints. So the command's
+  default output on such a net takes gigabytes per second after the
+  search has answered, where `--timeout` no longer applies and nothing
+  caps it. Of everything the baselines found, this is the defect a user
+  can be hurt by.
+- **The missed stop is minutes, not seconds.** `linlog prove -i --jobs 1
+  --timeout 5s` on `GPPP_G-PPP-1000-10_10_1` answers after 140 s. On a
+  pool the limit holds.
+- **The cost of every core is a ratio of small numbers.** 2.9 times
+  slower in the median is 1.1 ms against 4.6 ms; 106 problems are more
+  than 100 ms faster on sixteen threads and 15 more than 100 ms slower.
+
+What the report measured stands otherwise, and the planning session
+reproduced its counts from the rows: the default decides 2 047
+intuitionistic LLTP problems within 5 s and 2 more late (737 before),
+727 end at the copy bound of 3 (a bound of 10 decides 369 of the 832
+the first baseline left there, 30 copies of forward search 288), the
+default loses two nets that the backward search alone decides, the
+portfolio gains nothing a second time, and `qbf/48#0` and four
+Philosophers nets under a raised recursion limit do run out of memory
+in the search. Three more LLTP headers are wrong (28 files now), each a
+translation that lost a negation of its ILTP original, which bears on
+the candidate that reads ILTP problems in their own syntax.
+
+Three candidates were added to `plan/later.md` on 2026-10-03 at the
+author's questions and are yours to assess with the rest: a batch mode
+for the CLI, ordinary (classical, intuitionistic, minimal) logic through
+its embeddings, and first-order linear logic. The author's question on
+the last is whether their research or teaching needs quantifiers; put
+it to them with the others.
 
 ## Goal
 
@@ -83,7 +130,14 @@ assess them as a candidate).
    beside passes under each rule alone, so say whether the combination
    keeps its contract across the library, what it costs against the
    better rule, what is still left on the table (the copy bound above
-   all), and whether the portfolio has a use now or should go.
+   all), and whether the portfolio has a use now or should go. And what
+   they say about robustness, which the author's wish for a tool usable
+   in practice puts first: every way a call can take the machine's
+   memory or outlive its time limit (the derivation of a large proof,
+   the memo's size in bytes, the forward search's stop on one thread, a
+   pool's stop on the largest files), found by trying the command on
+   the baseline's largest problems rather than read off the rows, since
+   the rows hid two of them.
 3. **Every candidate, one by one.** For each: what it is for and who
    would use it; what in the code it builds on and what would have to
    change first; whether its premises still hold after steps 15 and 16
@@ -114,8 +168,11 @@ assess them as a candidate).
    dropping of a candidate depends on something only the author can
    decide (research use against teaching use, the web front end's
    priority, when the certificate library comes, whose shape the author
-   has decided already (`plan/later.md`), the default atom bias and copy
-   bound, how much behaviour an audit may change, which candidates they
+   has decided already (`plan/later.md`), the default copy bound and
+   the command's default thread count (the author asked on 2026-10-02
+   whether it should be every core, which it is, and waits for your
+   reading of the second baseline's numbers), whether quantifiers are
+   wanted, how much behaviour an audit may change, which candidates they
    do not want at all), make it a question: what is being decided, the
    options, what
    each option does to the roadmap, and the one you recommend with its

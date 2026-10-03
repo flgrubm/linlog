@@ -31,9 +31,9 @@ amended (see "Review protocol"). `notes/` holds research the prompts rely on.
 | 13 | Parallel search | `13-parallel.md` | Fable 5.1 | xhigh | 9 |
 | 14 | Benchmarks, LLTP input, hard families, and the baseline (taken on the night of 2026-09-30, completed by a supplement on the night of 2026-10-01) | `14-benchmarks.md` | Opus 5.5 | xhigh | 13 |
 | 15 | Performance pass on the focused engine, driven by 14's baseline, measured by day through the engines' counters, with a bounded profile-driven pass on constant factors at its end, and in a second session the default atom bias with exponentials | `15-performance.md` | Fable 5.1 | xhigh | 14 |
-| 16 | The baseline again, after the pass, and the comparison of the two | `16-baseline.md` | Opus 5.5 | xhigh | 15 |
+| 16 | The baseline again, after the pass (taken on the night of 2026-10-02), and the comparison of the two | `16-baseline.md` | Opus 5.5 | xhigh | 15 |
 | 17 | Assessment and planning: the state of the repository, the two baselines, every candidate in `later.md`; the author's decisions; then the prompts for the steps from 18 | `17-assessment.md` | Fable 5.1 | xhigh | 16 |
-| 18– | Planned by step 17 from the candidates in `later.md` (configurable output, a code audit and refactoring, net-engine pruning and routing, MELL nets with boxes, essential nets, the inverse method, Petri nets, Lambek, second certificate kernels, MALL nets, the web front end) | written by step 17 | – | – | 17 |
+| 18– | Planned by step 17 from the candidates in `later.md` (configurable output, a code audit and refactoring, net-engine pruning and routing, MELL nets with boxes, essential nets, the inverse method, Petri nets, Lambek, first-order linear logic, second certificate kernels, MALL nets, a batch mode for the CLI, ordinary logic through its embeddings, the web front end) | written by step 17 | – | – | 17 |
 
 A step has a whole number, one prompt file named after it, one report
 under `reports/` with the same name, and as many sessions as it takes to
@@ -1063,3 +1063,68 @@ into an option or names it as a follow-up.
   as the record of the two components, the rows nearest the limit
   named, `lltp-copies-10` for the question of the default copy bound,
   the portfolio measured once more before step 17 decides its removal.
+- 2026-10-03: step 16 reviewed and accepted, with corrections. Eight
+  commits, "Extend the families past the sizes the focused engine now
+  decides at once" to "Report the second baseline"; all checks pass
+  (clippy, the tests, both `cargo hack` runs, deny, `nix flake check`).
+  Delivered: the second baseline, `bench/results/2026-10-02/`, one night
+  (23:20 to 07:24) on one commit whose engines are step 15's, under the
+  first one's set-up, with the later stages on the first baseline's
+  problems and the intuitionistic library under each bias alone;
+  `linlog-bench summary --before DIR` and `--against FILE`
+  (`bench/src/compare.rs`); `bench/COMPARISON.md`; larger default sizes
+  for six families. The planning session recomputed the report's counts
+  from the rows (they hold: 737 to 2 047 intuitionistic LLTP problems
+  within 5 s and 2 late, the nets 210 to 1 518 and 2 late; 969 under
+  `--bias rarer`, 2 391 and 2 late under the forward search at 30
+  copies; 67 nets and 288 other problems the forward search decides and
+  the default does not, 2 nets the backward search decides and the
+  default does not; a copy bound of 10 deciding 369 of 832; sixteen
+  threads 623 against 586, 37 gained, none lost; the portfolio 627),
+  checked that no problem has two decided verdicts in one mode across
+  every file of both baselines and that all 9 795 proofs checked, and
+  ran the command on the baseline's failures by hand, which is where
+  the corrections come from:
+  - *The 14 nets per pass that "ran out of memory" are proved by the
+    search* in 49 ms to 2 s within 232 MB (each tried through `linlog
+    prove --quiet --stats`; crash traces of all 14 in the harness end in
+    `proofs::check::derive`). The check of the proof is what fills
+    12 GiB, and through `Derivation::build` so does the command's
+    default output: 6 GiB in 2.3 s on TokenRing-40, after the search,
+    uncapped, where `--timeout` no longer applies. The report's "memory
+    of the search" is therefore the checker's and the derivation's, the
+    rows are verdicts the harness lost, and of all findings this is the
+    one that can hurt a user. The search's own memory is `qbf/48#0`
+    (the memo's table, some 15 MB a second) and four Philosophers nets
+    under the raised recursion limit (`Counts::split` per level).
+  - *The forward search's missed stop is minutes*: 140 s under `--jobs 1
+    --timeout 5s` on `GPPP_G-PPP-1000-10_10_1`; the kill at 10.5 s hid
+    it. A pool keeps the limit there.
+  - *Late verdicts were counted twice* in the summary's wording ("2 049
+    and 2 late" for 2 047 and 2).
+  - *Three more wrong LLTP headers*, 28 files now: KLE069 in `KLE-01`,
+    KLE078 and KLE086 in `KLE-cbn`, refuted under 10 and 30 copies, each
+    with a classical countermodel (the translation lost a negation).
+  - *Every core costs milliseconds*: the 2.9 times in the median is
+    1.1 ms against 4.6 ms, and 106 problems are over 100 ms faster on
+    sixteen threads against 15 slower, so the numbers do not argue
+    against the command's default of every core.
+
+  Fixed here, in a commit of its own: `.claude/rules/bench.md` (what a
+  `crash` row on a large net is, and how to tell; the header count),
+  `bench/COMPARISON.md` (the late counts, a paragraph on the crash rows
+  and the headers) and README's count. The report keeps its text and
+  ends with the corrections. Accepted as they are: stage 1's layout
+  with a stream per bias pass; the size choices that missed (the
+  counter at 64 tokens is proved in 81 s, `partition-no` times out at
+  14 already); `compare.rs` without tests of its own (a printer whose
+  output the README example and `COMPARISON.md` pin); the two contract
+  losses at the limit, which `later.md` keeps. `later.md` has the
+  corrected follow-ups (the check and the derivation first, the stop,
+  the search's memory, the default thread count in absolute times), and
+  three candidates added on the same day at the author's questions: a
+  batch mode for the CLI, ordinary logic through its embeddings, and
+  first-order linear logic. Prompt 17 gained "What step 16 left you",
+  robustness as part of its reading of the baselines (by trying the
+  command, since the rows hid two defects), and the default thread
+  count and quantifiers among the author's questions. Next: step 17.

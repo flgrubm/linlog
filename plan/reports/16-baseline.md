@@ -493,3 +493,37 @@ the focused-engine follow-ups.
     output.
   - `nix flake check` after the results, the documentation and this
     report passed (exit 0).
+
+## Corrections from the review (2026-10-03)
+
+Added by the planning session; the text above is as the step wrote it.
+`plan/later.md`, "Follow-ups: the focused engine", has the commands
+behind each.
+
+- **"Memory", in the outcome and under "What got worse": the large nets
+  are proved; their proofs' check runs out of memory.** The 14 nets per
+  default pass (58 of the 76 rows, with the forward and backward passes
+  and 13 rows of `lltp-recursion`) are proved by the search in 49 ms to
+  2 s within 232 MB. `proofs::check::derive` then fills the 12 GiB, in
+  the harness's check and equally in the derivation the command prints.
+  So these rows are verdicts the harness lost, not memory the search
+  took, and "the memory of the search" under "What the numbers say" is
+  the checker's and the derivation's. The search's own memory is
+  `qbf/48#0` (the memo) and four Philosophers-10000 nets under the
+  raised recursion limit.
+- **"A missed stop in the forward search": by minutes.** With `--jobs 1
+  --timeout 5s` the command answers `GPPP_G-PPP-1000-10_10_1` after
+  140 s and `GPPP_G-PPP-1000-1000_5_1` after 11 s; the harness's kill at
+  10.5 s hid the extent. On a pool the limit holds.
+- **Counts with late verdicts.** "2 049 (and 2 late)" is 2 049 decided
+  of which 2 late, so 2 047 within 5 s; likewise 2 006 and 2 for the
+  classical pass and 2 391 and 2 for the forward pass.
+  `bench/COMPARISON.md` and the README are corrected.
+- **Headers.** Three refutations of the passes with 10 and 30 copies
+  contradict their LLTP headers and are not among the 25 files of the
+  first baseline: KLE069 in `KLE-01`, KLE078 and KLE086 in `KLE-cbn`.
+  Each translated formula has a classical countermodel, so the headers
+  are wrong, not the verdicts.
+- **"Every core is 2.9 times slower"** is 1.1 ms against 4.6 ms in the
+  median; 106 of the 586 problems are more than 100 ms faster on sixteen
+  threads and 15 more than 100 ms slower.
