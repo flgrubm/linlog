@@ -144,7 +144,12 @@ binary `linlog` (`[[bin]]` in `cli/Cargo.toml`; `meta.mainProgram` in
   `Reason::Stopped` by the timer alone, afresh with the threads, adding
   the first run's counters to the second's (`copies` and `memo_entries`
   by the maximum). Nothing of the first run is handed on: what it can
-  save is the first budget, a tenth of a second. The sequential engines
+  save is the first budget, a tenth of a second. The timer stops
+  whatever the first run's stop condition stops, and a session's
+  `close` grafts its proof under that condition, so the caller names
+  the errors that only mean "stopped" (`ViewError::Stopped` for the
+  session, none for `prove`, which builds its derivation after
+  `alone_first` under its own limit), and the threads then go on. The sequential engines
   are what a pinned output (a test's `--stats` counts, a proof compared
   across runs) needs, since a parallel run's counts add every thread's
   and its proof is the first found; a test that pins such output names

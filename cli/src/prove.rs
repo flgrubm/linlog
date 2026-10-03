@@ -45,22 +45,32 @@ pub(crate) fn on_large_stack<T: Send>(size: usize, f: impl FnOnce() -> T + Send)
 /// `alone` says for how long: if that has not decided when the time has
 /// passed, the search starts afresh on every thread, and the outcome has
 /// the counters of both runs. `halt` is the command's own stop condition.
-/// `search` runs the search with the options and stop condition given.
+/// `search` runs the search with the options and stop condition given;
+/// an error it returns that `stopped` says only means the stop condition
+/// fired (a session's graft of a proof, which the condition also stops)
+/// is, on the single thread, a reason to go on with every thread.
 pub(crate) fn alone_first<E>(
     options: &Options,
     alone: Option<Duration>,
     halt: &mut dyn FnMut() -> bool,
+    stopped: impl Fn(&E) -> bool,
     mut search: impl FnMut(&Options, &mut dyn FnMut() -> bool) -> Result<Outcome, E>,
 ) -> Result<Outcome, E> {
     // Without the timer's thread the threads start at once.
     let Some(alone) = alone.and_then(|t| Deadline::start(Some(t), Instant::now()).ok()) else {
         return search(options, halt);
     };
-    let first = search(&options.clone().jobs(1), &mut || halt() || alone.passed())?;
-    let widen = matches!(first.verdict, Verdict::Unknown(Reason::Stopped)) && !halt();
-    if !widen {
-        return Ok(first);
-    }
+    let first = match search(&options.clone().jobs(1), &mut || halt() || alone.passed()) {
+        Err(e) if stopped(&e) && !halt() => None,
+        Err(e) => return Err(e),
+        Ok(first) if matches!(first.verdict, Verdict::Unknown(Reason::Stopped)) && !halt() => {
+            Some(first)
+        }
+        Ok(first) => return Ok(first),
+    };
+    let Some(first) = first else {
+        return search(options, halt);
+    };
     let mut second = search(options, halt)?;
     let (s, f) = (&mut second.statistics, &first.statistics);
     s.nodes += f.nodes;
@@ -583,9 +593,14 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
             }
             stop.is_some()
         };
-        let outcome = alone_first(&options, threads.alone, &mut halt, |options, halt| {
-            prove_goal(&forest, forest.roots(), mode, options, halt)
-        })
+        let never = |_: &Error| false;
+        let outcome = alone_first(
+            &options,
+            threads.alone,
+            &mut halt,
+            never,
+            |options, halt| prove_goal(&forest, forest.roots(), mode, options, halt),
+        )
         .map_err(|e| describe(e, sequent))?;
         drop(notice);
         let elapsed = start.elapsed();

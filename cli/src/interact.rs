@@ -268,9 +268,14 @@ impl Session {
             stop.is_some()
         };
         let (state, view) = (&mut self.state, &self.view);
-        let closed = alone_first(&self.options, self.alone, &mut halt, |options, halt| {
-            state.close(goal, options, view, halt)
-        });
+        let stopped = |e: &Error| matches!(e, Error::View(ViewError::Stopped));
+        let closed = alone_first(
+            &self.options,
+            self.alone,
+            &mut halt,
+            stopped,
+            |options, halt| state.close(goal, options, view, halt),
+        );
         drop(notice);
         let ended = Ended {
             stop,
