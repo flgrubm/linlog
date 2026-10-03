@@ -81,8 +81,12 @@ pub(crate) fn derive(
     reading: Option<&Reading>,
 ) -> Result<Vec<Derived>, CheckError> {
     let mut derived = Vec::with_capacity(proof.nodes().len());
+    let (nodes, roots) = (proof.nodes().len(), proof.forest().roots().len());
     for id in proof.ids() {
-        let d = Step::new(proof, mode, id, &derived, reading).derive()?;
+        // A zone the later nodes cannot bring down to the roots: each
+        // consumes two members at most.
+        let room = roots + 2 * (nodes - 1 - id.index());
+        let d = Step::new(proof, mode, id, &derived, reading).derive(room)?;
         derived.push(d);
     }
     Ok(derived)
@@ -243,9 +247,13 @@ impl<'a> Step<'a> {
         }
     }
 
-    /// Derives what the node proves from what its premises derived.
-    fn derive(self) -> Result<Derived, CheckError> {
+    /// Derives what the node proves from what its premises derived, a
+    /// linear zone of `room` members at most.
+    fn derive(self, room: usize) -> Result<Derived, CheckError> {
         let d = self.rule()?;
+        if d.gamma.as_slice().len() > room {
+            return Err(self.fail(Problem::Surplus));
+        }
         self.one_succedent(d)
     }
 

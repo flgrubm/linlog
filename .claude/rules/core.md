@@ -286,12 +286,26 @@ that cannot repeat the engine's mistakes. Engines only call `Proof::check`.
   up over its zones as they change (`State::weight`, `goal_weight`); the
   checker's own observer is `()` and the sums are zeros. A goal other
   than the roots is checked the same way (`Derivation::of_goal`).
-- **A malformed term can still take memory beyond its size**: `Mix(p, p)`
-  or a `⊗` on a `⊤` premise taken twice doubles a zone per node, in this
-  pass as in the first implementation, before the root rejects it. No
-  engine builds such a term; a proof file can. A zone longer than the
-  roots plus the nodes still to come can never be consumed, which would
-  be the test.
+- **A zone the rest of the proof cannot consume is refused where it
+  arises** (`Pass::within`, `Problem::Surplus`): a rule takes two members
+  of a premise's zone at most and passes the others on, and the root's
+  zone lies within the goal, so node `i` of `n` may derive at most
+  `|goal| + 2·(n − 1 − i)` members, and never more than `Bag::MOST`.
+  This is a soundness rule, not a convenience: a term may double a zone
+  at every node (`Mix(p, p)`, or a `⊗` on a `⊤` premise taken twice), a
+  proof file can hold such a term though no engine builds one, and the
+  zones are counters of a fixed width. Before the rule the counters
+  wrapped in a release build: a file of 131 nodes that mixes 2⁶⁴ copies
+  of `⊢ 1`, promotes `⊥` over them (the zone's length read zero) and
+  mixes one more in was a "valid proof" of `⊢ !⊥, 1`, which has none
+  (`refuses_a_zone_too_large_to_conclude`). Now the counters saturate
+  and a saturated one is always over the bound, so every count a rule
+  reads is the true one; the first implementation has the same rule, so
+  the two still agree on the error. The rule also bounds what a
+  malformed term costs: every zone, and so every error report, is within
+  the goal plus twice the nodes. The weights an observer adds up are
+  not part of the argument: they are sums of at most that many formula
+  sizes.
 - The `any` flag is what makes `⊤` checkable without a recorded context:
   consuming a subformula from an absorbing premise succeeds when it is
   absent; `⊗` and Mix sum the zones and or the flags; `&` needs equal zones,

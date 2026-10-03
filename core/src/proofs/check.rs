@@ -34,6 +34,10 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 /// How many copies of each occurrence a linear zone holds: a multiset
 /// whose insertions and removals cost the same whatever its size.
+///
+/// The counters saturate and never wrap: a zone of more than
+/// [`MOST`](Self::MOST) members is refused by the pass before any rule
+/// reads it, so every count a rule sees is the true one.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Bag {
     /// The copies of every member, never zero.
@@ -43,6 +47,10 @@ struct Bag {
 }
 
 impl Bag {
+    /// The most members a zone may hold: fewer than a counter saturates
+    /// at, so that a saturated counter is always over it.
+    const MOST: usize = (u32::MAX - 1) as usize;
+
     /// Returns the multiset of the given ids.
     fn of(ids: impl IntoIterator<Item = OccId>) -> Self {
         let mut bag = Self::default();
@@ -75,8 +83,9 @@ impl Bag {
 
     /// Adds one copy of `o`.
     fn insert(&mut self, o: OccId) {
-        *self.counts.entry(o).or_insert(0) += 1;
-        self.len += 1;
+        let n = self.counts.entry(o).or_insert(0);
+        *n = n.saturating_add(1);
+        self.len = self.len.saturating_add(1);
     }
 
     /// Removes one copy of `o` and returns whether there was one.
@@ -99,9 +108,10 @@ impl Bag {
             std::mem::swap(self, &mut other);
         }
         for (o, n) in other.counts {
-            *self.counts.entry(o).or_insert(0) += n;
+            let own = self.counts.entry(o).or_insert(0);
+            *own = own.saturating_add(n);
         }
-        self.len += other.len;
+        self.len = self.len.saturating_add(other.len);
     }
 
     /// Raises every member's copies to those `other` has of it: the
@@ -113,7 +123,7 @@ impl Bag {
         for (o, n) in other.counts {
             let own = self.counts.entry(o).or_insert(0);
             if n > *own {
-                self.len += (n - *own) as usize;
+                self.len = self.len.saturating_add((n - *own) as usize);
                 *own = n;
             }
         }
@@ -310,6 +320,10 @@ pub enum Problem {
     Differ,
     /// A copy of an occurrence that is not the subformula of a `?`.
     NotUnderQuest(OccId),
+    /// The node's linear zone holds more formulas than the rest of the
+    /// proof can consume: every later rule takes two at most, and the root
+    /// concludes the sequent.
+    Surplus,
     /// The root derives this sequent, which is not the proof's: its linear
     /// zone differs from the sequent's formulas, or its unrestricted zone
     /// holds a copied occurrence that no `?` rule below moved there.
@@ -395,6 +409,9 @@ impl CheckError {
                 occurrence(f, forest, *o)?;
                 f.write_str(" is not under a ?")
             }
+            Surplus => f.write_str(
+                "the linear zone holds more formulas than the rest of the proof can consume",
+            ),
             Conclusion(d) => {
                 f.write_str("the proof concludes ")?;
                 d.write(f, forest)?;
@@ -471,7 +488,7 @@ pub(crate) fn examine<O: Observer>(
     reading: Option<&Reading>,
     observer: &mut O,
 ) -> Result<(), CheckError> {
-    let mut pass = Pass::new(proof, mode, reading, observer);
+    let mut pass = Pass::new(proof, goal.len(), mode, reading, observer);
     let end = proof.nodes().len();
     let (node, problem) = match pass.run(end) {
         Err(failure) => failure,
@@ -485,7 +502,7 @@ pub(crate) fn examine<O: Observer>(
     // the pass runs once more up to it and keeps them.
     let rule = proof.node(node);
     let mut nobody = ();
-    let mut pass = Pass::new(proof, mode, reading, &mut nobody);
+    let mut pass = Pass::new(proof, goal.len(), mode, reading, &mut nobody);
     for p in rule.premises() {
         pass.readers[p.index()] += 1;
     }
@@ -548,6 +565,8 @@ struct Pass<'a, O> {
     proof: &'a Proof,
     /// Its forest.
     forest: &'a Forest,
+    /// How many formulas the proof is to conclude.
+    goal: usize,
     /// The rules in force.
     mode: Mode,
     /// The intuitionistic reading, in intuitionistic mode.
@@ -566,6 +585,7 @@ impl<'a, O: Observer> Pass<'a, O> {
     /// The pass before its first node.
     fn new(
         proof: &'a Proof,
+        goal: usize,
         mode: Mode,
         reading: Option<&'a Reading<'a>>,
         observer: &'a mut O,
@@ -581,6 +601,7 @@ impl<'a, O: Observer> Pass<'a, O> {
         Self {
             proof,
             forest: proof.forest(),
+            goal,
             mode,
             reading,
             readers,
@@ -591,13 +612,15 @@ impl<'a, O: Observer> Pass<'a, O> {
     }
 
     /// Derives the nodes before `end` in arena order, or returns the first
-    /// that misapplies its rule, uses one the mode forbids or breaks the
-    /// one-succedent condition, with the problem.
+    /// that misapplies its rule, uses one the mode forbids, derives more
+    /// than the proof can conclude or breaks the one-succedent condition,
+    /// with the problem.
     fn run(&mut self, end: usize) -> Result<(), (NodeId, Problem)> {
         for id in self.proof.ids().take(end) {
             let mut facts = Facts::default();
             let state = self
                 .rule(self.proof.node(id), &mut facts)
+                .and_then(|state| self.within(id, state))
                 .and_then(|state| self.one_succedent(state))
                 .map_err(|problem| (id, problem))?;
             facts.shared = &self.shared;
@@ -700,6 +723,26 @@ impl<'a, O: Observer> Pass<'a, O> {
         self.forest
             .parent(a)
             .expect("an unrestricted occurrence is under a ?")
+    }
+
+    /// Checks that the linear zone node `id` derived is one the proof can
+    /// still conclude its goal from. A rule consumes two members of a
+    /// premise's zone at most and passes the others on, and the root's zone
+    /// lies within the goal, so a zone with more members than the goal has
+    /// formulas plus two for every later node belongs to no proof. This is
+    /// what keeps a zone's counters exact: a term may double a zone at
+    /// every node (a Mix of a subproof with itself), which no counter of a
+    /// fixed width follows for long.
+    fn within(&self, id: NodeId, d: Box<State>) -> Result<Box<State>, Problem> {
+        let later = self.proof.nodes().len() - 1 - id.index();
+        let room = self
+            .goal
+            .saturating_add(later.saturating_mul(2))
+            .min(Bag::MOST);
+        if d.gamma.len > room {
+            return Err(Problem::Surplus);
+        }
+        Ok(d)
     }
 
     /// Checks the one-succedent condition on what a node derived: one
@@ -1445,6 +1488,35 @@ mod tests {
                 "{input:?}: {message}"
             );
         }
+    }
+
+    /// A term that doubles a zone at every node is refused where the zone
+    /// outgrows what the rest of the proof can consume, long before a
+    /// counter is full: this one mixes 2⁶⁴ copies of `⊢ 1`, promotes `⊥`
+    /// over them and mixes one more in, and `⊢ !⊥, 1` has no proof.
+    #[test]
+    fn refuses_a_zone_too_large_to_conclude() {
+        use Node::*;
+        // ⊢ !⊥, 1: 0 !, 1 ⊥, 2 1
+        let mut nodes = vec![One(o(2))];
+        for i in 0..63 {
+            nodes.push(Mix(n(i), n(i)));
+        }
+        let mut all = n(0);
+        for i in 1..64 {
+            nodes.push(Mix(all, n(i)));
+            all = n(nodes.len() as u32 - 1);
+        }
+        nodes.push(Mix(all, n(0)));
+        nodes.push(Bot(o(1), n(nodes.len() as u32 - 1)));
+        nodes.push(Bang(o(0), n(nodes.len() as u32 - 1)));
+        nodes.push(Mix(n(nodes.len() as u32 - 1), n(0)));
+        let p = proof("|- !bot, 1", nodes);
+        let mode = Mode::CLASSICAL.with_mix();
+        let e = p.check(mode).unwrap_err();
+        // Node 8 holds 256 copies with 122 nodes to come.
+        assert_eq!((e.node, &e.problem), (n(8), &Problem::Surplus));
+        assert_eq!(Err(e), oracle::check(&p, mode));
     }
 
     /// Intuitionistic mode accepts the classical terms of intuitionistic
