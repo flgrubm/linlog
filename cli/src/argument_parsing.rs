@@ -248,8 +248,9 @@ pub(crate) fn jobs(asked: usize, deterministic: bool) -> usize {
         machine.get().min(Options::MAX_JOBS)
     });
     if asked > most {
+        let threads = if most == 1 { "thread" } else { "threads" };
         eprintln!(
-            "note: --jobs {asked} is more than the {most} threads a search uses at most on \
+            "note: --jobs {asked} is more than the {most} {threads} a search uses at most on \
              this machine; it uses {most}"
         );
     }
