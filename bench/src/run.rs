@@ -156,6 +156,15 @@ pub fn run(args: &RunArgs) -> Result<()> {
             n => n.parse().with_context(|| format!("jobs `{n}`")),
         })
         .collect::<Result<Vec<usize>>>()?;
+    // A search uses no more threads than the machine runs at once, so a
+    // row with a larger count would name threads that never ran.
+    if let Ok(machine) = thread::available_parallelism()
+        && let Some(n) = jobs.iter().find(|&&n| n > machine.get())
+    {
+        anyhow::bail!(
+            "--jobs {n}: this process may run {machine} threads at once, and a search uses no more"
+        );
+    }
 
     let done_before = match &args.output {
         Some(path) if args.resume => finished(path)?,

@@ -1,7 +1,9 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use crate::argument_parsing::{CheckArgs, Format, OutputArgs, ProveArgs, SequentFormat, Tree};
+use crate::argument_parsing::{
+    CheckArgs, Format, OutputArgs, ProveArgs, SequentFormat, Tree, jobs,
+};
 use crate::io;
 use crate::limit::Deadline;
 use crate::{Status, catch_interrupt, interrupted};
@@ -461,7 +463,7 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
         .bias(args.bias.into())
         .forward_copies(args.forward_copies)
         .check(!args.no_check)
-        .jobs(if args.deterministic { 1 } else { args.jobs });
+        .jobs(jobs(args.jobs, args.deterministic));
     let format = args.output.format;
     let quiet = args.output.quiet;
     let show = Show::new(&args.output)?;

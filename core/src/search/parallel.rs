@@ -17,6 +17,15 @@ use std::time::Duration;
 /// stop condition again.
 const POLL: Duration = Duration::from_millis(1);
 
+/// The threads a search uses of the `jobs` its options name: no more than
+/// the machine runs at once, where the platform tells how many that is.
+pub(crate) fn threads(jobs: usize) -> usize {
+    if jobs <= 1 {
+        return jobs;
+    }
+    std::thread::available_parallelism().map_or(jobs, |machine| jobs.min(machine.get()))
+}
+
 /// The pool a parallel search runs on, built for one search and dropped
 /// with it: `threads` workers whose stacks fit the recursion limit.
 pub(crate) struct Runtime {

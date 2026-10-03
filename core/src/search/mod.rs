@@ -293,6 +293,8 @@ pub fn prove_goal(
     }
     // Several threads run the focused engine and the net engine on pools
     // of their own; the additive path is sequential in every case.
+    #[cfg(feature = "parallel")]
+    let options = &options.clone().jobs(parallel::threads(options.jobs));
     let (verdict, statistics, net) = match engine {
         #[cfg(feature = "parallel")]
         Engine::Net if options.jobs > 1 => {
@@ -603,16 +605,26 @@ impl Options {
         }
     }
 
+    /// The most threads the options name: more are taken as this many.
+    /// A pool beyond it has found no use, and a count without a bound
+    /// starts whatever it is given (ten thousand threads on `A ⊢ A` cost
+    /// three minutes of processor time).
+    pub const MAX_JOBS: usize = 256;
+
     /// Sets how many threads the search may use. One, the default, runs
     /// the sequential engines, whose proof is a function of the input.
     /// More than one, with the `parallel` feature, runs the focused engine
     /// and the net engine on that many threads of a pool of their own,
     /// which may find a different proof but never a different verdict;
     /// without the feature, or for the additive path, the search stays
-    /// sequential. Zero counts as one.
+    /// sequential. Zero counts as one, and more than
+    /// [`MAX_JOBS`](Self::MAX_JOBS) as that many. A search starts no more
+    /// threads than the machine runs at once
+    /// ([`std::thread::available_parallelism`], where the platform tells):
+    /// threads beyond that only take turns on the same processors.
     pub fn jobs(self, jobs: usize) -> Self {
         Self {
-            jobs: jobs.max(1),
+            jobs: jobs.clamp(1, Self::MAX_JOBS),
             ..self
         }
     }
@@ -1113,6 +1125,16 @@ mod tests {
                 "{error}"
             );
         }
+    }
+
+    /// A thread count is taken as at least one and at most
+    /// [`Options::MAX_JOBS`], whatever is asked for.
+    #[test]
+    fn jobs_are_bounded() {
+        let most = Options::default().jobs(Options::MAX_JOBS);
+        assert_eq!(Options::default().jobs(usize::MAX), most);
+        assert_eq!(Options::default().jobs(0), Options::default().jobs(1));
+        assert_ne!(Options::default().jobs(2), Options::default());
     }
 
     /// The stop condition ends the search with `Unknown`.

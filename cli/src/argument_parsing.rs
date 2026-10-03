@@ -143,7 +143,9 @@ pub struct ProveArgs {
     pub recursion_limit: u32,
     /// How many threads the search may use
     ///
-    /// The default is the machine's parallelism. More than one runs the
+    /// The default is the machine's parallelism, which is also the most
+    /// a search uses: a larger number is taken as that, with a note on
+    /// standard error. More than one runs the
     /// focused engine and the net engine on that many threads; the proof
     /// found may then differ from run to run, the verdict never does.
     #[arg(short, long, value_name = "N", default_value_t = default_jobs())]
@@ -231,6 +233,27 @@ pub struct InteractArgs {
 /// when that is unknown.
 fn default_jobs() -> usize {
     std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
+}
+
+/// The threads a search gets for `--jobs` and `--deterministic`: one for
+/// the latter, else what was asked, which the library bounds by the
+/// threads the machine runs at once. A number above that bound is taken
+/// as the bound, and a note on standard error says so; where the machine
+/// does not tell, the library's own bound stands in.
+pub(crate) fn jobs(asked: usize, deterministic: bool) -> usize {
+    if deterministic {
+        return 1;
+    }
+    let most = std::thread::available_parallelism().map_or(Options::MAX_JOBS, |machine| {
+        machine.get().min(Options::MAX_JOBS)
+    });
+    if asked > most {
+        eprintln!(
+            "note: --jobs {asked} is more than the {most} threads a search uses at most on \
+             this machine; it uses {most}"
+        );
+    }
+    asked.min(most)
 }
 
 /// The arguments of `check`.

@@ -1,7 +1,7 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-use crate::argument_parsing::InteractArgs;
+use crate::argument_parsing::{InteractArgs, jobs};
 use crate::limit::Deadline;
 use crate::prove::{Show, Shown, bytes_text, count_text, derivation, describe, on_large_stack};
 use crate::{Status, catch_interrupt, clear_interrupt, interrupted, io};
@@ -52,7 +52,7 @@ pub fn interact(args: &InteractArgs) -> Result<Status> {
         .copies(args.copies)
         .bias(args.bias.into())
         .forward_copies(args.forward_copies)
-        .jobs(if args.deterministic { 1 } else { args.jobs });
+        .jobs(jobs(args.jobs, args.deterministic));
     catch_interrupt();
     let stack_size = options.stack_size();
     let mut session = Session {

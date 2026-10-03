@@ -79,6 +79,23 @@ fn timeout() {
     );
 }
 
+/// `--jobs` beyond what the machine runs at once is taken as that many,
+/// and standard error says so; the verdict and the status are the
+/// search's.
+#[test]
+fn jobs_are_bounded() {
+    let (status, out, err) = linlog(&["prove", "--quiet", "--jobs", "100000", "A |- A"], "");
+    assert_eq!(
+        (status, out.as_str()),
+        (0, "provable (MLL, classical, net engine)\n")
+    );
+    assert!(
+        err.starts_with("note: --jobs 100000 is more than the ")
+            && err.contains(" threads a search"),
+        "{err:?}"
+    );
+}
+
 /// A derivation estimated above `--derivation-limit` is not written: the
 /// verdict stands with its exit status, standard error says how large the
 /// derivation is and how to get it, and `none` lifts the limit;
