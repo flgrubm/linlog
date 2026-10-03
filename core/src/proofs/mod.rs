@@ -29,11 +29,14 @@ mod multiset;
 /// The checker's first implementation, which the tests compare it with.
 #[cfg(test)]
 mod oracle;
+/// The size of a derivation, without building it.
+pub mod size;
 
 pub use check::{CheckError, Described, Dyadic, Problem};
 pub use derivation::{Derivation, InfId, Inference, Rule, UnknownRule};
 #[cfg(feature = "interactive")]
 pub use interactive::{Interactive, Refusal};
+pub use size::Size;
 
 use crate::Error;
 use crate::fragment::Mode;

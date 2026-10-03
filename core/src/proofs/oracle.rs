@@ -10,6 +10,8 @@
 use super::check::{CheckError, Dyadic, Problem};
 use super::multiset::Multiset;
 use super::{Node, NodeId, Proof, Side};
+#[cfg(feature = "parse")]
+use crate::Sequent;
 use crate::fragment::Mode;
 use crate::occurrences::{Forest, OccId, OccSet, Position, Reading};
 use crate::sequents::Kind;
@@ -388,4 +390,71 @@ impl<'a> Step<'a> {
             }
         }
     }
+}
+
+/// Returns proofs to test a pass over proofs on, each with the mode it was
+/// found in: those the engines find of generated sequents, classical and
+/// intuitionistic, linear and affine, and of the smallest instance of
+/// every family.
+#[cfg(feature = "parse")]
+pub(crate) fn proofs() -> Vec<(Proof, Mode)> {
+    use crate::search::generate::{self, IllRules, Rng, Rules};
+    use crate::search::{Options, Verdict, prove_until};
+    let classical = Mode::CLASSICAL;
+    let mut cases: Vec<(String, Mode, Options)> = vec![];
+    for (k, rules) in Rules::ALL.into_iter().enumerate() {
+        let mut rng = Rng::new(900 + k as u64);
+        for _ in 0..25 {
+            let budget = 2 + rng.below(9);
+            let provable = generate::provable(&mut rng, rules, 3, budget);
+            let mode = if rules.mix {
+                classical.with_mix()
+            } else {
+                classical
+            };
+            let options = Options::default().copies(provable.copies);
+            let text = generate::sequent(&provable.formulas);
+            cases.push((text.clone(), mode, options.clone()));
+            cases.push((text, mode.affine(), options));
+        }
+    }
+    for (k, rules) in IllRules::ALL.into_iter().enumerate() {
+        let mut rng = Rng::new(950 + k as u64);
+        for _ in 0..25 {
+            let budget = 2 + rng.below(9);
+            let ill = generate::ill(&mut rng, rules, 3, budget);
+            let options = Options::default().copies(ill.copies);
+            let text = generate::two_sided(&ill.hypotheses, &ill.goal);
+            cases.push((text.clone(), Mode::INTUITIONISTIC, options.clone()));
+            cases.push((text, Mode::INTUITIONISTIC.affine(), options));
+        }
+    }
+    let mut proofs: Vec<(Proof, Mode)> = vec![];
+    for (text, mode, options) in cases {
+        let sequent: Sequent = text.parse().unwrap();
+        let mut polls = 0;
+        let outcome = prove_until(&sequent, mode, &options, || {
+            polls += 1;
+            polls > 20_000
+        });
+        if let Ok(Verdict::Proved(proof)) = outcome.map(|o| o.verdict) {
+            proofs.push((*proof, mode));
+        }
+    }
+    for family in crate::families::FAMILIES {
+        let instance = family.instance(family.sizes[0], 0);
+        let options = match instance.copies {
+            Some(copies) => Options::default().copies(copies),
+            None => Options::default(),
+        };
+        let mut polls = 0;
+        let outcome = prove_until(&instance.sequent, instance.mode, &options, || {
+            polls += 1;
+            polls > 20_000
+        });
+        if let Ok(Verdict::Proved(proof)) = outcome.map(|o| o.verdict) {
+            proofs.push((*proof, instance.mode));
+        }
+    }
+    proofs
 }

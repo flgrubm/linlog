@@ -377,6 +377,43 @@ derivation anyway, so the record is never larger than what is built; a
 table of every node's sequent would be, by any factor, on a chain of `?`
 steps (which are no inferences).
 
+**The size of a derivation is computed from the term, without building
+it** (`proofs/size.rs`, `Proof::derivation_size(two_sided)`, a `Size`):
+one pass of the checker with an observer that keeps a few numbers per
+node, all saturating, since a term with shared subproofs unfolds
+exponentially. What `Size` promises: `inferences` and `height` (the
+inferences on the longest branch; the text tree has two lines for each)
+are exact; `characters` is the sum over the inferences of their sequents
+written one-sided, each formula with two characters for its separator,
+exact when `exact` is set and an upper bound otherwise; `width` is the
+widest sequent the pass saw, a *lower* bound of the text tree's width
+(the tree's own width needs the layout: `Derivation::text_size`). The
+one place the sum is a bound: a `&` with several `?` formulas that only
+one premise uses, whose weakenings above the other premise are each
+counted with the sequent of the last (their order is not kept). How it
+is exact elsewhere, which is what a change to the builder must keep in
+step: per node the inferences and characters of its subtree under the
+sequent it derives itself, and `reached`/`reached_goal`, the number of
+its inferences whose sequent holds a formula that a `⊤` in the subtree
+absorbs (a hypothesis, or two-sided the goal, which the builder sends to
+the premise without one at a `⊗` whose premises both absorb). An
+absorbed formula adds its characters times that number: at the root for
+what the conclusion holds beyond the root's sequent, at every rule for a
+subformula its premise lacked (`Facts::absent`), at a `&` for what the
+conclusion's context holds beyond an absorbing premise's. A `⊗` or Mix
+with `k` shared `?` formulas is `k + 1` inferences, the rule's sequent
+holding each formula twice and each contraction below taking one away in
+ascending order. `is_the_size_of_the_derivation_built` compares all of
+it with the derivation actually built, on the samples of the checker's
+differential test, one-sided and two-sided. `Size::bytes()` turns the
+count into the estimate that a bound is compared with
+(`BYTES_PER_CHARACTER` 8, `BYTES_PER_INFERENCE` 128): measured on a
+derivation of 5 119 inferences and 17.0 million characters (`wide-m1` at
+1 024), the text tree is 76 MB written and 160 MB at its peak, LaTeX 49
+and 106, Typst 59 and 126, the Rocq script 62 and 132, the SVG 212 MB
+written and 855 MB at its peak, against an estimate of 130 MiB: the
+order of magnitude for every format but the SVG's memory.
+
 `Rule::Open` is the rule of an open goal in the derivation of a proof in
 progress (below) and appears nowhere else; `Rule::classical` maps every
 two-sided name back to the classical rule it is on the one-sided sequent,

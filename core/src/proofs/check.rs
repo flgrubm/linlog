@@ -1032,64 +1032,8 @@ mod tests {
     /// found in and in the others, and on mutants of them.
     #[test]
     fn agrees_with_the_first_implementation() {
-        use crate::search::generate::{self, IllRules, Rules};
-        use crate::search::{Options, Verdict, prove_until};
         let classical = Mode::CLASSICAL;
-        let mut cases: Vec<(String, Mode, Options)> = vec![];
-        for (k, rules) in Rules::ALL.into_iter().enumerate() {
-            let mut rng = Rng::new(900 + k as u64);
-            for _ in 0..25 {
-                let budget = 2 + rng.below(9);
-                let provable = generate::provable(&mut rng, rules, 3, budget);
-                let mode = if rules.mix {
-                    classical.with_mix()
-                } else {
-                    classical
-                };
-                let options = Options::default().copies(provable.copies);
-                let text = generate::sequent(&provable.formulas);
-                cases.push((text.clone(), mode, options.clone()));
-                cases.push((text, mode.affine(), options));
-            }
-        }
-        for (k, rules) in IllRules::ALL.into_iter().enumerate() {
-            let mut rng = Rng::new(950 + k as u64);
-            for _ in 0..25 {
-                let budget = 2 + rng.below(9);
-                let ill = generate::ill(&mut rng, rules, 3, budget);
-                let options = Options::default().copies(ill.copies);
-                let text = generate::two_sided(&ill.hypotheses, &ill.goal);
-                cases.push((text.clone(), Mode::INTUITIONISTIC, options.clone()));
-                cases.push((text, Mode::INTUITIONISTIC.affine(), options));
-            }
-        }
-        let mut proofs: Vec<(Proof, Mode)> = vec![];
-        for (text, mode, options) in cases {
-            let sequent: Sequent = text.parse().unwrap();
-            let mut polls = 0;
-            let outcome = prove_until(&sequent, mode, &options, || {
-                polls += 1;
-                polls > 20_000
-            });
-            if let Ok(Verdict::Proved(proof)) = outcome.map(|o| o.verdict) {
-                proofs.push((*proof, mode));
-            }
-        }
-        for family in crate::families::FAMILIES {
-            let instance = family.instance(family.sizes[0], 0);
-            let options = match instance.copies {
-                Some(copies) => Options::default().copies(copies),
-                None => Options::default(),
-            };
-            let mut polls = 0;
-            let outcome = prove_until(&instance.sequent, instance.mode, &options, || {
-                polls += 1;
-                polls > 20_000
-            });
-            if let Ok(Verdict::Proved(proof)) = outcome.map(|o| o.verdict) {
-                proofs.push((*proof, instance.mode));
-            }
-        }
+        let proofs = oracle::proofs();
         assert!(proofs.len() > 1000, "{} proofs", proofs.len());
 
         let modes = [
