@@ -88,7 +88,6 @@ struct Group<'a> {
 pub fn summary(files: &[PathBuf]) -> Result<()> {
     let rows = read(files)?;
 
-
     // Runs grouped by configuration and problem, in the order first seen.
     let config = |row: &Row| {
         let mut label = format!(
