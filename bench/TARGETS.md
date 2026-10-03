@@ -28,6 +28,17 @@ second baseline measured, as its set-up check: every row that
 `after-bias` decides has the same verdict, stable sequents, splits, memo
 hits and memo entries.
 
+A sixth, `after-check`, was taken on 2026-10-03 after the proof checker
+was rewritten to keep only the sequents a later node reads and the search
+began to check every proof it returns. The harness times the search with
+that check off and the check by itself, in the new last column
+`check_ms`. All 99 rows that `after-bias` decides have its verdict and
+counters, and the undecided rows its reason. The 131 proved runs are all
+`checked` `ok`; their checks take 39 ms together against 12.8 s of
+search (0.3 %), a median of 8.5 % of a run's search time and at most
+44 % (0.9 ms on a search of 2.0 ms, `ERK_erk-001000_1_1`); the longest
+check is 6.3 ms (`qbf/20#2`, a search of 46 ms).
+
 Stable sequents and splits are machine-independent on one thread and
 come first; a time is the median of up to three runs, the CPU time of
 the search where it is 100 ms or more and the wall time below that, since

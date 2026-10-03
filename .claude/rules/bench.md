@@ -315,7 +315,11 @@ beyond clap and anyhow, which the CLI already has.
   compares with `after-bias.csv`, or with `after.csv` under an explicit
   `--bias`; trial labels `scratch-*` are ignored by jj. `baseline-2026-10-02`
   is the set-up check of the second baseline: the engine it measured
-  reproduces every decided row of `after-bias.csv`.
+  reproduces every decided row of `after-bias.csv`. `after-check` is the
+  first label with the column `check_ms` (the rewritten checker, and the
+  search checking every proof unless the harness switches that off):
+  the same counters again, and the check at 0.3 % of the search time
+  over the proved runs.
 
 ## Extension points
 
