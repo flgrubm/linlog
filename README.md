@@ -270,6 +270,40 @@ unknown (the copy bound, the time limit or Ctrl-C stopped the search), 2 an
 error, such as a sequent outside the asserted fragment or an engine forced
 on a sequent it cannot search.
 
+Every proof the search finds passes the proof checker before anything is
+reported, whatever the output (`--no-check` reports it unchecked). A proof
+is small where its derivation can be huge: the derivation writes the whole
+sequent at every inference and repeats every subproof the proof shares.
+So the command shows a derivation only where that is sensible, and
+otherwise keeps the verdict, with its exit status, and says in one line
+what it left out and how to get it. On a terminal the text format prints
+the proof tree if no line is wider than the terminal and the tree is at
+most three screens long (`--tree always` prints it regardless, `--tree
+never` leaves it out; into a file or a pipe it is always written). On a
+terminal 30 columns wide:
+
+```console
+$ linlog prove "A, A -o B, B -o C, C -o D |- D"
+provable (MLL, classical, net engine)
+the proof tree is not shown: 7 inferences, at least 31 columns by 8 lines, for a terminal of 30 columns and at most 30 lines (3 screens); print it with --tree always, write it with --output FILE, or get the proof with --format json
+```
+
+And in every format a derivation whose estimated size passes
+`--derivation-limit` (64 MiB by default; `none` lifts it) is not built at
+all. The line then goes to standard error, unless the output is a
+terminal:
+
+```console
+$ linlog prove --derivation-limit 100 "A, A -o B |- B" > verdict.txt
+the derivation is not written: its 3 inferences with 29 characters of sequents are estimated at 616 B, over the limit of 100 B; --format json writes the proof itself, --derivation-limit SIZE raises the limit and --derivation-limit none lifts it
+$ cat verdict.txt
+provable (MLL, classical, net engine)
+```
+
+`--timeout` and Ctrl-C hold while a derivation is built and written as
+they do during the search, and an `--output` file holds a whole output or
+is left as it was.
+
 `--format json` writes the outcome as one JSON object, which is also a proof
 file that `linlog check` verifies independently of the search (pass the same
 logic flags):
@@ -587,12 +621,17 @@ Built:
   MLL proof nets, or by the additive fast path.
 - Proofs as compact terms over subformula occurrences, an independent
   checker that decides whether a term proves its sequent (in
-  intuitionistic mode also that every sequent of the proof has one goal),
+  intuitionistic mode also that every sequent of the proof has one goal)
+  in one pass and in memory proportional to the proof,
   and a derivation view that unfolds a term into the tree of the standard
   sequent calculus, one-sided or two-sided with the rules of ILL, printed
-  as text.
+  as text. The size of a derivation is computed from the term without
+  building it, and every path that builds one (the text tree, the
+  exports, the search inside an interactive proof) keeps within a bound
+  on that size, which is an option.
 - Automatic proof search for every fragment, MLL to full LL and IMLL to
-  ILL, with or without Mix, returning a checked proof, "unprovable" after
+  ILL, with or without Mix, returning a checked proof (the checker runs
+  on every proof, in every build), "unprovable" after
   an exhaustive search, or "unknown" with the reason: a focused sequent
   engine over dyadic sequents of occurrence bitsets with a memo, counts
   that prune sequents and direct the search for the split of a `⊗`
@@ -638,7 +677,9 @@ Built:
   thread; the sequential engines stay one flag away.
 - The `linlog` command: `prove`, `check`, `interact` and `seq`, with time
   limits, Ctrl-C, statistics, JSON output, proof nets, LaTeX, Typst,
-  SVG and Rocq output, and `--jobs` and `--deterministic` for the search.
+  SVG and Rocq output, and `--jobs` and `--deterministic` for the search;
+  a proof tree is printed on a terminal where it fits, and a derivation
+  past `--derivation-limit` is left out with a line that says so.
 - Benchmarks: a reader for the problems of the LLTP library, generated
   families with known verdicts (the hard families of the literature and
   the cases where one engine is known to be slow), and `linlog-bench`,
@@ -651,9 +692,8 @@ Built:
 
 Planned, in roughly this order:
 
-- Limits that hold: proofs of any size checked and shown within bounded
-  memory, time limits kept on one thread and on several, a memory bound
-  for the search, and bounds on what an input may be.
+- Limits that hold: time limits kept on one thread and on several, a
+  memory bound for the search, and bounds on what an input may be.
 - Sensible defaults, each of them an option: a copy bound that deepens
   within a default time limit, one thread before several, and reasons
   with every "unknown" and "unprovable".

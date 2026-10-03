@@ -31,7 +31,11 @@ Workspace crates:
   `interact` (a line-based session that reads commands from standard
   input, `interact.rs`) and `seq print|json|fragment`, and the output
   formats `text`, `json`, `net`, `latex`, `typst` and `rocq` (with
-  `--standalone` for a document), `svg` and `net-svg`. The tree and its
+  `--standalone` for a document), `svg` and `net-svg`; `--tree
+  auto|always|never` prints the text tree on a terminal only where it
+  fits, `--derivation-limit SIZE|none` bounds the derivation any format
+  builds (the verdict and its exit status stand without it), and
+  `--no-check` skips the check every proof otherwise passes. The tree and its
   `--help` text are the doc comments in `argument_parsing.rs`; `prove.rs`
   runs the search on a thread sized from `--recursion-limit` and owns the
   output; `--copies` bounds the copies of `?` formulas per branch and
@@ -79,12 +83,18 @@ reading of a sequent (the `Position` of every occurrence, the goal, and
 two-sided printing `Γ ⊢ A`, or a `ShapeError`), and `Proof` for a proof
 term over the forest: `Proof::new(forest, nodes, root)`, `check(mode)` for
 the independent checker (in intuitionistic mode also the one-succedent
-condition), `derivation()` for the standard-calculus view and
+condition; one pass, in memory proportional to the proof),
+`derivation()` for the standard-calculus view and
 `two_sided_derivation()` for the intuitionistic one with the ILL rule
-names, whose `Display` draws the tree; and `prove(&sequent, mode,
+names, whose `Display` draws the tree, `derivation_size(two_sided)` for
+the `Size` of either without building it, and `derivation_with(&view,
+stop)` under a `ViewOptions` (the bound on the estimated size that every
+path which builds a derivation honours, `ViewError::TooLarge` beyond it);
+and `prove(&sequent, mode,
 &options)` (or `prove_until` with a stop closure) for proof search, which
 dispatches on the fragment and the mode and returns an `Outcome` with a
-three-valued `Verdict`. The engines: `search::net` (axiom-linking search
+three-valued `Verdict`, its proof checked before it is returned
+(`Options::check`). The engines: `search::net` (axiom-linking search
 over a proof structure, the default for unit-free MLL with or without Mix
 when no literal occurs more than twice, in intuitionistic mode by the
 embedding of IMLL into MLL, whose `Outcome` also carries the net found),
@@ -117,7 +127,7 @@ workers' flag); `Options::portfolio` gives every worker an order of its
 own; the additive path stays sequential. `Interactive` (`proofs::interactive`,
 feature `interactive`) is a proof in progress: `new(&sequent, mode)`,
 `goals()`, `rules(goal, position)`, `apply(goal, position, rule, left)`,
-`undo()`, `close(goal, …)`/`close_all`, `derivation()` with open goals as
+`undo()`, `close(goal, options, view, stop)`/`close_all`, `derivation()` with open goals as
 `Rule::Open` leaves, `proof()` translating the finished derivation into a
 checked `Proof`, serde behind `serialize`, and `Refusal` saying why a rule
 does not apply.
