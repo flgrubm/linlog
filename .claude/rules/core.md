@@ -1678,7 +1678,19 @@ has no or-choices worth sharing out). What the code relies on:
   the sequential engine never ran it. For `&`, a failed premise decides
   and the other's flags are dropped, both premises' flags count when both
   ran to the end (`with_parallel`). Success raises `cancel` at an
-  or-node, failure or error at the `&`. A worker inserts into the memo
+  or-node, failure or error at the `&`. A premise that the other's
+  error cancelled returns `Stopped`, which gives way to that error in
+  the `&`'s result as it does in `Collected::take`: the match took the
+  left premise's reason first, so a right premise at the recursion
+  limit made the pool answer `Unknown (Stopped)` with no stop fired
+  (a review's finding; `a_cancelled_premise_is_no_stop`). What stays:
+  an error of one premise cancels the other, so the pool answers
+  `RecursionLimit` where the left premise would have failed and one
+  thread, which never starts the right one, answers `Unprovable`; and
+  a premise's result raises the flag only once its worker has left its
+  nested scopes, where a waiting thread may have stolen a task of the
+  sibling premise that nothing cancels until then (seen once: an answer
+  that came only with the caller's stop, five seconds late). A worker inserts into the memo
   only what its own `prove_stable` decided, so a cancelled worker leaves
   facts and nothing half-done.
 - **The shared memo is 64 shards of the sequential `Memo`** behind one

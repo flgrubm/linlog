@@ -872,7 +872,8 @@ impl<'a> Engine<'a> {
 
     /// The `&` rule on the pool: the left premise on a worker on this
     /// thread, the right one on a worker of the pool, the first to fail
-    /// cancelling the other; an engine that is stopped already starts
+    /// or to give up cancelling the other, whose stop then gives way to
+    /// the first one's reason; an engine that is stopped already starts
     /// neither. The flags of a premise count when it ran to
     /// its end and the other did not fail before it, as in the sequential
     /// rule, where the right premise runs only after the left one
@@ -947,7 +948,11 @@ impl<'a> Engine<'a> {
                 merge(self, &right);
                 Ok(None)
             }
-            (Err(reason), _) | (Ok(Some(_)), Err(reason)) => Err(reason),
+            // A premise that the other's error cancelled reports a stop,
+            // which is not the reason: the error is.
+            (Err(Reason::Stopped), Err(reason)) | (Err(reason), _) | (Ok(Some(_)), Err(reason)) => {
+                Err(reason)
+            }
         }
     }
 }
@@ -1092,6 +1097,34 @@ mod tests {
             "{:?}",
             outcome.verdict
         );
+    }
+
+    /// A premise of a `&` that ends at the recursion limit cancels the
+    /// other, and the answer names that limit, not a stop nobody asked
+    /// for: the right premise's chain of `⊕` is forty deep under a limit
+    /// of 24, while the left one's refutation under Mix takes a thousand
+    /// times as long.
+    #[test]
+    fn a_cancelled_premise_is_no_stop() {
+        let chain = format!("{}0{}", "(0 + ".repeat(40), ")".repeat(40));
+        let pairs: Vec<String> = (0..7)
+            .map(|i| format!("(a{i} * b{i}) + 0, (~a{i} * ~b{i}) + 0"))
+            .collect();
+        let sequent: Sequent = format!("|- bot & {chain}, {}", pairs.join(", "))
+            .parse()
+            .unwrap();
+        for jobs in [2, 4] {
+            let options = Options::default().recursion_limit(24).jobs(jobs);
+            let outcome = prove(&sequent, Mode::CLASSICAL.with_mix(), &options).unwrap();
+            assert!(
+                matches!(
+                    outcome.verdict,
+                    Verdict::Unknown(Reason::RecursionLimit) | Verdict::Unprovable
+                ),
+                "{:?} on {jobs} threads",
+                outcome.verdict
+            );
+        }
     }
 
     /// Forty `&` in one asynchronous phase, whose first stable sequent
