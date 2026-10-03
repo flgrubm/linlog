@@ -2053,9 +2053,13 @@ time and memory linear in the text. What the code relies on:
   `error_positions` in `core/tests/parse.rs` pins both and the rest.
 - A text of more terms than a forest can hold (`Forest::MOST`) is
   `Error::TooManyOccurrences`: every term of a text is an occurrence.
-- The first parser is `parse/oracle.rs`, compiled for tests only, and
-  `agrees_with_the_first_parser` requires of both the same sequent or
-  the same error at the same place on generated inputs, valid and not.
+- The first parser was chumsky's Pratt parser. Before it was removed
+  the two were compared on 1.1 million generated inputs (token soup,
+  random sequents in every spelling, and those with one character
+  removed, replaced or added; 481 000 sequents and 619 000 errors): the
+  same `Sequent` or the same error span and character on every one. The
+  test, `agrees_with_the_first_parser`, is in the history with the
+  change that introduced this parser.
 
 Every operator has ASCII and Unicode spellings: `* ⊗`, `| par ⅋`, `&`,
 `+ ⊕`, `-o ⊸`, prefix `~ ! ?`, postfix `^`, and `|-`/`⊢`. The constants are

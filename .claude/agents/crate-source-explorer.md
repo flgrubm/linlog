@@ -1,6 +1,6 @@
 ---
 name: crate-source-explorer
-description: Answer questions about a Rust dependency's API by reading the exact version that Cargo.lock pins, from the local cargo registry, instead of relying on memory or the web. This matters most for chumsky, whose API changed wholesale after 0.9 and differs from most examples online. Use it before writing or changing code against chumsky, clap, serde, foldhash or thiserror when a signature, trait bound, feature gate or idiom is in doubt, and to diagnose a compiler error that points into a dependency. Returns signatures with file:line citations and never edits.
+description: Answer questions about a Rust dependency's API by reading the exact version that Cargo.lock pins, from the local cargo registry, instead of relying on memory or the web. This matters most for a crate whose API changed between major versions and differs from most examples online, as clap's did. Use it before writing or changing code against clap, serde, rayon, foldhash, thiserror or unicode-ident when a signature, trait bound, feature gate or idiom is in doubt, and to diagnose a compiler error that points into a dependency. Returns signatures with file:line citations and never edits.
 tools: Bash, Read, Grep, Glob
 model: sonnet
 effort: medium
@@ -29,11 +29,11 @@ for p in json.load(sys.stdin)["packages"]:
 ```
 
 In that directory, look at `src/` first, then `examples/`, `tests/`,
-`CHANGELOG.md` and any guide (chumsky ships `guide/`).
+`CHANGELOG.md` and any guide the crate ships.
 
 **Check which features are on.** Code behind `#[cfg(feature = "...")]` exists
 only if linlog enables that feature. Read `core/Cargo.toml` and `cli/Cargo.toml`.
-For example, chumsky is built with `pratt`. For the full
+For example, serde is built with `derive`. For the full
 resolved set, run `cargo tree -e features -i <crate> --offline`.
 
 ## Method

@@ -20,7 +20,8 @@ data structures are designed to be compact and cache-friendly.
 
 Workspace crates:
 - `core/` is package **`linlog`**: all logic.
-  It has seven optional default features, `parse` (chumsky), `serialize`
+  It has seven optional default features, `parse` (the text parser, with
+  unicode-ident for the identifiers), `serialize`
   (serde), `interactive` (step-by-step proving), and `latex`, `typst`,
   `svg` and `rocq` (the exports), and one off by default, `parallel`
   (rayon: the search on a thread pool, off for wasm); the CLI enables the
@@ -337,7 +338,7 @@ even to read.** Every operation goes through `jj`, including lock updates:
 `.claude/` is checked in. It holds the hooks (the git and `jj new -m` guards,
 the formatter, a SessionStart note on the jj working copy), permission rules,
 the `crate-source-explorer` agent (dependency APIs against the locked sources;
-use it before guessing at chumsky), the `update-deps` skill, the
+use it before guessing at a dependency's API), the `update-deps` skill, the
 `new-tool` skill (use it whenever a crate or tool is added or adopted), and the
 path-scoped rules. Claude Code's built-in git instructions and git status
 snapshot are switched off (`env` in `settings.json`).

@@ -288,11 +288,10 @@ impl Sequent {
         });
     }
 
-    /// Appends another sequent's arena, root formulas and atom table to this
-    /// one's as they are, so that a name both have is two entries until
-    /// [`optimize`](Self::optimize) or [`merge_atoms`](Self::merge_atoms)
-    /// runs.
-    pub(crate) fn append(&mut self, s: Self) {
+    /// Consumes another sequent and appends its root formulas to this one,
+    /// with the arenas concatenated; an atom of the other sequent is the
+    /// atom of the same name here, if there is one.
+    pub fn add(&mut self, s: Self) {
         let offset_atoms = self.atoms.len() as u32;
         let offset_terms = self.terms.len() as u32;
 
@@ -309,13 +308,6 @@ impl Sequent {
         );
 
         self.atoms.extend(s.atoms);
-    }
-
-    /// Consumes another sequent and appends its root formulas to this one,
-    /// with the arenas concatenated; an atom of the other sequent is the
-    /// atom of the same name here, if there is one.
-    pub fn add(&mut self, s: Self) {
-        self.append(s);
         self.merge_atoms();
     }
 }

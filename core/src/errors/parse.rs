@@ -1,8 +1,6 @@
 // linlog © Fabian Lukas Grubmüller 2026
 // Licensed under the EUPL
 
-#[cfg(test)]
-use chumsky::error::Simple;
 use std::fmt;
 
 /// Where and why parsing failed, owned so that it outlives the input.
@@ -33,21 +31,5 @@ impl fmt::Display for ParseError {
             write!(f, ", expected one of {}", self.expected.join(", "))?;
         }
         Ok(())
-    }
-}
-
-#[cfg(test)]
-impl<'a, T: fmt::Display> From<Simple<'a, T>> for ParseError {
-    /// Copies the span and the token found out of a chumsky error, which borrows
-    /// the input.
-    fn from(e: Simple<'a, T>) -> Self {
-        ParseError {
-            span: (*e.span()).into_range(),
-
-            found: e.found().map(|t| t.to_string()),
-
-            label: None,
-            expected: Vec::new(),
-        }
     }
 }
