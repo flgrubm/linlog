@@ -985,6 +985,19 @@ thread first, then the pool (the author's answer; step 21). A `Runtime`
 kept across calls: 25. "The parallel tests take about a minute" no
 longer holds (5 s for the core crate's 122 tests). The rest is deferred.
 
+*After step 19 (2026-10-03).* Done there: the stop at a `&` on the pool
+(a stopped premise started both premises of every `&` below it, which
+was the SYJ miss), the cubes of the net engine split in place with
+forced links followed, the threads bounded by the machine's parallelism,
+the portfolio removed, `agree` asserting the contract. Left, and
+assigned: a cancellation at a `&` that comes late and an error of one
+premise that cancels the other, with a differential run at small
+recursion limits: 29. Left, and deferred: where the list of cubes stays
+short (one surviving branch per choice) the root engine does the whole
+net search with a seed per cube while the workers wait; the pool's
+speculative work on towers of `&` is bounded by cancellation alone, and
+nested scopes still stack on a waiting thread.
+
 
 Found by the review of step 15's second session, and older than it: the
 doc comment and the second assertion of `focus::parallel::tests::agree`

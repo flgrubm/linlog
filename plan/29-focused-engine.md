@@ -36,10 +36,34 @@ case.
    ignored; `prove_goal` takes its goal in any order, as it says.
 4. **The dispatch as data**, with the feature that picks each row named
    and the measurement behind it cited; the atom bias out of the forest.
-5. **The three hot spots** (the memo key hashed once, an insert without
-   an allocation, the canonical key only where a member is renamed).
+5. **The hot spots, from a profile taken anew.** Step 15's profile
+   named three (the memo key hashed once, an insert without an
+   allocation, the canonical key only where a member is renamed), but
+   steps 19 and 20 changed what it measured: the ranking of the copies
+   is linear now, and the memo's keys were laid out again. So the step
+   begins with a sampling profile (perf from the flake's nixpkgs, a
+   release build with debug symbols set through the environment, pinned
+   to cores of one speed and capped, as step 15 took it; the folded
+   stacks are what you read, a flame graph is the same data drawn) of
+   every row of the target set that takes over a second, and works from
+   its ranking; it ends with the same profile, and the report shows the
+   two side by side. For a change worth a few percent, times by day are
+   too noisy on this machine (one-thread rows whose code did not change
+   moved by −6 to +4 % between two runs of step 19): compare instruction
+   counts instead (valgrind's callgrind, through the `new-tool` skill)
+   on a row small enough to run under it, about fifty times slower.
 6. **From the follow-ups**: the Mix prune (`n·2^n` for `3^n`), a loop
-   for chains of free splits, the Horn test on the goal's members.
+   for chains of free splits, the Horn test on the goal's members. And
+   from step 19's review of the pool, which item 1 is the place for: a
+   premise's failure at a `&` cancels the other only once its worker has
+   left its nested scopes, so a stolen task of the sibling runs on
+   uncancelled (seen once as an answer that came only with the caller's
+   stop); an error of one premise cancels the other, so a pool answers
+   "recursion limit" where the other premise would have failed and one
+   thread answers "unprovable"; and the differential run of the pool
+   against one thread is repeated with recursion limits of 4 to 16,
+   since limits of 24 to 63 were reached by 10 of 369 057 random
+   sequents.
 7. **Ready for quantifiers** (D17) as `plan/notes/api.md` says: where a
    trail of bindings would go, which prunes assume ground atoms.
 

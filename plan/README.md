@@ -1465,3 +1465,41 @@ publishing are the author's acts.
   names the algorithm the Rocq checker verifies and waits for steps 20
   and 23; `plan/conduct.md` gained the rule that no arithmetic of a
   checker may wrap, with a test at the limit. Next: step 19.
+- 2026-10-03: step 19 (by its session: the SYJ miss on a pool was a
+  stopped premise of `&` that still started both premises of every `&`
+  below it; forced chains polled, their dual lookups and the copy
+  ranking made linear, which took a `GPPP` net from 140 s to 0.4 s with
+  the same counters; the two alternating searches' wait and the search's
+  set-up polled; the command's limit a flag that a timer raises, counted
+  from the command's start with the reading under it; the net engine's
+  cubes split in place with forced links followed, so a pool costs what
+  one thread costs on the wide sequents; threads bounded by the
+  machine's parallelism and `Options::MAX_JOBS`; the portfolio removed;
+  `agree` asserting the contract; its reviewer's differential run of
+  the pool against one thread on 745 000 sequents found one answer of
+  "stopped" without a stop, fixed there) and its review, accepted. Read:
+  the report, the changes to the parallel paths, the net engine and the
+  command's limit; no comment names the plan. Checked: clippy, the
+  tests with and without the `parallel` feature, both `cargo hack` runs,
+  `cargo deny`, `nix flake check`. Run by hand in capped scopes on
+  pinned cores: every call the report names (R6 0.39 s; R7 5.15, 5.36
+  and 5.51 s on one, two and four threads; R10 1.00 s; `wide-m1` at
+  1 024 pairs the same 2 048 links on one, two and four threads); 288
+  runs of provable problems cut on a pool at limits of 5 ms to 0.9 s,
+  none answered "unprovable"; the 1 358 problems outside the nets on
+  four threads at one second (no contradiction, no kill, the latest stop
+  0.43 s late); the whole library on one thread at one second (1 868
+  proofs, all `checked` `ok`, no kill, the latest stop 0.43 s late).
+  Fixed in the review: "Say thread, not threads, of a search bounded to
+  one". What remains of the goal is the freeing of a full memo, 0.15 to
+  0.55 s at a stop and a fifth of a memo-bound search's time, which
+  prompt 20 now takes with the memo's layout; the late cancellation at a
+  `&` and the error that cancels the other premise went to prompt 29,
+  the session's `close` message and the private documentation's broken
+  link to prompt 24, what step 19 changed for the defaults to prompt 21.
+  On the author's question about profilers, the planning session's
+  recommendation is in the prompts: a heap profile at the start of step
+  20, a sampling profile at the start and the end of step 29, and
+  instruction counts where a change is below the day's noise (±5 % on
+  unchanged code); memcheck is not asked for, the workspace having no
+  `unsafe`. Next: step 20.

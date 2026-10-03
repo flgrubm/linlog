@@ -48,7 +48,23 @@ and the LLTP library's own results say what that costs:
 - A pool costs milliseconds on small problems (1.1 ms against 4.6 ms in
   the median) and gains seconds on large ones; every defect step 17
   found in the search was on the pool. One thread is the reference every
-  review tested.
+  review tested. Step 19 removed those defects (the net engine on a pool
+  now costs what one thread costs where the links are forced, and the
+  pool keeps its limit), and at its review the 1 358 problems of the
+  library outside the nets ran on four threads under a limit of one
+  second without a contradiction, a kill or a stop more than 0.43 s
+  late. Two things remain on the pool, both step 29's: a cancellation at
+  a `&` that can come late, and an error of one premise that cancels the
+  other, so that a pool may answer "recursion limit" where one thread
+  refutes.
+- The command's limit is a flag that a timer thread raises
+  (`cli/src/limit.rs`, `Deadline`), counted from the command's start
+  with the reading and parsing under it; a default limit is
+  `args.timeout` with a default. A sequent too large to read within it
+  is answered "unknown: the time limit of … was reached while the
+  sequent was read", which a newcomer with a large file will meet and
+  must be able to act on. `--jobs` above the machine's parallelism is
+  clamped with a note (`jobs` in `cli/src/argument_parsing.rs`).
 
 The author's decision (2026-10-03), which binds this step and every
 later one (D16): sensible defaults, and the ability to tune every one of

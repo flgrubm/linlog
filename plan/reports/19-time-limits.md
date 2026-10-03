@@ -508,3 +508,42 @@ Nothing is pushed.
   unifiable literal, so both become indexed by predicate symbol and
   sign, and a lookup filters by unification after the index; neither
   type changes shape. The polls are independent of the logic.
+
+## From the review (2026-10-03)
+
+The planning session read the changes to the parallel paths, the net
+engine's cubes and the command's limit, and ran the command and the
+harness itself, in capped scopes on pinned cores. Nothing in the report
+had to be corrected.
+
+- **The named calls**, with the release build of the step's last
+  commit: R6 0.39 s with the counters above (core 4); R7 5.15, 5.36 and
+  5.51 s on one, two and four threads (cores 4 to 7; the last is 0.01 s
+  over the half second, by the memo's freeing); R10 1.00 s in every
+  format, the line in the output file where one is named, and 16.13 s
+  under a limit of 16 s that ends in the search (core 12);
+  `wide-m1` at 1 024 pairs 196, 193 and 195 ms with the same 2 048
+  links on one, two and four threads; `PaceMaker_20_1` under `--bias
+  rarer`, 3.1 s late before, 5.07 s; a session's `close` under a limit
+  of 2 s, 2.37 s.
+- **A stop on a pool is never a refutation**: three provable problems
+  (two Partition instances with the net engine forced and with the
+  default, `SYJ202+1.005` in cbv two-sided) on two and four threads
+  under twelve limits from 5 ms to 0.9 s, three times each, 288 runs:
+  115 proved, 173 unknown, none unprovable.
+- **The pool on the library**: the 1 358 intuitionistic problems outside
+  the nets on four threads under one second, through the harness on the
+  cores 8 to 11: 434 proved and all `checked` `ok`, 101 refuted, no
+  contradiction with the second baseline's one-thread verdicts, no kill,
+  the latest stop 0.43 s after its limit (`SYJ202+1.007` in cbv, memo
+  full).
+- One defect of wording, fixed in the review: `--jobs 4` on a process
+  confined to one core noted "the 1 threads a search uses".
+- **One thread on the whole library** (4 512 problems under `ILL` and
+  `CLL`, one second each, through the harness in two halves on the cores
+  4 to 7): 1 868 proved and all `checked` `ok`, 104 refuted, no
+  contradiction with the second baseline, no kill (the nine `GPPP` nets
+  that were killed five seconds past the limit at the review of step 18
+  are proved or stopped in time), and the latest stop 0.43 s after its
+  limit; the ten stops more than 0.3 s late are all `SYJ202` and
+  `SYJ208` in cbv, whose memo is full.

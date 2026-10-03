@@ -69,6 +69,23 @@ is left there:
   command runs it on the search's stack. A derivation 8 000 high was
   built; nothing says where it stops.
 
+## What step 19 left you
+
+The time limit holds to within half a second everywhere but at one
+place, and that place is the memo. A memo at its cap of 2²⁰ entries
+takes 0.15 to 0.55 s to free, depending on the core (the machine's cores
+come in three speeds; `plan/reports/19-time-limits.md` says which a
+number is from): when the search returns, which is what a stop is late
+by, and unpolled in the middle of a search whenever a full memo is
+emptied, which costs a memo-bound search a fifth of its time (0.5 s of
+every 2.5 s on `qbf/40#1`). The cause is the entry's layout, two
+allocations per key, and `HashMap::clear`. Under `--timeout` the command
+reads and parses on a thread of its own with a main thread's stack
+(8 MiB), which it abandons when the limit passes; the deep-nesting abort
+is the same abort there. A pool's threads are bounded by the machine's
+parallelism and `Options::MAX_JOBS`, each with a stack of
+`Options::stack_size()` and state per worker.
+
 ## Goal
 
 A search that would exhaust memory answers "unknown" with a reason
@@ -85,7 +102,22 @@ other than by an error with exit status 2.
    line in the command, the JSON and the harness. The memo's limit in
    entries stays as the finer knob or goes; say which and why. Emptying
    the memo when it is full remains the first answer, as today, and
-   "unknown" the last.
+   "unknown" the last. The memo's entries are laid out so that the bound
+   can count them and so that emptying or dropping a full memo costs
+   milliseconds (keys in memory that is given back whole, or freed off
+   the search's path): a stop with a full memo is then no later than any
+   other, and the fifth of their time that memo-bound searches spend
+   freeing is gone.
+   **Measure before you design.** Take a heap profile of R8, of
+   `qbf/48#0` and of one large net before anything changes: heaptrack,
+   or valgrind's DHAT, from the flake's nixpkgs through the `new-tool`
+   skill, on a release build with debug symbols set through the
+   environment as step 15 did for perf, pinned and capped. It says what
+   an entry, the arena and the scratch cost in bytes and in allocations,
+   which is what the bound must count and what the layout must remove;
+   the report shows its table before and after. Valgrind's memcheck has
+   nothing to find here (the workspace has no `unsafe`) and is not
+   asked for.
 2. **The arena** gives back what a cleared memo no longer refers to, or
    the report shows why that is not worth its cost; reaching its index
    limit is `Unknown`, not a panic.
@@ -136,7 +168,9 @@ The checks of CLAUDE.md's table, both `cargo hack` runs,
 twice the bound under test: R8 and R9 of the assessment ending "unknown"
 by the bound with the memory under it; the megabyte proof file of item 7
 refused or checked within the bound, and `TokenRing-50-unfolded_1_1`
-with `--derivation-limit none` ending with its verdict; `qbf/48#0` for 120 s on one
+with `--derivation-limit none` ending with its verdict; a stop on
+`qbf/40#1` with its memo full, on a core of each speed, no later than
+0.2 s; `qbf/48#0` for 120 s on one
 pinned core, its memory flat; the four Philosophers-10000 nets of
 `lltp-recursion.csv` under `--recursion-limit 16384`; D5's file refused
 in milliseconds; R11 an error.

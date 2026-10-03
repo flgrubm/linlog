@@ -71,7 +71,7 @@ session's transcript is
 
 ## Where things stand
 
-As of 2026-10-03 (evening) steps 1 to 18 are finished, reviewed and
+As of 2026-10-03 (evening) steps 1 to 19 are finished, reviewed and
 pushed. Step 17 assessed the project (`plan/reports/17-assessment.md`)
 and, on the author's answers, planned steps 18 to 37: the step table,
 the decisions D16 to D22 and the commands are in `plan/README.md`, the
@@ -83,11 +83,20 @@ repositories and the organization. Step 18 rewrote the checker for
 linear memory, made every proof pass it in every build and bounded what
 any front end builds of a derivation; its review found the new checker's
 counters wrapping (a crafted file passed as a proof of an unprovable
-sequent) and fixed that itself. The next command is step 19:
+sequent) and fixed that itself. Step 19 made the time limit hold to
+within half a second on one thread and on a pool, counted from the
+command's start; what is left of it is the freeing of a full memo, which
+step 20 takes with the memory bound. The next command is step 20:
 
 ```nu
-claude --model claude-fable-5-1 --effort xhigh --name step-19 ((open --raw plan/19-time-limits.md) + "\n" + (open --raw plan/conduct.md))
+claude --model claude-fable-5-1 --effort xhigh --name step-20 ((open --raw plan/20-memory-and-boundaries.md) + "\n" + (open --raw plan/conduct.md))
 ```
+
+Profiling (the author asked on 2026-10-03, the planning session
+recommended, the prompts say): a heap profile at the start of step 20,
+a sampling profile at the start and the end of step 29, instruction
+counts where a change is worth less than the day's noise; never a
+standing requirement of every step.
 
 What the author decided on 2026-10-03, in a line each: sensible
 defaults, every one an option (D16); quantifiers will come and the

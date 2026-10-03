@@ -30,7 +30,10 @@ check edits one place and the compiler or a test names the others.
    with quoting, its ASCII rule names are in its help, and `--file -` is
    refused; a closed pipe keeps the verdict; `--output` into a missing
    directory fails before the search. Exit statuses beyond 0 to 3 that a
-   user can meet are documented or removed.
+   user can meet are documented or removed. A session's `close` says
+   which of the two ended it ("the time limit was reached or the search
+   was interrupted" today), and its sequent is read under the limit as
+   `prove`'s is, or the help says that it is not.
 2. **Tests for the stated behaviours** that have none (`--timeout`,
    Ctrl-C, `--jobs`, `--bias`, `--memo-limit`, `--output`), sized like
    their neighbours, and **README's invocations pinned**: a test or a
@@ -44,7 +47,9 @@ check edits one place and the compiler or a test names the others.
    baseline as parameters, `bench/reruns.txt` and the repeated
    experiments (`period-*`, `long-1`) are retired or regenerated from
    the last baseline's rows.
-4. **The flake and CI.** The fragments the command prints by default
+4. **The flake and CI.** `cargo doc --document-private-items` builds
+   (a link to `Shared` in `focus/memo.rs` resolves only with the
+   `parallel` feature). The fragments the command prints by default
    compile in the `export` check; the systems `modules/systems.nix`
    declares are those CI builds, or fewer are declared; the constants
    that name pinned versions are checked against the pins.
