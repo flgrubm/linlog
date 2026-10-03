@@ -691,8 +691,8 @@ pub(crate) fn examine<O: Observer>(
     // The premises' sequents are gone, moved into the node that failed, so
     // the pass runs once more up to it. They are kept then, since the node
     // itself has yet to read them, and the pass does what the first did
-    // up to there, with nobody's tables but its own: it holds no more, and
-    // cannot fail.
+    // up to there, with nothing of an observer's to count: it holds no
+    // more, and cannot fail.
     let mut nobody = ();
     let mut pass = Pass::new(proof, goal.len(), mode, reading, memory, &mut nobody);
     let again = pass.run(node.index());
@@ -744,8 +744,8 @@ pub(crate) trait Observer {
         0
     }
 
-    /// Returns the bytes the observer holds for the pass from its start,
-    /// which count against the pass's bound.
+    /// Returns the bytes the observer holds for the pass by now, which
+    /// count against the pass's bound.
     fn bytes(&self) -> u64 {
         0
     }
@@ -806,12 +806,13 @@ struct Pass<'a, O> {
     shared: Vec<OccId>,
     /// The most bytes the pass may hold, or none for any number.
     memory: Option<u64>,
-    /// The bytes the pass holds: its two tables, what the observer says
-    /// it holds, and every sequent in `live` or in the hands of the
-    /// current rule, each as [`State::bytes`] counts it. Every part is
-    /// allocated, and counted at no more than it takes, so the sum is
-    /// below what the process holds and far from 2⁶⁴; it saturates all
-    /// the same, so that no estimate, however wrong, could wrap it.
+    /// The bytes the pass holds itself: its two tables, and every sequent
+    /// in `live` or in the hands of the current rule, each as
+    /// [`State::bytes`] counts it. Every part is allocated, and counted
+    /// at no more than it takes, so the sum is below what the process
+    /// holds and far from 2⁶⁴; it saturates all the same, so that no
+    /// estimate, however wrong, could wrap it. What the observer holds
+    /// is added whenever the sum is compared with the bound.
     held: u64,
     /// The bytes among them of the sequents the current rule was handed.
     passed: u64,
@@ -836,7 +837,7 @@ impl<'a, O: Observer> Pass<'a, O> {
         }
         let mut live = Vec::new();
         live.resize_with(readers.len(), || None);
-        let held = tables(proof).saturating_add(observer.bytes());
+        let held = tables(proof);
         Self {
             proof,
             forest: proof.forest(),
@@ -853,12 +854,14 @@ impl<'a, O: Observer> Pass<'a, O> {
         }
     }
 
-    /// Counts `bytes` more as held, or refuses them when the pass would
-    /// hold more than its bound.
+    /// Counts `bytes` more as held, or refuses them when the pass and its
+    /// observer would hold more than the bound.
     fn charge(&mut self, bytes: u64) -> Result<(), Problem> {
         self.held = self.held.saturating_add(bytes);
         match self.memory {
-            Some(limit) if self.held > limit => Err(Problem::Memory { limit }),
+            Some(limit) if self.held.saturating_add(self.observer.bytes()) > limit => {
+                Err(Problem::Memory { limit })
+            }
             _ => Ok(()),
         }
     }

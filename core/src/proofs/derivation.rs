@@ -693,9 +693,24 @@ struct Record<'a> {
     /// For a `⊗` or Mix, the unrestricted occurrences both premises need,
     /// ascending, where there are any.
     shared: HashMap<NodeId, Vec<OccId>>,
+    /// The bytes of the sequents and lists kept so far, at
+    /// [`ENTRY`](Self::ENTRY) each and eight for every member; it
+    /// saturates.
+    held: u64,
 }
 
 impl<'a> Record<'a> {
+    /// What a kept sequent or list takes besides its members: its place in
+    /// the table and its allocation.
+    const ENTRY: u64 = 96;
+
+    /// Counts a list of `members` occurrences as kept: four bytes each,
+    /// in a vector that may have room for as many again.
+    fn keep(&mut self, members: usize) {
+        let bytes = (members as u64).saturating_mul(8);
+        self.held = self.held.saturating_add(Self::ENTRY).saturating_add(bytes);
+    }
+
     /// The record of a proof the checker has yet to pass over.
     fn new(proof: &'a Proof) -> Self {
         let len = proof.nodes().len();
@@ -718,16 +733,15 @@ impl<'a> Record<'a> {
             kept,
             standard: HashMap::default(),
             shared: HashMap::default(),
+            held: 0,
         }
     }
 }
 
 impl Observer for Record<'_> {
     fn bytes(&self) -> u64 {
-        // Three flags for each of fewer than 2³² nodes. The sequents kept
-        // are not counted here: each is in the derivation, whose estimate
-        // was within the bound before this pass began.
-        self.kept.len() as u64 * 3
+        // Three flags for each of fewer than 2³² nodes, and what is kept.
+        self.held.saturating_add(self.kept.len() as u64 * 3)
     }
 
     fn derived(&mut self, id: NodeId, state: &State, facts: &Facts<'_>) {
@@ -738,11 +752,14 @@ impl Observer for Record<'_> {
             let linear = state
                 .linear()
                 .flat_map(|(o, n)| std::iter::repeat_n(o, n as usize));
-            self.standard.insert(id, Multiset::of(quests.chain(linear)));
+            let standard = Multiset::of(quests.chain(linear));
+            self.keep(standard.as_slice().len());
+            self.standard.insert(id, standard);
         }
         if !facts.shared.is_empty() {
             let mut shared = facts.shared.to_vec();
             shared.sort_unstable();
+            self.keep(shared.len());
             self.shared.insert(id, shared);
         }
     }
@@ -1618,6 +1635,36 @@ mod tests {
             "the derivation is not built: it has 18446744073709551615 inferences, and a \
              derivation holds 4294967295 at most"
         );
+    }
+
+    /// What the record says it holds covers what it keeps: the sequents of
+    /// a `⊗` and of its premises, and the occurrences both premises use.
+    #[test]
+    fn record_counts_what_it_keeps() {
+        use Node::*;
+        // ⊢ ?~A, A ⊗ A: 0 ?, 1 ~A, 2 ⊗, 3 A, 4 A
+        let p = proof(
+            "!A |- A * A",
+            vec![
+                Ax(o(1), o(3)),
+                Copy(o(1), n(0)),
+                Ax(o(1), o(4)),
+                Copy(o(1), n(2)),
+                Tensor(o(2), n(1), n(3)),
+                Quest(o(0), n(4)),
+            ],
+        );
+        let mut record = Record::new(&p);
+        let roots = p.forest().roots();
+        check::examine(&p, roots, Derivation::ONE_SIDED, None, None, &mut record).unwrap();
+        // ⊢ ?~A, A twice and ⊢ ?~A, A ⊗ A, and the one shared ~A.
+        let sequents: Vec<usize> = [1, 3, 4]
+            .map(|id| record.standard[&n(id)].as_slice().len())
+            .into();
+        assert_eq!((sequents, record.standard.len()), (vec![2, 2, 2], 3));
+        assert_eq!(record.shared[&n(4)], [o(1)]);
+        // Three flags for each of six nodes, four lists of seven members.
+        assert_eq!(record.bytes(), 6 * 3 + 4 * Record::ENTRY + 7 * 8);
     }
 
     /// The inferences carry the sequents as ids with repeats, the rule, the

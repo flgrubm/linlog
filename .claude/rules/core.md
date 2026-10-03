@@ -322,10 +322,12 @@ that cannot repeat the engine's mistakes. Engines only call `Proof::check`.
   refusal is no verdict**, and a front end must never print it as
   "invalid" (`Error` wraps it as `Unchecked`, not `InvalidProof`;
   `ViewError` as `Memory`, not `Invalid`). What is counted
-  (`Pass::held`): twelve bytes per node for the pass's two tables, what
-  the observer says it holds (`Observer::bytes`), and every state in
-  `live` or in the hands of the current rule at `State::bytes`, which is
-  the value plus its two tables. A table is counted by the most members
+  (`Pass::held`): twelve bytes per node for the pass's two tables and
+  every state in `live` or in the hands of the current rule at
+  `State::bytes`, which is the value plus its two tables; and, added at
+  every comparison with the bound, what the observer says it holds by
+  then (`Observer::bytes`: the size estimate's tables, the sequents the
+  derivation's record has kept). A table is counted by the most members
   it ever held (`Zone::most`, `Bag::most`, through `table_bytes`), not
   by its members now and not by `capacity()`: the standard library's
   table never gives slots back, a clone has the slots of its original
@@ -562,10 +564,10 @@ reach), each with nothing built; then the pass that records what the
 builder reads, then the builder, which polls the caller's `stop` once
 per node and answers `ViewError::Stopped`. A pass that the checker gives
 up for its memory is `ViewError::Memory { size: None, limit }`, never
-`Invalid`: `From<CheckError>` sees to it. The record's sequents are not
-counted against the pass (each is in the derivation, whose estimate was
-within the bound before the pass began). `ViewError` and `Problem` are
-`#[non_exhaustive]`. So the text tree, the four exports
+`Invalid`: `From<CheckError>` sees to it. The record's sequents count
+against its pass (`Record::held`), though each is in the derivation
+anyway, so that the pass and its record together stay within the bound.
+`ViewError` and `Problem` are `#[non_exhaustive]`. So the text tree, the four exports
 (which take a `Derivation`), the graft of `Interactive::close` and a
 front end's check output are all under the bound by construction, and a
 new path that needs a derivation gets it from there or not at all.
