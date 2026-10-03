@@ -477,6 +477,8 @@ impl<'s> Spawn<'s> {
             trails: Vec::new(),
             links: Vec::new(),
             cursors: Vec::new(),
+            present: Vec::new(),
+            stamp: 0,
         };
         if self.portfolio && index != 0 {
             // A seed per worker, never zero.

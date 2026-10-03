@@ -669,6 +669,15 @@ struct Engine<'a> {
     links: Vec<Vec<(OccId, NodeId, bool)>>,
     /// Spare cursors of a chain of forced splits.
     cursors: Vec<Cursors>,
+    /// Per list of a literal's occurrences, twice the atom plus the sign
+    /// as the forest numbers them: the stamp of the last stable sequent
+    /// that had such a literal in its linear zone when its copies were
+    /// ranked. Empty until the first ranking.
+    present: Vec<u64>,
+    /// The stamp of the stable sequent whose copies were ranked last. A
+    /// search that ranks a billion a second takes five centuries to wrap
+    /// it.
+    stamp: u64,
 }
 
 impl<'a> Engine<'a> {
@@ -721,6 +730,8 @@ impl<'a> Engine<'a> {
             trails: Vec::new(),
             links: Vec::new(),
             cursors: Vec::new(),
+            present: Vec::new(),
+            stamp: 0,
         }
     }
 
@@ -1127,11 +1138,12 @@ impl<'a> Engine<'a> {
                 // asked once per formula, not once per comparison.
                 copies.sort_unstable_by_key(|&a| self.rank(a));
                 self.work += (copies.len() * members.len() / MEETS_PER_WORK) as u64;
+                self.mark_literals(members);
                 let mut others = self.take_list();
                 let mut met = 0;
                 for i in 0..copies.len() {
                     let a = copies[i];
-                    if self.meets(a, members) {
+                    if self.meets(a) {
                         copies[met] = a;
                         met += 1;
                     } else {
@@ -1302,16 +1314,35 @@ impl<'a> Engine<'a> {
         found.map(|at| duals[start + at])
     }
 
-    /// Whether a formula of `Θ` has a literal below it whose dual is a
-    /// member: the copy heuristic's notion of a copy that can meet
-    /// something.
-    fn meets(&self, a: OccId, members: &[OccId]) -> bool {
+    /// Marks the literals among the members of a stable sequent for
+    /// [`Self::meets`], under a stamp of their own. One pass over the
+    /// members, so that ranking the copies costs the members and the
+    /// formulas of `Θ` once each and not their product, which on a
+    /// marking of thousands of tokens under clauses of thousands of
+    /// literals was a quarter of a second per stable sequent.
+    fn mark_literals(&mut self, members: &[OccId]) {
         let f = self.forest;
-        f.subtree(a).any(|l| {
-            f.is_literal(l)
-                && members
-                    .iter()
-                    .any(|&m| f.atom(m) == f.atom(l) && f.sign(m) != f.sign(l))
+        if self.present.is_empty() {
+            self.present = vec![0; 2 * f.sequent().atom_names().len()];
+        }
+        self.stamp += 1;
+        for &m in members {
+            if let (Some(atom), Some(sign)) = (f.atom(m), f.sign(m)) {
+                self.present[2 * atom.index() + sign as usize] = self.stamp;
+            }
+        }
+    }
+
+    /// Whether a formula of `Θ` has a literal below it whose dual is a
+    /// member of the stable sequent marked last: the copy heuristic's
+    /// notion of a copy that can meet something.
+    fn meets(&self, a: OccId) -> bool {
+        let f = self.forest;
+        f.subtree(a).any(|l| match (f.atom(l), f.sign(l)) {
+            (Some(atom), Some(sign)) => {
+                self.present[2 * atom.index() + (!sign) as usize] == self.stamp
+            }
+            _ => false,
         })
     }
 
