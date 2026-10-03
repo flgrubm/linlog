@@ -330,7 +330,11 @@ beyond clap and anyhow, which the CLI already has.
   over the proved runs. `after-limits` is the first without the
   `portfolio` column (the polls inside forced chains and the set-up,
   the cursors of a chain's lookups, the copies ranked in one pass): the
-  same counters again.
+  same counters again. `after-memory` is the first with the column
+  `memory_limit` (the search under a bound of one gibibyte, the memo as
+  records in chunks, the kept arena collected): the 99 decided rows
+  have the counters of `after-limits`, and the rows over a second are 8
+  to 18 % faster (`mix` at 10: 151 s before, 125 s).
 
 ## Extension points
 
