@@ -20,7 +20,7 @@
 //! count equation is the connectedness equation of a complete acyclic
 //! linking. The net is sequentialized into the proof term returned.
 
-use super::{Options, Reason, Statistics, Stop, Verdict};
+use super::{Options, Reason, Refutation, Statistics, Stop, Verdict};
 use crate::fragment::Mode;
 use crate::nets::{ProofStructure, Scratch};
 use crate::occurrences::{Forest, OccId, Sign};
@@ -48,7 +48,11 @@ pub(crate) fn search(
     stop: &mut dyn FnMut() -> bool,
 ) -> (Verdict, Statistics, Option<ProofStructure>) {
     if !counts_admit(forest, mode.mix) {
-        return (Verdict::Unprovable, Statistics::default(), None);
+        return (
+            Verdict::Unprovable(Refutation::Exhausted),
+            Statistics::default(),
+            None,
+        );
     }
     let mut engine = Engine::new(forest, mode, options, Stop::Closure(stop));
     match engine.run() {
@@ -64,7 +68,11 @@ pub(crate) fn search(
                 Some(engine.net),
             )
         }
-        Ok(false) => (Verdict::Unprovable, engine.statistics, None),
+        Ok(false) => (
+            Verdict::Unprovable(Refutation::Exhausted),
+            engine.statistics,
+            None,
+        ),
         Err(reason) => (Verdict::Unknown(reason), engine.statistics, None),
     }
 }
@@ -490,7 +498,7 @@ pub(super) mod tests {
     fn provable(input: &str, mode: Mode) -> bool {
         match run(input, mode, &Options::default()).0 {
             Verdict::Proved(_) => true,
-            Verdict::Unprovable => false,
+            Verdict::Unprovable(_) => false,
             Verdict::Unknown(reason) => panic!("{input:?}: {reason}"),
         }
     }
@@ -602,11 +610,11 @@ pub(super) mod tests {
                      (~b par d) * (~c par f), ~d * ~f";
         let postponed = Options::default().test_period(Some(100));
         let (verdict, statistics) = run(input, Mode::CLASSICAL, &postponed);
-        assert!(matches!(verdict, Verdict::Unprovable));
+        assert!(matches!(verdict, Verdict::Unprovable(_)));
         assert_eq!(statistics.tests, 1);
         assert!(statistics.links < 40, "{statistics:?}");
         let (verdict, statistics) = run(input, Mode::CLASSICAL, &Options::default());
-        assert!(matches!(verdict, Verdict::Unprovable));
+        assert!(matches!(verdict, Verdict::Unprovable(_)));
         assert_eq!(statistics.links, 2, "the cycle is seen at the second link");
         let provable_twin = "|- a, a, a, a, ((~a * ~a) * (~a * ~a)) * (b * c), \
                              (~b par ~c) * (d * f), ~d, ~f";
@@ -646,7 +654,7 @@ pub(super) mod tests {
                 assert_eq!(proof.check(mode), Ok(()));
                 true
             }
-            Verdict::Unprovable => false,
+            Verdict::Unprovable(_) => false,
             Verdict::Unknown(reason) => panic!("{s}: the focused engine says {reason}"),
         }
     }
@@ -655,7 +663,7 @@ pub(super) mod tests {
     fn net_verdict(text: &str, mode: Mode, options: &Options) -> bool {
         match run(text, mode, options).0 {
             Verdict::Proved(_) => true,
-            Verdict::Unprovable => false,
+            Verdict::Unprovable(_) => false,
             Verdict::Unknown(reason) => panic!("{text}: {reason}"),
         }
     }
@@ -795,7 +803,7 @@ pub(crate) mod parallel {
     use crate::nets::ProofStructure;
     use crate::occurrences::{Forest, OccId};
     use crate::search::parallel::Runtime;
-    use crate::search::{Options, Reason, Statistics, Stop, Verdict};
+    use crate::search::{Options, Reason, Refutation, Statistics, Stop, Verdict};
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -841,7 +849,11 @@ pub(crate) mod parallel {
         stop: &mut dyn FnMut() -> bool,
     ) -> (Verdict, Statistics, Option<ProofStructure>) {
         if !counts_admit(forest, mode.mix) {
-            return (Verdict::Unprovable, Statistics::default(), None);
+            return (
+                Verdict::Unprovable(Refutation::Exhausted),
+                Statistics::default(),
+                None,
+            );
         }
         let threads = runtime.threads();
         let (result, statistics, net) = runtime.drive(stop, |flags| {
@@ -929,7 +941,7 @@ pub(crate) mod parallel {
                 debug_assert_eq!(proof.check(mode), Ok(()), "the engine's proof");
                 Verdict::Proved(Box::new(proof))
             }
-            Ok(false) => Verdict::Unprovable,
+            Ok(false) => Verdict::Unprovable(Refutation::Exhausted),
             Err(reason) => Verdict::Unknown(reason),
         };
         (verdict, statistics, net)
@@ -978,8 +990,8 @@ mod parallel_tests {
                     "{text:?} in {mode} mode: {sequential:?} on one thread, {parallel:?} on {jobs}"
                 );
                 assert_eq!(
-                    matches!(sequential, Verdict::Unprovable),
-                    matches!(parallel, Verdict::Unprovable),
+                    matches!(sequential, Verdict::Unprovable(_)),
+                    matches!(parallel, Verdict::Unprovable(_)),
                     "{text:?} in {mode} mode: {sequential:?} on one thread, {parallel:?} on {jobs}"
                 );
             }

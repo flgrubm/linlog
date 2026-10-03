@@ -57,7 +57,7 @@ use self::context::Context;
 use self::counts::{Counts, Split, Tally};
 use self::memo::{Entry, Failure, Inserted, Key, Memo, Table};
 use super::memory::{Account, Charged, bytes_of};
-use super::{Options, Reason, Statistics, Stop, Verdict, set_up_stopped};
+use super::{Options, Reason, Refutation, Statistics, Stop, Verdict, set_up_stopped};
 use crate::fragment::{Fragment, Mode};
 use crate::occurrences::{Bias, Forest, OccId, OccSet, Position, Reading};
 use crate::proofs::{Node, NodeId, Proof, Side};
@@ -128,7 +128,7 @@ pub(crate) fn search(
             debug_assert_eq!(proof.check(mode), Ok(()), "the engine's proof");
             Verdict::Proved(Box::new(proof))
         }
-        Ok(None) => Verdict::Unprovable,
+        Ok(None) => Verdict::Unprovable(Refutation::Exhausted),
         Err(reason) => Verdict::Unknown(reason),
     };
     (verdict, statistics)
@@ -443,6 +443,66 @@ fn chains(forest: &Forest) -> bool {
             true
         })
     })
+}
+
+/// Returns why a goal that the search refuted is unprovable, as far as its
+/// counts tell: an atom whose literals cannot pair up, or the count
+/// equation that fails, each under the rules the engine searched the
+/// fragment and the mode with; else that the search was exhaustive. The
+/// asynchronous phase keeps the sums of the goal's members (a `⅋` or `⊥`
+/// keeps the count equation, a premise of `&` lies within its hull), so
+/// a goal that fails a test makes every stable sequent above it fail it,
+/// where the engine checks it. Counting is a pass over the forest under
+/// the search's limits; a pass given up says only what the verdict does.
+pub(crate) fn refutation(
+    forest: &Forest,
+    goal: &[OccId],
+    fragment: Fragment,
+    mode: Mode,
+    account: &Account,
+    stop: &mut dyn FnMut() -> bool,
+) -> Refutation {
+    let Ok(counts) = Counts::new_until(forest, Bias::Rarer, account, stop) else {
+        return Refutation::Exhausted;
+    };
+    let rules = Rules::new(fragment, mode, &counts);
+    let mut tally = counts.tally();
+    for &o in goal {
+        tally.add(&counts, o);
+    }
+    if rules.intervals
+        && let Some((atom, least, most)) = tally.unbalanced(&counts)
+    {
+        return Refutation::Unbalanced {
+            atom,
+            name: forest.sequent().atom_names()[atom.index()].clone(),
+            least,
+            most,
+        };
+    }
+    if rules.equation && !tally.equation(rules.mix) {
+        let (mut tensors, mut pars, mut ones, mut bottoms) = (0, 0, 0, 0);
+        for &o in goal {
+            for x in forest.subtree(o) {
+                match forest.kind(x) {
+                    Kind::Tensor => tensors += 1,
+                    Kind::Par => pars += 1,
+                    Kind::One => ones += 1,
+                    Kind::Bot => bottoms += 1,
+                    _ => {}
+                }
+            }
+        }
+        return Refutation::Equation {
+            formulas: goal.len() as u64,
+            tensors,
+            pars,
+            ones,
+            bottoms,
+            mix: rules.mix,
+        };
+    }
+    Refutation::Exhausted
 }
 
 /// The reason a search of the options gives up with, given the reason one
@@ -2514,7 +2574,7 @@ mod tests {
     fn provable(input: &str, mode: Mode) -> bool {
         match run(input, mode, &Options::default()).0 {
             Verdict::Proved(_) => true,
-            Verdict::Unprovable => false,
+            Verdict::Unprovable(_) => false,
             Verdict::Unknown(reason) => panic!("{input:?}: {reason}"),
         }
     }
@@ -2724,8 +2784,8 @@ mod tests {
         let input = "|- ~a + ~b, ~a + ~b, a * b, (x par ~x) * (y * ~y)";
         let with_memo = run(input, Mode::CLASSICAL, &Options::default());
         let without = run(input, Mode::CLASSICAL, &Options::default().memo_limit(0));
-        assert!(matches!(with_memo.0, Verdict::Unprovable));
-        assert!(matches!(without.0, Verdict::Unprovable));
+        assert!(matches!(with_memo.0, Verdict::Unprovable(_)));
+        assert!(matches!(without.0, Verdict::Unprovable(_)));
         assert!(with_memo.1.memo_hits >= 1);
         assert_eq!(without.1.memo_hits, 0);
         assert_eq!(without.1.memo_entries, 0);
@@ -2823,7 +2883,7 @@ mod tests {
             (0..63).map(|_| "~a, a").collect::<Vec<_>>().join(", ")
         );
         let (verdict, _) = run(&wide, Mode::CLASSICAL, &Options::default());
-        assert!(matches!(verdict, Verdict::Unprovable));
+        assert!(matches!(verdict, Verdict::Unprovable(_)));
     }
 
     /// A sequent whose search comes back to it with other occurrences of
@@ -3049,7 +3109,7 @@ mod tests {
                         .unwrap_or_else(|e| panic!("{text:?}: the proof is wrong: {e}"));
                     Some(true)
                 }
-                Verdict::Unprovable => Some(false),
+                Verdict::Unprovable(_) => Some(false),
                 Verdict::Unknown(_) => None,
             }
         };
@@ -3506,20 +3566,23 @@ mod tests {
         // Unprovable, decided at a level that never hit the bound: after
         // one copy of ~a nothing is left to copy. (⊢ ?~a, b is refuted by
         // the balance of b before any copy.)
-        assert!(matches!(run("!a |- b", m, &with(0)).0, Verdict::Unprovable));
+        assert!(matches!(
+            run("!a |- b", m, &with(0)).0,
+            Verdict::Unprovable(_)
+        ));
         assert!(matches!(
             run("!a |- ?b", m, &with(1)).0,
             Verdict::Unknown(Reason::CopyBound(1))
         ));
         assert!(matches!(
             run("!a |- ?b", m, &with(2)).0,
-            Verdict::Unprovable
+            Verdict::Unprovable(_)
         ));
         // The loop check decides a sequent whose copies repeat a stable
         // sequent, without a bound to hit.
         assert!(matches!(
             run("!(a -o a), a |- b", m, &with(1)).0,
-            Verdict::Unprovable
+            Verdict::Unprovable(_)
         ));
         // A growing context is never decided within a bound.
         for copies in [0, 2, 5] {
@@ -3628,7 +3691,7 @@ mod tests {
     fn decided(input: &str, mode: Mode, options: &Options) -> Option<bool> {
         match run(input, mode, options).0 {
             Verdict::Proved(_) => Some(true),
-            Verdict::Unprovable => Some(false),
+            Verdict::Unprovable(_) => Some(false),
             Verdict::Unknown(Reason::CopyBound(_)) => None,
             Verdict::Unknown(reason) => panic!("{input:?}: {reason}"),
         }
@@ -3898,7 +3961,7 @@ mod tests {
                 &Options::default()
             )
             .0,
-            Verdict::Unprovable
+            Verdict::Unprovable(_)
         ));
         assert!(matches!(
             run(
@@ -3913,7 +3976,7 @@ mod tests {
         five.push("a");
         assert!(matches!(
             run(&horn(&clauses, &five, &[goal]), m, &Options::default()).0,
-            Verdict::Unprovable
+            Verdict::Unprovable(_)
         ));
         assert!(provable(&horn(&clauses, &five, &[goal]), m.affine()));
     }

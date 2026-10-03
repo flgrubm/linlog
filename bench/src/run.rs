@@ -609,7 +609,7 @@ fn tail(args: &OneArgs) -> String {
     };
     let (verdict, reason) = match &outcome.verdict {
         Verdict::Proved(_) => ("proved", ""),
-        Verdict::Unprovable => ("unprovable", ""),
+        Verdict::Unprovable(_) => ("unprovable", ""),
         Verdict::Unknown(reason) => {
             let reason = match reason {
                 Reason::Stopped => "timeout",

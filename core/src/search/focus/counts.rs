@@ -66,6 +66,8 @@ pub(crate) struct Counts {
     /// The number of atoms that have rows, the width of a [`Tally`]: those
     /// with no literal below a `!` or `?`.
     row_atoms: usize,
+    /// The atoms that have rows, by their rank.
+    ranked: Box<[Atom]>,
     /// Whether a `⊤` lies below a `?` or `!` somewhere in the problem, so
     /// that a copy can absorb any imbalance and the intervals prune
     /// nothing.
@@ -198,7 +200,7 @@ impl Counts {
         // says nothing: such atoms get no row entries at all.
         let num_atoms = forest.sequent().atom_names().len();
         let fixed = n * (size_of::<u32>() + size_of::<i32>() + 2 * size_of::<bool>())
-            + num_atoms * (2 * size_of::<bool>() + size_of::<u32>() + size_of::<Sign>());
+            + num_atoms * (2 * size_of::<bool>() + 2 * size_of::<u32>() + size_of::<Sign>());
         account.charge(fixed);
         if account.over() {
             return Err(Reason::MemoryLimit(account.limit()));
@@ -228,11 +230,14 @@ impl Counts {
         // is as wide as they are many, and a Petri net has tens of
         // thousands of atoms and none with a row.
         let mut rank = vec![0u32; num_atoms];
-        let mut row_atoms = 0;
+        let mut ranked = Vec::new();
         for (atom, rank) in rank.iter_mut().enumerate() {
-            *rank = row_atoms as u32;
-            row_atoms += usize::from(!exponential[atom]);
+            *rank = ranked.len() as u32;
+            if !exponential[atom] {
+                ranked.push(Atom::new(atom as u32));
+            }
         }
+        let row_atoms = ranked.len();
         // The literals that a `?` can put into the unrestricted zone: those
         // directly under one.
         let mut unrestricted = vec![[false; 2]; num_atoms];
@@ -341,6 +346,7 @@ impl Counts {
             absorbs: absorbs.into_boxed_slice(),
             weight: weight.into_boxed_slice(),
             row_atoms,
+            ranked: ranked.into_boxed_slice(),
             absorbs_from_copies,
             literal_tensor: literal_tensor.into_boxed_slice(),
             positive,
@@ -540,6 +546,21 @@ impl Tally {
         }
         self.len = self.len.wrapping_add_signed(sign);
         self.weight += sign * counts.weight(o);
+    }
+
+    /// Returns an atom whose summed interval excludes zero, the first in the
+    /// sequent's order, with that interval, unless a member absorbs.
+    pub(crate) fn unbalanced(&self, counts: &Counts) -> Option<(Atom, i32, i32)> {
+        if self.absorbs() {
+            return None;
+        }
+        let rank = self
+            .touched
+            .iter()
+            .map(|&a| a as usize)
+            .filter(|&a| self.lo[a] > 0 || self.hi[a] < 0)
+            .min()?;
+        Some((counts.ranked[rank], self.lo[rank], self.hi[rank]))
     }
 
     /// Returns whether a member absorbs, that is, has a `⊤` below it.

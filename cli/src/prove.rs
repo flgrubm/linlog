@@ -595,7 +595,7 @@ pub fn prove(args: &ProveArgs) -> Result<Status> {
     io::write(args.output.output.as_deref(), &text)?;
     Ok(match outcome.verdict {
         Verdict::Proved(_) => Status::Yes,
-        Verdict::Unprovable => Status::No,
+        Verdict::Unprovable(_) => Status::No,
         Verdict::Unknown(_) => Status::Unknown,
     })
 }
@@ -612,7 +612,7 @@ fn verdict_line(outcome: &Outcome, asserted: bool, stop: Option<Stop>) -> String
     );
     match &outcome.verdict {
         Verdict::Proved(_) => format!("provable ({context})"),
-        Verdict::Unprovable => format!("unprovable ({context}): the search was exhaustive"),
+        Verdict::Unprovable(refutation) => format!("unprovable ({context}): {refutation}"),
         Verdict::Unknown(reason) => {
             let why = match (reason, stop) {
                 (Reason::Stopped, Some(Stop::Timeout(t))) => {

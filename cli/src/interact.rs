@@ -340,7 +340,7 @@ fn verdict(outcome: &Outcome) -> String {
     );
     match &outcome.verdict {
         Verdict::Proved(_) => format!("proved ({context})"),
-        Verdict::Unprovable => format!("unprovable ({context}): the search was exhaustive"),
+        Verdict::Unprovable(refutation) => format!("unprovable ({context}): {refutation}"),
         Verdict::Unknown(reason) => {
             let why = match reason {
                 Reason::Stopped => {

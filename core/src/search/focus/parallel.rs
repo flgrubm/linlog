@@ -992,7 +992,7 @@ mod tests {
                 assert_eq!(proof.check(mode), Ok(()), "{input:?} with {options:?}");
                 Some(true)
             }
-            Verdict::Unprovable => Some(false),
+            Verdict::Unprovable(_) => Some(false),
             Verdict::Unknown(Reason::CopyBound(_)) => None,
             Verdict::Unknown(reason) => panic!("{input:?}: {reason}"),
         }
@@ -1136,7 +1136,7 @@ mod tests {
             assert!(
                 matches!(
                     outcome.verdict,
-                    Verdict::Unknown(Reason::RecursionLimit) | Verdict::Unprovable
+                    Verdict::Unknown(Reason::RecursionLimit) | Verdict::Unprovable(_)
                 ),
                 "{:?} on {jobs} threads",
                 outcome.verdict
@@ -1154,7 +1154,7 @@ mod tests {
         for jobs in [2, 4] {
             let options = Options::default().jobs(jobs);
             let outcome = prove(&sequent, Mode::CLASSICAL, &options).unwrap();
-            assert!(matches!(outcome.verdict, Verdict::Unprovable));
+            assert!(matches!(outcome.verdict, Verdict::Unprovable(_)));
             assert!(
                 outcome.statistics.nodes < 100_000,
                 "{} stable sequents on {jobs} threads",

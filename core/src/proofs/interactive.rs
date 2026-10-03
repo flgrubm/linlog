@@ -1457,7 +1457,7 @@ mod tests {
         let outcome = s
             .close(l, &options, &ViewOptions::default(), || false)
             .unwrap();
-        assert!(matches!(outcome.verdict, Verdict::Unprovable));
+        assert!(matches!(outcome.verdict, Verdict::Unprovable(_)));
         let outcome = s
             .close(r, &options, &ViewOptions::default(), || true)
             .unwrap();

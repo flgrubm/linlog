@@ -26,7 +26,7 @@ use crate::fragment::{Fragment, Mode};
 use crate::nets::ProofStructure;
 use crate::occurrences::{Bias, Forest, OccId, Reading};
 use crate::proofs::Proof;
-use crate::sequents::Sequent;
+use crate::sequents::{Atom, Sequent};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 /// An engine's stop condition: the caller's closure in a sequential
@@ -131,7 +131,7 @@ pub(crate) fn set_up_stopped(forest: &Forest, stop: &mut dyn FnMut() -> bool) ->
 ///
 /// let sequent: Sequent = "|- A par B, ~A, ~B".parse()?;
 /// let outcome = prove(&sequent, Mode::CLASSICAL, &Options::default())?;
-/// assert!(matches!(outcome.verdict, Verdict::Unprovable));
+/// assert!(matches!(outcome.verdict, Verdict::Unprovable(_)));
 /// let outcome = prove(&sequent, Mode::CLASSICAL.with_mix(), &Options::default())?;
 /// assert!(matches!(outcome.verdict, Verdict::Proved(_)));
 /// # Ok::<(), linlog::Error>(())
@@ -300,7 +300,7 @@ pub fn prove_goal(
     // of their own; the additive path is sequential in every case.
     #[cfg(feature = "parallel")]
     let options = &options.clone().jobs(parallel::threads(options.jobs));
-    let (verdict, statistics, net) = match engine {
+    let (mut verdict, statistics, net) = match engine {
         #[cfg(feature = "parallel")]
         Engine::Net if options.jobs > 1 => {
             let runtime = parallel::Runtime::new(options.jobs, options.stack_size())?;
@@ -353,12 +353,18 @@ pub fn prove_goal(
                         .expect("the engine pushes premises before conclusions");
                     Verdict::Proved(Box::new(proof))
                 }
-                Ok(None) => Verdict::Unprovable,
+                Ok(None) => Verdict::Unprovable(Refutation::Exhausted),
                 Err(reason) => Verdict::Unknown(reason),
             };
             (verdict, statistics, None)
         }
     };
+    // A refutation says what the counts of the goal rule out, under the
+    // same limits as the search.
+    if let Verdict::Unprovable(refutation) = &mut verdict {
+        let account = memory::Account::new(options.memory_limit);
+        *refutation = focus::refutation(forest, goal, fragment, mode, &account, &mut stop);
+    }
     // No engine is trusted with its own proof: the checker has the last
     // word on every proof of the sequent, in every build.
     if options.check
@@ -797,8 +803,9 @@ pub enum Verdict {
     /// The sequent is provable, and here is a proof, boxed because a proof
     /// carries its forest.
     Proved(Box<Proof>),
-    /// The sequent is not provable: the search was exhaustive.
-    Unprovable,
+    /// The sequent is not provable: the search was exhaustive, and here is
+    /// what can be said of why.
+    Unprovable(Refutation),
     /// The search stopped before it could decide, for the reason given.
     Unknown(Reason),
 }
@@ -809,6 +816,121 @@ impl Verdict {
         match self {
             Verdict::Proved(proof) => Some(proof),
             _ => None,
+        }
+    }
+}
+
+/// Why a sequent is unprovable, as far as its counts tell. Every
+/// refutation rests on the search that was exhaustive; where the literals
+/// or the connectives of the sequent alone rule out a proof, the
+/// refutation says which, as the focused engine checks them on every
+/// sequent it searches.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Refutation {
+    /// Every way to prove the sequent was tried and failed.
+    Exhausted,
+    /// The literals of an atom cannot all meet their duals in axioms:
+    /// whichever additive alternatives a proof takes, the positive literal
+    /// occurs between `least` and `most` times more than the negative one
+    /// (fewer, where these are negative), and never as often.
+    Unbalanced {
+        /// The atom.
+        atom: Atom,
+        /// Its name.
+        name: String,
+        /// The least excess of positive over negative literals.
+        least: i32,
+        /// The greatest excess.
+        most: i32,
+    },
+    /// The count equation of the multiplicatives fails: a provable
+    /// sequent of MLL with units has exactly
+    /// `tensors − pars − ones + bottoms + 2` formulas, and at least that
+    /// many with Mix, counted on the one-sided sequent.
+    Equation {
+        /// The formulas of the sequent.
+        formulas: u64,
+        /// Its `⊗`.
+        tensors: u64,
+        /// Its `⅋`.
+        pars: u64,
+        /// Its `1`.
+        ones: u64,
+        /// Its `⊥`.
+        bottoms: u64,
+        /// Whether Mix was allowed.
+        mix: bool,
+    },
+}
+
+impl Refutation {
+    /// Returns how many formulas the count equation asks for, for
+    /// [`Refutation::Equation`].
+    pub fn needed(&self) -> Option<i128> {
+        match *self {
+            Refutation::Equation {
+                tensors,
+                pars,
+                ones,
+                bottoms,
+                ..
+            } => Some(
+                i128::from(tensors) - i128::from(pars) - i128::from(ones) + i128::from(bottoms) + 2,
+            ),
+            _ => None,
+        }
+    }
+}
+
+impl Display for Refutation {
+    /// Writes the refutation as a phrase, such as `the search was
+    /// exhaustive`.
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            Refutation::Exhausted => f.write_str("the search was exhaustive"),
+            Refutation::Unbalanced {
+                name, least, most, ..
+            } => {
+                let (more, fewer) = if *least > 0 {
+                    (name.clone(), format!("~{name}"))
+                } else {
+                    (format!("~{name}"), name.clone())
+                };
+                let (a, b) = (least.unsigned_abs(), most.unsigned_abs());
+                let (a, b) = (a.min(b), a.max(b));
+                let excess = if a == b {
+                    format!("{a}")
+                } else {
+                    format!("{a} to {b}")
+                };
+                write!(
+                    f,
+                    "{more} occurs {excess} more {} than {fewer}{}, so they cannot all meet in \
+                     axioms",
+                    if a == 1 && b == 1 { "time" } else { "times" },
+                    if a == b {
+                        ""
+                    } else {
+                        " whichever additive alternatives a proof takes"
+                    }
+                )
+            }
+            Refutation::Equation {
+                formulas,
+                tensors,
+                pars,
+                ones,
+                bottoms,
+                mix,
+            } => write!(
+                f,
+                "the count equation fails: a provable one-sided sequent of MLL with {tensors} ⊗, \
+                 {pars} ⅋, {ones} 1 and {bottoms} ⊥ has {}{tensors} − {pars} − {ones} + {bottoms} \
+                 + 2 = {} formulas, and this one has {formulas}",
+                if *mix { "at least " } else { "exactly " },
+                self.needed().unwrap_or_default()
+            ),
         }
     }
 }
@@ -945,6 +1067,53 @@ mod tests {
             assert_eq!(outcome.engine, engine, "{input:?}");
             assert_eq!(outcome.net.is_some(), engine == Engine::Net, "{input:?}");
             assert!(outcome.verdict.proof().is_some(), "{input:?}");
+        }
+    }
+
+    /// An unprovable sequent says why where its counts tell: an atom whose
+    /// literals cannot pair up, also across additive alternatives, or the
+    /// count equation; else that the search was exhaustive.
+    #[test]
+    fn refutations() {
+        let refuted = |input: &str, mode: Mode| {
+            let outcome = prove(&sequent(input), mode, &Options::default()).unwrap();
+            let Verdict::Unprovable(refutation) = outcome.verdict else {
+                panic!("{input:?}: {:?}", outcome.verdict);
+            };
+            refutation
+        };
+        let unbalanced = |name: &str, least, most| Refutation::Unbalanced {
+            atom: Atom::new(0),
+            name: name.to_owned(),
+            least,
+            most,
+        };
+        let classical = Mode::CLASSICAL;
+        assert_eq!(refuted("|- a, a", classical), unbalanced("a", 2, 2));
+        assert_eq!(
+            refuted("a |- b", Mode::INTUITIONISTIC),
+            unbalanced("a", -1, -1)
+        );
+        let hull = refuted("|- (a * a) + (a * a * a), ~a", classical);
+        assert_eq!(hull, unbalanced("a", 1, 2));
+        assert_eq!(
+            hull.to_string(),
+            "a occurs 1 to 2 more times than ~a whichever additive alternatives a proof \
+             takes, so they cannot all meet in axioms"
+        );
+        let equation = refuted("|- a par b, ~a, ~b", classical);
+        assert_eq!(equation.needed(), Some(1));
+        assert_eq!(
+            equation.to_string(),
+            "the count equation fails: a provable one-sided sequent of MLL with 0 ⊗, 1 ⅋, 0 1 \
+             and 0 ⊥ has exactly 0 − 1 − 0 + 0 + 2 = 1 formulas, and this one has 3"
+        );
+        for input in ["|- a par ~a, b * ~b", "|- a & b, ~a"] {
+            assert_eq!(
+                refuted(input, classical),
+                Refutation::Exhausted,
+                "{input:?}"
+            );
         }
     }
 
@@ -1162,7 +1331,7 @@ mod tests {
                         assert_eq!(outcome.net.is_some(), outcome.engine == Engine::Net);
                         true
                     }
-                    Verdict::Unprovable => false,
+                    Verdict::Unprovable(_) => false,
                     Verdict::Unknown(reason) => panic!("{text:?} by {}: {reason}", outcome.engine),
                 };
                 let (net, focus) = (verdict(by_net), verdict(by_two_sided));
@@ -1206,7 +1375,7 @@ mod tests {
         let outcome =
             prove_goal(&forest, &o(&[4, 5]), Mode::CLASSICAL, &options, || false).unwrap();
         assert!(
-            matches!(outcome.verdict, Verdict::Unprovable),
+            matches!(outcome.verdict, Verdict::Unprovable(_)),
             "{:?}",
             outcome.verdict
         );
@@ -1227,7 +1396,7 @@ mod tests {
         let outcome =
             prove_goal(&forest, &o(&[1, 4]), Mode::CLASSICAL, &options, || false).unwrap();
         assert_eq!(outcome.engine, Engine::Additive);
-        assert!(matches!(outcome.verdict, Verdict::Unprovable));
+        assert!(matches!(outcome.verdict, Verdict::Unprovable(_)));
         let outcome =
             prove_goal(&forest, &o(&[5, 2]), Mode::CLASSICAL, &options, || false).unwrap();
         assert_eq!(outcome.engine, Engine::Focus);

@@ -3,7 +3,7 @@
 
 use super::proofs::Proof;
 use crate::fragment::{Fragment, Mode};
-use crate::search::{Engine, Outcome as Out, Reason, Statistics, Verdict};
+use crate::search::{Engine, Outcome as Out, Reason, Refutation, Statistics, Verdict};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// The fragments a name can stand for, in the order of their names.
@@ -98,6 +98,73 @@ impl From<Reason> for Why {
     }
 }
 
+/// The serialized form of a refutation: a tag, with the counts that rule
+/// a proof out.
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+enum WhyNot<'a> {
+    /// The search was exhaustive.
+    Exhausted,
+    /// An atom's literals cannot pair up.
+    Unbalanced {
+        /// The atom's name.
+        atom: &'a str,
+        /// The least excess of positive over negative literals.
+        least: i32,
+        /// The greatest.
+        most: i32,
+    },
+    /// The count equation fails.
+    Equation {
+        /// The formulas.
+        formulas: u64,
+        /// The formulas the equation asks for.
+        needed: i128,
+        /// The `⊗`.
+        tensors: u64,
+        /// The `⅋`.
+        pars: u64,
+        /// The `1`.
+        ones: u64,
+        /// The `⊥`.
+        bottoms: u64,
+        /// Whether Mix was allowed.
+        mix: bool,
+    },
+}
+
+impl<'a> From<&'a Refutation> for WhyNot<'a> {
+    /// Converts a refutation into its serialized form.
+    fn from(r: &'a Refutation) -> Self {
+        match r {
+            Refutation::Unbalanced {
+                name, least, most, ..
+            } => WhyNot::Unbalanced {
+                atom: name,
+                least: *least,
+                most: *most,
+            },
+            &Refutation::Equation {
+                formulas,
+                tensors,
+                pars,
+                ones,
+                bottoms,
+                mix,
+            } => WhyNot::Equation {
+                formulas,
+                needed: r.needed().unwrap_or_default(),
+                tensors,
+                pars,
+                ones,
+                bottoms,
+                mix,
+            },
+            _ => WhyNot::Exhausted,
+        }
+    }
+}
+
 /// The serialized form of the statistics: its counters by name.
 #[derive(Serialize)]
 #[serde(remote = "Statistics")]
@@ -123,12 +190,15 @@ struct StatisticsDef {
 /// nodes as keys of the outcome itself, so that the outcome reads as a
 /// proof file too.
 #[derive(Serialize)]
-struct Outcome {
+struct Outcome<'a> {
     /// `proved`, `unprovable` or `unknown`.
     verdict: &'static str,
     /// Why the search could not decide.
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<Why>,
+    /// Why the sequent is unprovable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    refutation: Option<WhyNot<'a>>,
     /// The fragment searched in, by its name in the mode.
     fragment: &'static str,
     /// The mode searched in.
@@ -147,14 +217,15 @@ impl Serialize for Out {
     /// Serializes the outcome as its verdict, the fragment, mode and engine
     /// of the search, the statistics, and the proof if there is one.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let (verdict, reason, proof) = match &self.verdict {
-            Verdict::Proved(p) => ("proved", None, Some(Proof::from(&**p))),
-            Verdict::Unprovable => ("unprovable", None, None),
-            Verdict::Unknown(r) => ("unknown", Some(Why::from(*r)), None),
+        let (verdict, reason, refutation, proof) = match &self.verdict {
+            Verdict::Proved(p) => ("proved", None, None, Some(Proof::from(&**p))),
+            Verdict::Unprovable(r) => ("unprovable", None, Some(WhyNot::from(r)), None),
+            Verdict::Unknown(r) => ("unknown", Some(Why::from(*r)), None, None),
         };
         Outcome {
             verdict,
             reason,
+            refutation,
             fragment: self.fragment.name_in(self.mode),
             mode: self.mode,
             engine: self.engine,

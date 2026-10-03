@@ -23,7 +23,7 @@
 
 use super::focus::Search;
 use super::memory::{Account, bytes_of};
-use super::{Options, Reason, Statistics, Verdict};
+use super::{Options, Reason, Refutation, Statistics, Verdict};
 use crate::fragment::Mode;
 use crate::hash::HashMap;
 use crate::occurrences::{Forest, OccId};
@@ -48,7 +48,7 @@ pub(crate) fn search(
             debug_assert_eq!(proof.check(mode), Ok(()), "the engine's proof");
             Verdict::Proved(Box::new(proof))
         }
-        Ok(None) => Verdict::Unprovable,
+        Ok(None) => Verdict::Unprovable(Refutation::Exhausted),
         Err(reason) => Verdict::Unknown(reason),
     };
     (verdict, statistics)
@@ -280,7 +280,7 @@ mod tests {
                 });
                 true
             }
-            Verdict::Unprovable => false,
+            Verdict::Unprovable(_) => false,
             Verdict::Unknown(reason) => panic!("{input:?} by {engine}: {reason}"),
         }
     }
@@ -421,7 +421,7 @@ mod tests {
         let s = sequent(&format!("|- {left}, {right}"));
         let outcome = prove(&s, Mode::CLASSICAL, &Options::default()).unwrap();
         assert_eq!(outcome.engine, Which::Additive);
-        assert!(matches!(outcome.verdict, Verdict::Unprovable));
+        assert!(matches!(outcome.verdict, Verdict::Unprovable(_)));
         // 2⁸ − 1 subformulas on each side, so at most that squared pairs
         // decided; every other visit is a memo hit.
         let s = outcome.statistics;

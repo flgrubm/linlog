@@ -22,7 +22,7 @@
 //! let instance = family.instance(3, 0);
 //! assert!(!instance.provable);
 //! let outcome = prove(&instance.sequent, instance.mode, &Options::default())?;
-//! assert!(matches!(outcome.verdict, Verdict::Unprovable));
+//! assert!(matches!(outcome.verdict, Verdict::Unprovable(_)));
 //! # Ok::<(), linlog::Error>(())
 //! ```
 
@@ -574,7 +574,9 @@ mod tests {
                         assert!(instance.provable, "{} proved", instance.name);
                         proof.check(instance.mode).unwrap();
                     }
-                    Verdict::Unprovable => assert!(!instance.provable, "{} refuted", instance.name),
+                    Verdict::Unprovable(_) => {
+                        assert!(!instance.provable, "{} refuted", instance.name)
+                    }
                     // Exponential families without a proof are bounded.
                     Verdict::Unknown(_) => assert!(
                         !instance.provable && instance.copies.is_some(),
@@ -605,7 +607,7 @@ mod tests {
                     expected,
                     "qbf({n}, {index})"
                 );
-                assert!(expected || matches!(outcome.verdict, Verdict::Unprovable));
+                assert!(expected || matches!(outcome.verdict, Verdict::Unprovable(_)));
                 valid += usize::from(expected);
             }
         }
